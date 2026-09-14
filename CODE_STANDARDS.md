@@ -1,6 +1,6 @@
 # 代码规范
 
-> 适用:大学生考研 AI 导学系统(backend: Python 3.12 / FastAPI / LangGraph;frontend: Vue 3 + TS + Vite)。
+> 适用:师范专业 AI 试讲台系统(backend: Python 3.12 / FastAPI / LangGraph;frontend: Vue 3 + TS + Vite)。
 > 原则:**一致性优先于个人偏好**。与本文冲突时,先在 PR 里讨论规范,再改代码。
 
 ## 目录
@@ -164,7 +164,7 @@ api/v1  →  services  →  agents(LangGraph)
   ```
 
   常用 type:`feat` / `fix` / `refactor` / `docs` / `test` / `chore` / `perf`。
-  scope 用模块名:`auth` / `chat` / `mistakes` / `plans` / `frontend` / `db`。
+  scope 用模块名:`auth` / `lessons` / `attempts` / `evaluation` / `frontend` / `db`。
 
   示例:
   ```
