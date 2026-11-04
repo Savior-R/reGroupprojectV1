@@ -284,8 +284,9 @@ spring:
     locations: classpath:db/migration
   jackson:
     property-naming-strategy: SNAKE_CASE
-    serialization:
-      write-dates-as-timestamps: false
+    datatype:
+      datetime:
+        WRITE_DATES_AS_TIMESTAMPS: false
   servlet:
     multipart:
       max-file-size: 20MB

@@ -1,12 +1,13 @@
 package com.shijiangtai;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
+@SpringBootTest
+@ActiveProfiles("test")
 class ServerApplicationTests {
     @Test
-    void placeholder() {
-        assertThat(ServerApplication.class).isNotNull();
+    void contextLoads() {
     }
 }
