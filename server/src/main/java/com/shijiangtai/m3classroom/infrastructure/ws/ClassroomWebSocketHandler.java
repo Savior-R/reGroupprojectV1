@@ -92,7 +92,16 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession session) {
         Connection connection = new Connection(session);
         connections.put(session.getId(), connection);
-        session.setTextMessageSizeLimit(WsCommandParser.MAX_MESSAGE_BYTES);
+        // Allow frames above the 64 KB protocol limit to reach this handler so it can close
+        // with 4005 instead of letting the container reject them with 1009.
+        session.setTextMessageSizeLimit(WebSocketConfig.MAX_FRAME_BYTES);
+
+        String authError = (String) session.getAttributes()
+                .get(WsHandshakeInterceptor.ATTR_AUTH_ERROR);
+        if (authError != null) {
+            connection.close(closeCodeForAuthError(authError), "认证或会话状态不允许连接");
+            return;
+        }
 
         SessionId sessionId = (SessionId) session.getAttributes()
                 .get(WsHandshakeInterceptor.ATTR_SESSION_ID);
@@ -116,19 +125,33 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
         }
 
         connection.bind(sessionId, actor);
-        boolean terminal;
         try {
             // Hold the actor monitor across register + snapshot so no event can be pushed
             // between the snapshot's last_seq and the sink becoming active.
             synchronized (actor) {
                 SessionStatus status = actor.session().status();
-                if (status == SessionStatus.FAILED) {
-                    connection.close(CLOSE_FAILED, "会话已失败");
+                if (status == SessionStatus.FAILED
+                        || status == SessionStatus.CANCELLED
+                        || status == SessionStatus.SUBMITTED) {
+                    // getOrCreate may have cached an actor for a terminal session: never keep
+                    // it in the live registry after this connection.
+                    runtimeRegistry.remove(sessionId);
+                    connection.close(
+                            status == SessionStatus.FAILED ? CLOSE_FAILED : CLOSE_STATE,
+                            status == SessionStatus.FAILED ? "会话已失败" : "当前状态不允许连接");
                     return;
                 }
-                if (status == SessionStatus.CANCELLED
-                        || status == SessionStatus.SUBMITTED) {
-                    connection.close(CLOSE_STATE, "当前状态不允许连接");
+                if (status == SessionStatus.ENDED || status == SessionStatus.REVIEWING) {
+                    try {
+                        SessionSnapshot snapshot = actor.snapshot();
+                        connection.lastSeq.set(snapshot.lastSeq());
+                        connection.sender.send(ServerEventEnvelope.snapshot(
+                                sessionId, snapshot.lastSeq(), snapshot.elapsedMs(),
+                                snapshotPayload(snapshot)));
+                    } finally {
+                        runtimeRegistry.remove(sessionId);
+                    }
+                    connection.close(CloseStatus.NORMAL.getCode(), "会话已结束");
                     return;
                 }
                 Consumer<SessionEvent> previous = connectionRegistry.register(
@@ -143,8 +166,6 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
                 if (previous != null) {
                     closeReplaced(previous);
                 }
-                terminal = status == SessionStatus.ENDED
-                        || status == SessionStatus.REVIEWING;
             }
         } catch (IOException | RuntimeException exception) {
             LOG.warn("Failed to establish control WebSocket for session {}",
@@ -153,11 +174,15 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        if (terminal) {
-            connection.close(CloseStatus.NORMAL.getCode(), "会话已结束");
-            return;
-        }
         connection.scheduleHeartbeat();
+    }
+
+    private static int closeCodeForAuthError(String authError) {
+        return switch (authError) {
+            case WsHandshakeInterceptor.AUTH_FAILED -> CLOSE_FAILED;
+            case WsHandshakeInterceptor.AUTH_STATE -> CLOSE_STATE;
+            default -> CLOSE_AUTH;
+        };
     }
 
     @Override
@@ -185,7 +210,11 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
             CommandResult result = actor.handle(command);
             if (result.ok()) {
                 persistIfNeeded(actor, command);
-                connection.sendAck(envelope.commandId());
+                if (command instanceof SessionCommand.TimeSync) {
+                    connection.sendTimeSyncAck(envelope.commandId());
+                } else {
+                    connection.sendAck(envelope.commandId());
+                }
             } else {
                 connection.sendError(
                         result.errorCode(), result.message(), envelope.commandId());
@@ -303,18 +332,31 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
         }
 
         private void sendAck(String commandId) {
+            Instant now = clock.now();
             try {
                 sender.send(ServerEventEnvelope.ack(
-                        sessionId, lastSeq.get(), sessionAtMs(actor), commandId, true));
+                        sessionId, lastSeq.get(), sessionAtMs(actor, now), commandId, true));
             } catch (IOException | RuntimeException exception) {
                 close(CLOSE_TOO_LARGE, "确认发送失败");
             }
         }
 
+        private void sendTimeSyncAck(String commandId) {
+            Instant now = clock.now();
+            try {
+                sender.send(ServerEventEnvelope.timeSyncAck(
+                        sessionId, lastSeq.get(), sessionAtMs(actor, now),
+                        commandId, now.toEpochMilli()));
+            } catch (IOException | RuntimeException exception) {
+                close(CLOSE_TOO_LARGE, "时间同步发送失败");
+            }
+        }
+
         private void sendError(ErrorCode code, String message, String commandId) {
+            Instant now = clock.now();
             try {
                 sender.send(ServerEventEnvelope.error(
-                        sessionId, lastSeq.get(), sessionAtMs(actor),
+                        sessionId, lastSeq.get(), sessionAtMs(actor, now),
                         commandId, code, message));
             } catch (IOException | RuntimeException exception) {
                 close(CLOSE_TOO_LARGE, "错误发送失败");
@@ -330,14 +372,15 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
                     || sessionId == null || actor == null) {
                 return;
             }
-            long nowMs = clock.now().toEpochMilli();
+            Instant now = clock.now();
+            long nowMs = now.toEpochMilli();
             if (nowMs - lastPongAt.get() >= PONG_TIMEOUT.toMillis()) {
                 close(CLOSE_HEARTBEAT, "心跳超时");
                 return;
             }
             try {
                 sender.send(ServerEventEnvelope.ping(
-                        sessionId, lastSeq.get(), sessionAtMs(actor), nowMs));
+                        sessionId, lastSeq.get(), sessionAtMs(actor, now), nowMs));
             } catch (IOException | RuntimeException exception) {
                 close(CLOSE_TOO_LARGE, "心跳发送失败");
                 return;
@@ -368,7 +411,7 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private long sessionAtMs(SessionActor actor) {
+    private long sessionAtMs(SessionActor actor, Instant now) {
         if (actor == null) {
             return 0L;
         }
@@ -376,7 +419,7 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
             Instant startedAt = actor.session().startedAt();
             return startedAt == null
                     ? 0L
-                    : Math.max(0L, Duration.between(startedAt, clock.now()).toMillis());
+                    : Math.max(0L, Duration.between(startedAt, now).toMillis());
         }
     }
 }

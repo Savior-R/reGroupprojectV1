@@ -1,7 +1,6 @@
 package com.shijiangtai.m3classroom.ws;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.shijiangtai.m3classroom.TestFixtures;
 import com.shijiangtai.m3classroom.application.SessionApplicationService;
@@ -252,6 +251,7 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
         assertThat(closeStatus.getCode()).isEqualTo(CLOSE_FAILED);
         assertThat(sessionApplicationService.get(TestFixtures.student(), id).status())
                 .isEqualTo("failed");
+        assertThat(runtimeRegistry.find(id)).isEmpty();
     }
 
     @Test
@@ -275,17 +275,75 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void invalidTicketIsRejectedAtHandshake() {
+    void invalidTicketCloses4001() throws Exception {
         SessionId id = createSession();
-        TestHandler handler = new TestHandler();
+        Connection connection = connectWithTicket(id, "not-a-ticket");
 
-        assertThatThrownBy(() -> new StandardWebSocketClient()
-                .execute(handler, wsUri(id, "not-a-ticket"))
-                .get(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS))
-                .isInstanceOf(java.util.concurrent.ExecutionException.class)
-                .hasRootCauseInstanceOf(jakarta.websocket.DeploymentException.class)
-                .satisfies(thrown ->
-                        assertThat(thrown.getCause().getMessage()).contains("401"));
+        CloseStatus closeStatus = connection.handler.closed.get(
+                TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+
+        assertThat(closeStatus.getCode()).isEqualTo(4001);
+    }
+
+    @Test
+    void timeSyncAckCarriesServerTime() throws Exception {
+        SessionId id = createSession();
+        Connection connection = connect(id);
+        connection.nextOfType("session.snapshot");
+        startSession(connection, "sync");
+
+        long before = System.currentTimeMillis();
+        send(connection, "time.sync", "time-sync-1", Map.of("client_time_ms", 123L));
+        JsonNode ack = connection.nextOfType("server.ack");
+        long after = System.currentTimeMillis();
+
+        assertAck(ack, "time-sync-1", true);
+        JsonNode payload = ack.get("payload");
+        assertThat(payload.has("at_ms")).isTrue();
+        assertThat(payload.get("at_ms").asLong()).isGreaterThanOrEqualTo(0L);
+        assertThat(payload.get("server_time_ms").asLong())
+                .isBetween(before - 1_000L, after + 1_000L);
+    }
+
+    @Test
+    void oversizedFrameCloses4005() throws Exception {
+        SessionId id = createSession();
+        Connection connection = connect(id);
+        connection.nextOfType("session.snapshot");
+
+        String oversized = "{\"v\":1,\"type\":\"time.sync\",\"command_id\":\"big-1\","
+                + "\"payload\":{\"client_time_ms\":0,\"padding\":\""
+                + "a".repeat(70_000) + "\"}}";
+        connection.socket.sendMessage(new TextMessage(oversized));
+
+        CloseStatus closeStatus = connection.handler.closed.get(
+                TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+
+        assertThat(closeStatus.getCode()).isEqualTo(4005);
+    }
+
+    @Test
+    void terminalSessionConnectClosesNormallyAndEvictsActor() throws Exception {
+        SessionId id = createSession();
+        Connection first = connect(id);
+        first.nextOfType("session.snapshot");
+        startSession(first, "terminal");
+
+        send(first, "teacher.end_session", "terminal-end", Map.of());
+        first.nextOfType("session.ended");
+        first.nextOfType("server.ack");
+        first.close();
+        assertThat(runtimeRegistry.find(id)).isEmpty();
+
+        String ticket = issueTicket(id);
+        Connection terminal = connectWithTicket(id, ticket);
+        JsonNode snapshot = terminal.nextOfType("session.snapshot");
+        assertThat(snapshot.get("payload").get("state").asString()).isEqualTo("ended");
+
+        CloseStatus closeStatus = terminal.handler.closed.get(
+                TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        assertThat(closeStatus.getCode()).isEqualTo(CloseStatus.NORMAL.getCode());
+        assertThat(runtimeRegistry.find(id)).isEmpty();
     }
 
     // ------------------------------------------------------------------

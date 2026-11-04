@@ -70,6 +70,20 @@ public record ServerEventEnvelope(
         return transport(SERVER_ACK, sessionId, seq, atMs, payload);
     }
 
+    /**
+     * {@code time.sync} confirmation (02 §6.5): a normal ack extended with the session-relative
+     * {@code at_ms} and the server epoch clock so the client can estimate its offset.
+     */
+    public static ServerEventEnvelope timeSyncAck(
+            SessionId sessionId, long seq, long atMs, String commandId, long serverTimeMs) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("command_id", commandId);
+        payload.put("ok", true);
+        payload.put("at_ms", atMs);
+        payload.put("server_time_ms", serverTimeMs);
+        return transport(SERVER_ACK, sessionId, seq, atMs, payload);
+    }
+
     public static ServerEventEnvelope error(
             SessionId sessionId, long seq, long atMs, String commandId,
             ErrorCode errorCode, String message) {

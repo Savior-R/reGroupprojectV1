@@ -148,6 +148,30 @@ class SessionReconnectTest {
     }
 
     @Test
+    void preparingDisconnectFailsAfterGraceWithoutStart() {
+        ReconnectFixture fixture = fixture();
+
+        fixture.actor().onWsDisconnected(NOW);
+        fixture.scheduler().advance(Duration.ofSeconds(29));
+
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.PREPARING);
+        assertThat(eventsOfType(fixture, "session.failed")).isEmpty();
+        assertThat(fixture.registry().find(fixture.session().id())).isPresent();
+
+        fixture.scheduler().advance(Duration.ofSeconds(1));
+
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.FAILED);
+        List<SessionEvent> failed = eventsOfType(fixture, "session.failed");
+        assertThat(failed).hasSize(1);
+        assertThat(failed.get(0).payload().get("reason")).isEqualTo("grace_timeout");
+        assertThat(fixture.eventStore().all()).contains(failed.get(0));
+        assertThat(fixture.registry().find(fixture.session().id())).isEmpty();
+        assertThat(fixture.sessions().findById(fixture.session().id()).orElseThrow().status())
+                .isEqualTo(SessionStatus.FAILED);
+        assertThat(fixture.scheduler().pendingTasks()).isZero();
+    }
+
+    @Test
     void graceTimeoutFailsSessionAndRemovesActor() {
         ReconnectFixture fixture = fixture();
         start(fixture);

@@ -646,9 +646,16 @@ public final class SessionActor {
         }
     }
 
+    /**
+     * Starts the 30 s reconnect grace after a control-WebSocket disconnect. Both
+     * {@code preparing} and {@code in_progress} sessions are recoverable; a preparing session
+     * that is not resumed is failed with {@code grace_timeout} just like a live classroom
+     * (02 §6.5). Terminal states are ignored.
+     */
     public synchronized void onWsDisconnected(Instant now) {
         Objects.requireNonNull(now, "now");
-        if (session.status() != SessionStatus.IN_PROGRESS) {
+        SessionStatus status = session.status();
+        if (status != SessionStatus.PREPARING && status != SessionStatus.IN_PROGRESS) {
             return;
         }
         cancel(graceTask);
