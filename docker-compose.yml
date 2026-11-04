@@ -29,6 +29,7 @@ services:
       - "-user=shijiangtai"
       - "-password=${POSTGRES_PASSWORD:-shijiangtai_dev}"
       - "-locations=filesystem:/flyway/sql"
+      - "-placeholderReplacement=false"
       - "migrate"
 
   flyway-demo:
@@ -44,6 +45,7 @@ services:
       - "-user=shijiangtai"
       - "-password=${POSTGRES_PASSWORD:-shijiangtai_dev}"
       - "-locations=filesystem:/flyway/sql,filesystem:/flyway/demo"
+      - "-placeholderReplacement=false"
       - "migrate"
 
 volumes:
