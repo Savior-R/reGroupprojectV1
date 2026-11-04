@@ -6,11 +6,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class ClassroomStateMachineTest {
 
@@ -58,6 +63,39 @@ class ClassroomStateMachineTest {
                 .containsEntry("to", "qa")
                 .containsEntry("qa_phase", "waiting_hands")
                 .containsEntry("trigger", "manual");
+    }
+
+    @ParameterizedTest(name = "askClass from {0}")
+    @MethodSource("qaPhases")
+    void manualAskClassIsAllowedFromEveryQaPhase(
+            QaPhase phase, ClassroomStateMachine machine) {
+        assertThat(machine.qaPhase()).isEqualTo(phase);
+        Instant reAskAt = NOW.plusSeconds(60);
+
+        List<ClassroomEvent> events = machine.askClass(reAskAt);
+
+        assertManualReAsk(machine, events, "answer", reAskAt);
+    }
+
+    @ParameterizedTest(name = "askStudentQuestion from {0}")
+    @MethodSource("qaPhases")
+    void manualAskStudentQuestionIsAllowedFromEveryQaPhase(
+            QaPhase phase, ClassroomStateMachine machine) {
+        assertThat(machine.qaPhase()).isEqualTo(phase);
+        Instant reAskAt = NOW.plusSeconds(60);
+
+        List<ClassroomEvent> events = machine.askStudentQuestion(reAskAt);
+
+        assertManualReAsk(machine, events, "student_question", reAskAt);
+    }
+
+    static Stream<Arguments> qaPhases() {
+        return Stream.of(
+                Arguments.of(QaPhase.WAITING_HANDS, machineIn(QaPhase.WAITING_HANDS)),
+                Arguments.of(QaPhase.STUDENT_ANSWERING, machineIn(QaPhase.STUDENT_ANSWERING)),
+                Arguments.of(QaPhase.DIALOGUE, machineIn(QaPhase.DIALOGUE)),
+                Arguments.of(QaPhase.TEACHER_ANSWERING,
+                        machineIn(QaPhase.TEACHER_ANSWERING)));
     }
 
     @Test
@@ -187,8 +225,10 @@ class ClassroomStateMachineTest {
     void handWindowTimeoutReturnsToLecturing() {
         ClassroomStateMachine machine = started();
         machine.askClass(NOW);
+        UUID secondHandRaiseId = UUID.fromString("66666666-6666-6666-6666-666666666666");
+        List<UUID> handRaiseIds = new ArrayList<>(List.of(STUDENT_ID, secondHandRaiseId));
 
-        List<ClassroomEvent> events = machine.handWindowTimeout(NOW.plusSeconds(30));
+        List<ClassroomEvent> events = machine.handWindowTimeout(NOW.plusSeconds(30), handRaiseIds);
 
         assertThat(machine.macroState()).isEqualTo(ClassroomMacroState.LECTURING);
         assertThat(machine.qaPhase()).isNull();
@@ -198,13 +238,21 @@ class ClassroomStateMachineTest {
         assertThat(types(events))
                 .containsExactly("classroom.hand_window_timeout", "classroom.state_changed");
         assertThat(event(events, "classroom.hand_window_timeout").payload())
-                .containsEntry("hand_raise_ids", List.of())
+                .containsEntry("hand_raise_ids", List.of(STUDENT_ID, secondHandRaiseId))
                 .hasSize(1);
         assertThat(event(events, "classroom.state_changed").payload())
                 .containsEntry("from", "qa")
                 .containsEntry("to", "lecturing")
                 .containsEntry("qa_phase", null)
                 .containsEntry("trigger", "hand_window_timeout");
+
+        @SuppressWarnings("unchecked")
+        List<UUID> payloadIds = (List<UUID>) event(events, "classroom.hand_window_timeout")
+                .payload().get("hand_raise_ids");
+        handRaiseIds.clear();
+        assertThat(payloadIds).containsExactly(STUDENT_ID, secondHandRaiseId);
+        assertThatThrownBy(() -> payloadIds.add(STUDENT_ID))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
@@ -296,7 +344,9 @@ class ClassroomStateMachineTest {
                 .containsEntry("trigger", "end_session");
 
         assertStateInvalid(() -> machine.askClass(NOW.plusSeconds(4)));
+        assertStateInvalid(() -> machine.askStudentQuestion(NOW.plusSeconds(4)));
         assertThat(machine.macroState()).isEqualTo(ClassroomMacroState.ENDED);
+        assertThat(machine.qaPhase()).isNull();
     }
 
     @Test
@@ -306,7 +356,7 @@ class ClassroomStateMachineTest {
         assertStateInvalid(() -> lecturing.answerFinished(STUDENT_ID, true, NOW));
         assertStateInvalid(() -> lecturing.endDialogue(NOW));
         assertStateInvalid(() -> lecturing.endQa("manual", NOW));
-        assertStateInvalid(() -> lecturing.handWindowTimeout(NOW));
+        assertStateInvalid(() -> lecturing.handWindowTimeout(NOW, List.of()));
         assertThat(lecturing.macroState()).isEqualTo(ClassroomMacroState.LECTURING);
         assertThat(lecturing.qaPhase()).isNull();
 
@@ -314,7 +364,6 @@ class ClassroomStateMachineTest {
         waitingHands.askClass(NOW);
         assertStateInvalid(() -> waitingHands.answerFinished(STUDENT_ID, true, NOW));
         assertStateInvalid(() -> waitingHands.endDialogue(NOW));
-        assertStateInvalid(() -> waitingHands.askClass(NOW));
         assertThat(waitingHands.macroState()).isEqualTo(ClassroomMacroState.QA);
         assertThat(waitingHands.qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
 
@@ -322,7 +371,7 @@ class ClassroomStateMachineTest {
         dialogue.askClass(NOW);
         dialogue.callOn(STUDENT_ID, NOW.plusSeconds(1));
         dialogue.answerFinished(STUDENT_ID, true, NOW.plusSeconds(10));
-        assertStateInvalid(() -> dialogue.handWindowTimeout(NOW));
+        assertStateInvalid(() -> dialogue.handWindowTimeout(NOW, List.of()));
         assertThat(dialogue.qaPhase()).isEqualTo(QaPhase.DIALOGUE);
 
         ClassroomStateMachine ended = started();
@@ -369,6 +418,51 @@ class ClassroomStateMachineTest {
         assertThat(event.payload()).containsEntry("reason", "manual");
         assertThatThrownBy(() -> event.payload().put("reason", "mutated"))
                 .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    private static void assertManualReAsk(
+            ClassroomStateMachine machine,
+            List<ClassroomEvent> events,
+            String expectedIntent,
+            Instant reAskAt) {
+        assertThat(machine.macroState()).isEqualTo(ClassroomMacroState.QA);
+        assertThat(machine.qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+        assertThat(machine.intent()).isEqualTo(expectedIntent);
+        assertThat(machine.handWindowStartedAtMs()).isEqualTo(reAskAt.toEpochMilli());
+
+        assertThat(types(events))
+                .containsExactly("classroom.question_asked", "classroom.state_changed");
+        assertThat(event(events, "classroom.question_asked").payload())
+                .containsEntry("intent", expectedIntent)
+                .containsEntry("source", "manual")
+                .hasSize(2);
+        assertThat(event(events, "classroom.state_changed").payload())
+                .containsEntry("from", "qa")
+                .containsEntry("to", "qa")
+                .containsEntry("qa_phase", "waiting_hands")
+                .containsEntry("trigger", "manual")
+                .hasSize(4);
+    }
+
+    private static ClassroomStateMachine machineIn(QaPhase phase) {
+        ClassroomStateMachine machine = started();
+        switch (phase) {
+            case WAITING_HANDS -> machine.askClass(NOW);
+            case STUDENT_ANSWERING -> {
+                machine.askClass(NOW);
+                machine.callOn(STUDENT_ID, NOW.plusSeconds(1));
+            }
+            case DIALOGUE -> {
+                machine.askClass(NOW);
+                machine.callOn(STUDENT_ID, NOW.plusSeconds(1));
+                machine.answerFinished(STUDENT_ID, true, NOW.plusSeconds(2));
+            }
+            case TEACHER_ANSWERING -> {
+                machine.askStudentQuestion(NOW);
+                machine.callOn(STUDENT_ID, NOW.plusSeconds(1));
+            }
+        }
+        return machine;
     }
 
     private static ClassroomStateMachine started() {

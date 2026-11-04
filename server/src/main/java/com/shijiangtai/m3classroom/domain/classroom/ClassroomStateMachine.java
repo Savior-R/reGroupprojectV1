@@ -14,6 +14,9 @@ import java.util.UUID;
  * Classroom macro-state machine: {@code LECTURING -> QA -> LECTURING}, with
  * {@code ENDED} reachable from both non-terminal states.
  *
+ * <p>A manual ask is allowed from {@code lecturing} and from every {@code qa} phase (05A
+ * "手动按钮始终可用"): it restarts the machine at {@code qa.waiting_hands} with the new intent.
+ *
  * <p>Inside {@link ClassroomMacroState#QA} the phase is tracked with {@link QaPhase}:
  * <ul>
  *   <li>manual/voice question or "let students ask" enters {@code waiting_hands};</li>
@@ -28,7 +31,8 @@ import java.util.UUID;
  *
  * <p>Every illegal transition throws {@link DomainException} with
  * {@link ErrorCode#SESSION_STATE_INVALID} and leaves the machine unchanged. There is no
- * automatic QA/dialogue timeout; only {@link #handWindowTimeout(Instant)} closes a hand window.
+ * automatic QA/dialogue timeout; only {@link #handWindowTimeout(Instant, List)} closes a hand
+ * window.
  *
  * <p>Event order mirrors 05A: a domain fact (for example {@code classroom.question_asked} or
  * {@code classroom.hand_window_timeout}) precedes the corresponding
@@ -74,13 +78,21 @@ public final class ClassroomStateMachine {
         this.handWindowStartedAtMs = 0L;
     }
 
-    /** Teacher asks the whole class; intent {@code answer}, source {@code manual}. */
+    /**
+     * Teacher asks the whole class; intent {@code answer}, source {@code manual}. Manual asks
+     * are always allowed while the classroom has not ended and restart a fresh hand window from
+     * any current QA phase.
+     */
     public List<ClassroomEvent> askClass(Instant now) {
         Objects.requireNonNull(now, "now");
         return enterWaitingHands(INTENT_ANSWER, SOURCE_MANUAL, "manual", now);
     }
 
-    /** Teacher asks students to pose questions; intent {@code student_question}. */
+    /**
+     * Teacher asks students to pose questions; intent {@code student_question}. Manual asks are
+     * always allowed while the classroom has not ended and restart a fresh hand window from any
+     * current QA phase.
+     */
     public List<ClassroomEvent> askStudentQuestion(Instant now) {
         Objects.requireNonNull(now, "now");
         return enterWaitingHands(INTENT_STUDENT_QUESTION, SOURCE_MANUAL, "manual", now);
@@ -182,14 +194,9 @@ public final class ClassroomStateMachine {
     }
 
     /**
-     * Closes the hand window without a called-on student and returns to lecturing. The
-     * caller may supply the open hand-raise ids via the overload; the base signature emits
-     * an empty {@code hand_raise_ids} list.
+     * Closes the hand window without a called-on student and returns to lecturing. The payload
+     * carries the open hand-raise ids; the list is copied defensively.
      */
-    public List<ClassroomEvent> handWindowTimeout(Instant now) {
-        return handWindowTimeout(now, List.of());
-    }
-
     public List<ClassroomEvent> handWindowTimeout(Instant now, List<UUID> handRaiseIds) {
         Objects.requireNonNull(now, "now");
         Objects.requireNonNull(handRaiseIds, "handRaiseIds");
@@ -240,8 +247,8 @@ public final class ClassroomStateMachine {
 
     private List<ClassroomEvent> enterWaitingHands(
             String questionIntent, String source, String trigger, Instant now) {
-        if (macroState != ClassroomMacroState.LECTURING) {
-            throw stateInvalid("ask", "当前状态不允许该操作");
+        if (macroState == ClassroomMacroState.ENDED) {
+            throw stateInvalid("ask", "课堂已结束");
         }
         ClassroomMacroState from = macroState;
         this.macroState = ClassroomMacroState.QA;
