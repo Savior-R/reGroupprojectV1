@@ -28,9 +28,11 @@ import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.QuestionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -131,17 +133,26 @@ class TaskPublishServiceTest {
                 start.await();
                 return publishService.publish(teacher(), taskId);
             });
-            Future<?> second = executor.submit(() -> {
+            Future<PublishResult> second = executor.submit(() -> {
                 start.await();
                 return publishService.publish(teacher(), taskId);
             });
             start.countDown();
 
-            PublishResult winner = first.get(10, TimeUnit.SECONDS);
-            assertThat(winner.status()).isEqualTo("published");
-            assertThatThrownBy(() -> second.get(10, TimeUnit.SECONDS))
-                    .hasCauseInstanceOf(DomainException.class)
-                    .satisfies(ex -> assertThat(((DomainException) ex.getCause()).code())
+            List<PublishResult> successes = new ArrayList<>();
+            List<Throwable> failures = new ArrayList<>();
+            for (Future<PublishResult> future : List.of(first, second)) {
+                try {
+                    successes.add(future.get(10, TimeUnit.SECONDS));
+                } catch (ExecutionException exception) {
+                    failures.add(exception.getCause());
+                }
+            }
+            assertThat(successes).hasSize(1);
+            assertThat(successes.get(0).status()).isEqualTo("published");
+            assertThat(failures).hasSize(1);
+            assertThat(failures.get(0)).isInstanceOfSatisfying(DomainException.class,
+                    exception -> assertThat(exception.code())
                             .isEqualTo(ErrorCode.TASK_ALREADY_PUBLISHED));
             assertThat(assignments.findByTask(taskId)).hasSize(2);
             assertThat(events.events()).hasSize(1);

@@ -34,6 +34,7 @@ import com.shijiangtai.shared.domain.TaskId;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -110,12 +111,13 @@ class TaskPublishPersistenceIT extends PostgresIntegrationTest {
     @Test
     void zeroStudentsRollsBackTaskAndAssignments() {
         UUID emptyCourseId = UUID.randomUUID();
+        String emptyCourseName = "空课程-" + emptyCourseId;
         jdbc.update("""
                 insert into m2_course.courses (id, school_id, name, created_by)
                 values (?, ?, ?, ?) on conflict do nothing
-                """, emptyCourseId, SCHOOL_ID, "空课程", TEACHER_ID);
+                """, emptyCourseId, SCHOOL_ID, emptyCourseName, TEACHER_ID);
         courseQueryPort.addCourse(new CourseInfo(
-                emptyCourseId, SCHOOL_ID, "空课程", true,
+                emptyCourseId, SCHOOL_ID, emptyCourseName, true,
                 Instant.parse("2027-06-30T00:00:00Z"), List.of(TEACHER_ID)));
         TaskId taskId = createFreeTask(new CourseId(emptyCourseId));
 
@@ -151,20 +153,27 @@ class TaskPublishPersistenceIT extends PostgresIntegrationTest {
                 start.await();
                 return publishService.publish(TEACHER, taskId);
             });
-            Future<?> second = executor.submit(() -> {
+            Future<PublishResult> second = executor.submit(() -> {
                 start.await();
                 return publishService.publish(TEACHER, taskId);
             });
             start.countDown();
 
-            assertThat(first.get(15, TimeUnit.SECONDS).status()).isEqualTo("published");
-            assertThatThrownBy(() -> second.get(15, TimeUnit.SECONDS))
-                    .isInstanceOf(ExecutionException.class)
-                    .satisfies(exception -> assertThat(
-                            ((ExecutionException) exception).getCause())
-                            .isInstanceOfSatisfying(DomainException.class,
-                                    domain -> assertThat(domain.code())
-                                            .isEqualTo(ErrorCode.TASK_ALREADY_PUBLISHED)));
+            List<PublishResult> successes = new ArrayList<>();
+            List<Throwable> failures = new ArrayList<>();
+            for (Future<PublishResult> future : List.of(first, second)) {
+                try {
+                    successes.add(future.get(15, TimeUnit.SECONDS));
+                } catch (ExecutionException exception) {
+                    failures.add(exception.getCause());
+                }
+            }
+            assertThat(successes).hasSize(1);
+            assertThat(successes.get(0).status()).isEqualTo("published");
+            assertThat(failures).hasSize(1);
+            assertThat(failures.get(0)).isInstanceOfSatisfying(DomainException.class,
+                    exception -> assertThat(exception.code())
+                            .isEqualTo(ErrorCode.TASK_ALREADY_PUBLISHED));
             assertThat(assignmentRepository.findByTask(taskId)).hasSize(2);
             assertThat(taskRepository.findById(taskId).orElseThrow().status())
                     .isEqualTo(TaskStatus.PUBLISHED);

@@ -1,6 +1,35 @@
 # Server / Database
 
-This directory currently contains the complete Flyway schema, system seed, and demo seed. The Spring Boot application scaffold is added by the M3A implementation plan.
+This directory contains the M3A Spring Boot application, the complete Flyway schema, system seed, and demo seed.
+
+## Application
+
+Build and start the full stack:
+
+```bash
+docker compose up -d --build
+curl -fsS http://localhost:8080/actuator/health   # {"status":"UP"}
+```
+
+The `docker` profile runs Flyway on startup with `classpath:db/migration` plus
+`classpath:db/dev` (dev-only upstream rows for the fixed `DevDataConfig` IDs),
+against the `shijiangtai` database.
+
+Run the full test suite (Compose PostgreSQL, not Testcontainers):
+
+```bash
+docker compose --profile test run --rm test
+# focused run:
+docker compose --profile test run --rm test \
+  gradle test --tests '*TaskControllerIT' --no-daemon --console=plain
+```
+
+Dev headers are `X-Account-Id`, `X-School-Id`, `X-Account-Type` (for example
+`...0010` / `...0001` / `TEACHER`); they are placeholders until M1 JWT lands.
+
+Smoke flow: create a free task, upload a `.txt` material, publish, then list
+student tasks. The full request sequence and expected responses are in
+`docs/team/evidence/2026-11-04-m3a-docker-postgres.md` §3.
 
 ## Migration commands
 
