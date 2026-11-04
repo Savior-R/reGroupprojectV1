@@ -127,6 +127,7 @@ public final class SessionActor {
     private final EnumMap<StreamType, String> streamStatuses = new EnumMap<>(StreamType.class);
 
     private Consumer<SessionEvent> eventSink;
+    private Consumer<SessionStatus> statusListener = status -> { };
     private SchedulerPort.Cancellable handRaiseTask;
     private SchedulerPort.Cancellable handWindowTask;
     private SchedulerPort.Cancellable graceTask;
@@ -179,6 +180,7 @@ public final class SessionActor {
         windowGeneration++;
         openHandRaises.clear();
         cancelAllTasks();
+        notifyStatusChanged();
     }
 
     public synchronized CommandResult handle(SessionCommand command) {
@@ -292,6 +294,7 @@ public final class SessionActor {
         } else {
             classroom.start();
         }
+        notifyStatusChanged();
         return CommandResult.ok(events);
     }
 
@@ -311,7 +314,15 @@ public final class SessionActor {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("last_seq", lastSeq);
         payload.put("server_time_ms", now.toEpochMilli());
-        return CommandResult.ok(List.of(append(SESSION_RESUMED, payload, now)));
+        SessionEvent resumed = append(SESSION_RESUMED, payload, now);
+        List<SessionEvent> events = new ArrayList<>();
+        events.add(resumed);
+        for (SessionEvent event : replayAfter(lastSeq)) {
+            if (event.seq() != resumed.seq()) {
+                events.add(event);
+            }
+        }
+        return CommandResult.ok(events);
     }
 
     // ------------------------------------------------------------------
@@ -515,6 +526,7 @@ public final class SessionActor {
         session.end(now);
         events.add(append(SESSION_ENDED, sessionEndedPayload("manual"), now));
         cancelAllTasks();
+        notifyStatusChanged();
         return CommandResult.ok(events);
     }
 
@@ -542,6 +554,7 @@ public final class SessionActor {
         session.end(now);
         events.add(append(SESSION_ENDED, sessionEndedPayload(reason), now));
         cancelAllTasks();
+        notifyStatusChanged();
         return events;
     }
 
@@ -549,6 +562,11 @@ public final class SessionActor {
     // Tick, failure, replay, snapshot
     // ------------------------------------------------------------------
 
+    /**
+     * One 1 s tick (05A §6.2): interview timeout check, virtual-student dynamics and the
+     * {@code session.time_tick} push. Outside {@code in_progress} this is a no-op, so a tick
+     * callback that races a terminal transition cannot mutate the session.
+     */
     public synchronized void onTick(Instant now) {
         Objects.requireNonNull(now, "now");
         if (session.status() != SessionStatus.IN_PROGRESS) {
@@ -558,9 +576,29 @@ public final class SessionActor {
                 && interview.state() == InterviewState.PRESENTING
                 && interview.snapshot(now).remainingMs() <= 0L) {
             endInterview(now, InterviewStateMachine.REASON_TIMEOUT);
+            return;
         }
+
+        // tick() already applied the state transitions to the runtime students; only the
+        // resulting events need to be appended, so they are not fed through the command-side
+        // dynamics again.
+        for (ClassroomEvent event : students.tick(1L, now, random)) {
+            append(event.type(), event.payload(), now);
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("elapsed_ms", atMs(now));
+        payload.put("remaining_ms", remainingMs(now));
+        payload.put("discipline_level", students.disciplineLevel());
+        payload.put("states", studentStates());
+        append(TIME_TICK, payload, now);
     }
 
+    /**
+     * Terminal failure (05A §4.1): the aggregate moves to {@code failed}, open hands are lowered,
+     * {@code session.failed} is persisted and pushed, every scheduled callback is cancelled and
+     * the registry is notified so the actor is dropped from the live map.
+     */
     public synchronized void fail(FailureReason reason) {
         Objects.requireNonNull(reason, "reason");
         if (session.status() == SessionStatus.SUBMITTED
@@ -575,7 +613,9 @@ public final class SessionActor {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("reason", reason.wireValue());
         append(SESSION_FAILED, payload, now);
+        forceFlush();
         cancelAllTasks();
+        notifyStatusChanged();
     }
 
     public synchronized void onWsDisconnected(Instant now) {
@@ -636,6 +676,20 @@ public final class SessionActor {
 
     public void attachEventSink(Consumer<SessionEvent> sink) {
         this.eventSink = Objects.requireNonNull(sink, "sink");
+    }
+
+    /**
+     * Application-layer hook used by {@link SessionRuntimeRegistry} to start the 1 s tick on
+     * {@code in_progress} and to stop it plus drop the actor on terminal states. The callback
+     * runs while this actor's monitor is held, so listeners must not call back into blocking
+     * actor commands.
+     */
+    public void attachStatusListener(Consumer<SessionStatus> listener) {
+        this.statusListener = Objects.requireNonNull(listener, "listener");
+    }
+
+    public synchronized boolean isInProgress() {
+        return session.status() == SessionStatus.IN_PROGRESS;
     }
 
     /** The live aggregate; the service layer persists it after command execution. */
@@ -838,6 +892,36 @@ public final class SessionActor {
         return view;
     }
 
+    /** {@code session.time_tick.states}: current behaviour and attention per virtual student. */
+    private List<Map<String, Object>> studentStates() {
+        List<VirtualStudentRuntime> current = students.students();
+        List<Map<String, Object>> states = new ArrayList<>(current.size());
+        for (VirtualStudentRuntime student : current) {
+            Map<String, Object> state = new LinkedHashMap<>();
+            state.put("virtual_student_id", student.id());
+            state.put("state", student.behavior().wireValue());
+            state.put("attention", student.attention());
+            state.put("hand_raise_energy", student.handRaiseEnergy());
+            states.add(state);
+        }
+        return states;
+    }
+
+    /**
+     * Remaining time for {@code session.time_tick}. Interviews count down the total duration;
+     * free/scenario sessions count down {@code duration.max_seconds} (05C §6.3).
+     */
+    private long remainingMs(Instant now) {
+        if (isInterviewMode()) {
+            return interview.snapshot(now).remainingMs();
+        }
+        if (taskSnapshot.duration() == null) {
+            return 0L;
+        }
+        long totalMs = taskSnapshot.duration().maxSeconds() * 1_000L;
+        return Math.max(0L, totalMs - atMs(now));
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
@@ -961,6 +1045,10 @@ public final class SessionActor {
         payload.put("reason", reason);
         payload.put("duration_ms", session.durationMs() == null ? 0L : session.durationMs());
         return payload;
+    }
+
+    private void notifyStatusChanged() {
+        statusListener.accept(session.status());
     }
 
     private void cancelAllTasks() {
