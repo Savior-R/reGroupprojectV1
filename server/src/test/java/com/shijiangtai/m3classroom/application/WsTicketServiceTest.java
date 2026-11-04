@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.shijiangtai.m3classroom.TestFixtures;
+import com.shijiangtai.m3classroom.application.WsTicketService.IssuedTicket;
 import com.shijiangtai.m3classroom.application.port.WsTicketClaims;
+import com.shijiangtai.m3classroom.domain.session.FailureReason;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
@@ -20,6 +22,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -36,23 +39,23 @@ class WsTicketServiceTest {
 
     @BeforeEach
     void setUp() {
-        WsTicketService ticketService = new WsTicketService(
-                new InMemoryWsTicketStore(clock), Optional.of(sessions));
-        service = ticketService;
+        service = new WsTicketService(
+                new InMemoryWsTicketStore(clock), Optional.of(sessions), clock);
     }
 
     @Test
     void issuesOneTimeTicketForOwner() {
         sessions.save(sessionOwnedBy(TestFixtures.STUDENT));
 
-        String ticket = service.issue(TestFixtures.student(), SESSION_ID);
+        IssuedTicket issued = service.issue(TestFixtures.student(), SESSION_ID);
 
-        assertThat(ticket).isNotBlank();
-        WsTicketClaims claims = service.consume(ticket);
+        assertThat(issued.ticket()).isNotBlank();
+        assertThat(issued.expiresAt()).isEqualTo(TestFixtures.NOW.plusSeconds(30));
+        WsTicketClaims claims = service.consume(issued.ticket());
         assertThat(claims.sessionId()).isEqualTo(SESSION_ID);
         assertThat(claims.accountId()).isEqualTo(TestFixtures.STUDENT);
 
-        assertThatThrownBy(() -> service.consume(ticket))
+        assertThatThrownBy(() -> service.consume(issued.ticket()))
                 .isInstanceOfSatisfying(DomainException.class,
                         exception -> assertThat(exception.code())
                                 .isEqualTo(ErrorCode.WS_TICKET_INVALID));
@@ -61,14 +64,15 @@ class WsTicketServiceTest {
     @Test
     void ticketExpiresAfterThirtySeconds() {
         sessions.save(sessionOwnedBy(TestFixtures.STUDENT));
-        String beforeBoundary = service.issue(TestFixtures.student(), SESSION_ID);
+        String beforeBoundary = service.issue(TestFixtures.student(), SESSION_ID).ticket();
         clock.advance(Duration.ofSeconds(29));
         assertThat(service.consume(beforeBoundary)).isNotNull();
 
-        String atBoundary = service.issue(TestFixtures.student(), SESSION_ID);
+        IssuedTicket atBoundary = service.issue(TestFixtures.student(), SESSION_ID);
+        assertThat(atBoundary.expiresAt()).isEqualTo(clock.now().plusSeconds(30));
         clock.advance(Duration.ofSeconds(30));
 
-        assertThatThrownBy(() -> service.consume(atBoundary))
+        assertThatThrownBy(() -> service.consume(atBoundary.ticket()))
                 .isInstanceOfSatisfying(DomainException.class,
                         exception -> assertThat(exception.code())
                                 .isEqualTo(ErrorCode.WS_TICKET_INVALID));
@@ -78,30 +82,58 @@ class WsTicketServiceTest {
     void rejectsOtherStudentsSession() {
         sessions.save(sessionOwnedBy(TestFixtures.STUDENT));
 
-        assertThatThrownBy(() -> service.issue(TestFixtures.student2(), SESSION_ID))
-                .isInstanceOfSatisfying(DomainException.class,
-                        exception -> assertThat(exception.code())
-                                .isEqualTo(ErrorCode.WS_SESSION_FORBIDDEN));
+        assertCode(() -> service.issue(TestFixtures.student2(), SESSION_ID),
+                ErrorCode.WS_SESSION_FORBIDDEN);
     }
 
     @Test
     void rejectsMissingSession() {
-        assertThatThrownBy(() -> service.issue(TestFixtures.student(), SESSION_ID))
-                .isInstanceOfSatisfying(DomainException.class,
-                        exception -> assertThat(exception.code())
-                                .isEqualTo(ErrorCode.RESOURCE_NOT_FOUND));
+        assertCode(() -> service.issue(TestFixtures.student(), SESSION_ID),
+                ErrorCode.RESOURCE_NOT_FOUND);
+    }
+
+    @Test
+    void rejectsFailedSession() {
+        Session session = sessionOwnedBy(TestFixtures.STUDENT);
+        session.fail(FailureReason.RECORDING_LOST, TestFixtures.NOW);
+        sessions.save(session);
+
+        assertCode(() -> service.issue(TestFixtures.student(), SESSION_ID),
+                ErrorCode.SESSION_FAILED);
+    }
+
+    @Test
+    void rejectsCancelledSession() {
+        Session session = sessionOwnedBy(TestFixtures.STUDENT);
+        session.cancel(TestFixtures.NOW);
+        sessions.save(session);
+
+        assertCode(() -> service.issue(TestFixtures.student(), SESSION_ID),
+                ErrorCode.SESSION_STATE_INVALID);
+    }
+
+    @Test
+    void rejectsSubmittedSession() {
+        Session session = sessionOwnedBy(TestFixtures.STUDENT);
+        session.start(TestFixtures.NOW);
+        session.end(TestFixtures.NOW.plusSeconds(1));
+        session.submit(TestFixtures.NOW.plusSeconds(2));
+        sessions.save(session);
+
+        assertCode(() -> service.issue(TestFixtures.student(), SESSION_ID),
+                ErrorCode.SESSION_STATE_INVALID);
     }
 
     @Test
     void rejectsMissingOrBlankTicket() {
-        assertThatThrownBy(() -> service.consume(null))
+        assertCode(() -> service.consume(null), ErrorCode.WS_TICKET_INVALID);
+        assertCode(() -> service.consume("  "), ErrorCode.WS_TICKET_INVALID);
+    }
+
+    private static void assertCode(ThrowingCallable callable, ErrorCode expected) {
+        assertThatThrownBy(callable)
                 .isInstanceOfSatisfying(DomainException.class,
-                        exception -> assertThat(exception.code())
-                                .isEqualTo(ErrorCode.WS_TICKET_INVALID));
-        assertThatThrownBy(() -> service.consume("  "))
-                .isInstanceOfSatisfying(DomainException.class,
-                        exception -> assertThat(exception.code())
-                                .isEqualTo(ErrorCode.WS_TICKET_INVALID));
+                        exception -> assertThat(exception.code()).isEqualTo(expected));
     }
 
     private static Session sessionOwnedBy(AccountId owner) {

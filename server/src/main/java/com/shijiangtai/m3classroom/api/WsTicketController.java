@@ -23,14 +23,10 @@ public class WsTicketController {
         this.currentUserProvider = currentUserProvider;
     }
 
+    /** Serialized as {@code {ticket, expires_at}} (ISO-8601 Instant, snake_case globally). */
     @PostMapping
-    public WsTicketView issue(@PathVariable UUID sessionId) {
-        String ticket = ticketService.issue(
+    public WsTicketService.IssuedTicket issue(@PathVariable UUID sessionId) {
+        return ticketService.issue(
                 currentUserProvider.require(), new SessionId(sessionId));
-        return new WsTicketView(ticket, WsTicketService.TICKET_TTL.toSeconds());
-    }
-
-    /** Serialized as {@code {ticket, expires_in_seconds}} by the global snake_case strategy. */
-    public record WsTicketView(String ticket, long expiresInSeconds) {
     }
 }

@@ -1,10 +1,13 @@
 package com.shijiangtai.m3classroom.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import com.shijiangtai.m3classroom.TestFixtures;
+import com.shijiangtai.m3classroom.domain.session.FailureReason;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
@@ -12,6 +15,7 @@ import com.shijiangtai.m3classroom.persistence.PostgresIntegrationTest;
 import com.shijiangtai.m3classroom.support.InMemorySessionRepository;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +28,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 @AutoConfigureMockMvc
@@ -59,17 +64,22 @@ class WsTicketControllerIT extends PostgresIntegrationTest {
                 VALUES (?, 'task', ?, ?, ?, 'free', 'preparing')
                 """, SESSION_ID.value(), TASK_ID, TestFixtures.COURSE_ID,
                 TestFixtures.STUDENT_ID);
-        sessions.save(Session.createPreparing(
-                SESSION_ID, SessionType.TASK, new TaskId(TASK_ID), TestFixtures.COURSE,
-                TestFixtures.STUDENT, TaskMode.FREE, 1, NOW));
+        sessions.save(sessionOwnedByStudent());
     }
 
     @Test
-    void issuesTicketForOwner() throws Exception {
-        mockMvc.perform(asStudent(post("/api/v1/sessions/{id}/ws-ticket", SESSION_ID.value())))
+    void issuesTicketForOwnerWithExpiresAt() throws Exception {
+        MvcResult result = mockMvc.perform(
+                        asStudent(post("/api/v1/sessions/{id}/ws-ticket", SESSION_ID.value())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ticket").isNotEmpty())
-                .andExpect(jsonPath("$.expires_in_seconds").value(30));
+                .andExpect(jsonPath("$.expires_at").isNotEmpty())
+                .andExpect(jsonPath("$.expires_in_seconds").doesNotExist())
+                .andReturn();
+
+        String expiresAt = JsonPath.read(result.getResponse().getContentAsString(), "$.expires_at");
+        assertThat(Duration.between(Instant.now(), Instant.parse(expiresAt)))
+                .isBetween(Duration.ofSeconds(25), Duration.ofSeconds(35));
     }
 
     @Test
@@ -92,6 +102,23 @@ class WsTicketControllerIT extends PostgresIntegrationTest {
         mockMvc.perform(asStudent(post("/api/v1/sessions/{id}/ws-ticket", unknown)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    void rejectsFailedSession() throws Exception {
+        Session failed = sessionOwnedByStudent();
+        failed.fail(FailureReason.RECORDING_LOST, NOW);
+        sessions.save(failed);
+
+        mockMvc.perform(asStudent(post("/api/v1/sessions/{id}/ws-ticket", SESSION_ID.value())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SESSION_FAILED"));
+    }
+
+    private static Session sessionOwnedByStudent() {
+        return Session.createPreparing(
+                SESSION_ID, SessionType.TASK, new TaskId(TASK_ID), TestFixtures.COURSE,
+                TestFixtures.STUDENT, TaskMode.FREE, 1, NOW);
     }
 
     private MockHttpServletRequestBuilder asStudent(MockHttpServletRequestBuilder builder) {
