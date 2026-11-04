@@ -64,6 +64,11 @@ import java.util.random.RandomGenerator;
  * command never waits for the simulated classroom. The timeout starts when the first
  * {@code student.hand_raised} event is emitted and carries the raised ids into
  * {@link ClassroomStateMachine#handWindowTimeout(Instant, List)}.
+ *
+ * <p>P0 simplifications: an answer finishes immediately with a single
+ * {@link ClassroomStateMachine#answerFinished(UUID, boolean, Instant)} call and returns to
+ * {@code waiting_hands}. Automatic three-round follow-up, {@code dialogue.started}/{@code
+ * dialogue.ended} and {@code student.follow_up} are deferred to a later slice.
  */
 public final class SessionActor {
 
@@ -79,6 +84,7 @@ public final class SessionActor {
     private static final String SESSION_FAILED = "session.failed";
     private static final String SESSION_RESUMED = "session.resumed";
     private static final String STUDENT_HAND_RAISED = "student.hand_raised";
+    private static final String STUDENT_HAND_LOWERED = "student.hand_lowered";
     private static final String STUDENT_QUESTION = "student.question";
     private static final String STUDENT_ANSWER = "student.answer";
     private static final String TEACHER_CALLED_ON = "teacher.called_on";
@@ -124,6 +130,8 @@ public final class SessionActor {
     private SchedulerPort.Cancellable handRaiseTask;
     private SchedulerPort.Cancellable handWindowTask;
     private SchedulerPort.Cancellable graceTask;
+    private long windowGeneration;
+    private UUID currentStudentId;
 
     public SessionActor(
             Session session,
@@ -302,16 +310,17 @@ public final class SessionActor {
         requireClassroomMode(action);
 
         Instant now = clock.now();
+        List<ClassroomEvent> classroomEvents = studentQuestion
+                ? classroom.askStudentQuestion(now)
+                : classroom.askClass(now);
+
+        long generation = ++windowGeneration;
+        List<SessionEvent> events = new ArrayList<>(emitHandLowers("qa_ended", now));
         cancel(handRaiseTask);
         handRaiseTask = null;
         cancel(handWindowTask);
         handWindowTask = null;
-        openHandRaises.clear();
-
-        List<ClassroomEvent> classroomEvents = studentQuestion
-                ? classroom.askStudentQuestion(now)
-                : classroom.askClass(now);
-        List<SessionEvent> events = appendClassroomEvents(classroomEvents, now);
+        events.addAll(appendClassroomEvents(classroomEvents, now));
 
         String expectedIntent = studentQuestion
                 ? ClassroomStateMachine.INTENT_STUDENT_QUESTION
@@ -319,13 +328,14 @@ public final class SessionActor {
         long delayMs = HAND_RAISE_MIN_DELAY_MS
                 + random.nextLong(HAND_RAISE_MAX_EXTRA_DELAY_MS + 1L);
         handRaiseTask = scheduler.schedule(
-                () -> emitHandRaises(expectedIntent), Duration.ofMillis(delayMs));
+                () -> emitHandRaises(expectedIntent, generation), Duration.ofMillis(delayMs));
         return CommandResult.ok(events);
     }
 
-    private synchronized void emitHandRaises(String expectedIntent) {
+    private synchronized void emitHandRaises(String expectedIntent, long generation) {
         handRaiseTask = null;
-        if (session.status() != SessionStatus.IN_PROGRESS
+        if (generation != windowGeneration
+                || session.status() != SessionStatus.IN_PROGRESS
                 || classroom.macroState() != ClassroomMacroState.QA
                 || classroom.qaPhase() != QaPhase.WAITING_HANDS
                 || !expectedIntent.equals(classroom.intent())) {
@@ -344,12 +354,14 @@ public final class SessionActor {
             students.applyHandRaised(handRaise.studentId(), now, random);
             openHandRaises.put(handRaise.handRaiseId(), handRaise.studentId());
         }
-        handWindowTask = scheduler.schedule(this::emitHandWindowTimeout, HAND_WINDOW_TIMEOUT);
+        handWindowTask = scheduler.schedule(
+                () -> emitHandWindowTimeout(generation), HAND_WINDOW_TIMEOUT);
     }
 
-    private synchronized void emitHandWindowTimeout() {
+    private synchronized void emitHandWindowTimeout(long generation) {
         handWindowTask = null;
-        if (session.status() != SessionStatus.IN_PROGRESS
+        if (generation != windowGeneration
+                || session.status() != SessionStatus.IN_PROGRESS
                 || classroom.macroState() != ClassroomMacroState.QA
                 || classroom.qaPhase() != QaPhase.WAITING_HANDS) {
             return;
@@ -359,8 +371,8 @@ public final class SessionActor {
             return;
         }
         Instant now = clock.now();
+        emitHandLowers("teacher_timeout", now);
         appendClassroomEvents(classroom.handWindowTimeout(now, handRaiseIds), now);
-        openHandRaises.clear();
     }
 
     private CommandResult handleCallOn(SessionCommand.CallOn command) {
@@ -376,13 +388,20 @@ public final class SessionActor {
             }
         }
 
+        Instant now = clock.now();
+        List<ClassroomEvent> callOnEvents = classroom.callOn(command.studentId(), now);
+        windowGeneration++;
         cancel(handRaiseTask);
         handRaiseTask = null;
         cancel(handWindowTask);
         handWindowTask = null;
-        Instant now = clock.now();
-        List<SessionEvent> events = new ArrayList<>(
-                appendClassroomEvents(classroom.callOn(command.studentId(), now), now));
+        currentStudentId = command.studentId();
+
+        if (command.handRaiseId() != null) {
+            openHandRaises.remove(command.handRaiseId());
+        }
+        List<SessionEvent> events = new ArrayList<>(emitHandLowers("called_on", now));
+        events.addAll(appendClassroomEvents(callOnEvents, now));
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("student_id", command.studentId());
@@ -391,9 +410,6 @@ public final class SessionActor {
         }
         events.add(append(TEACHER_CALLED_ON, payload, now));
         students.applyCalledOn(command.studentId());
-        if (command.handRaiseId() != null) {
-            openHandRaises.remove(command.handRaiseId());
-        }
 
         if (ClassroomStateMachine.INTENT_STUDENT_QUESTION.equals(classroom.intent())) {
             events.addAll(emitStudentQuestion(student, now));
@@ -437,34 +453,54 @@ public final class SessionActor {
         requireInProgress("teacher.end_dialogue");
         requireClassroomMode("teacher.end_dialogue");
         Instant now = clock.now();
+
+        List<ClassroomEvent> domainEvents;
+        if (classroom.macroState() == ClassroomMacroState.QA
+                && classroom.qaPhase() == QaPhase.STUDENT_ANSWERING) {
+            // P0: an explicit end_dialogue while the student is answering finishes the answer.
+            if (currentStudentId == null) {
+                throw stateInvalid("teacher.end_dialogue", "当前没有可结束的回答");
+            }
+            domainEvents = classroom.answerFinished(currentStudentId, false, now);
+        } else {
+            domainEvents = classroom.endDialogue(now);
+        }
+
+        windowGeneration++;
         cancel(handWindowTask);
         handWindowTask = null;
         openHandRaises.clear();
-        return CommandResult.ok(appendClassroomEvents(classroom.endDialogue(now), now));
+        return CommandResult.ok(appendClassroomEvents(domainEvents, now));
     }
 
     private CommandResult handleEndQa() {
         requireInProgress("teacher.end_qa");
         requireClassroomMode("teacher.end_qa");
         Instant now = clock.now();
+        List<ClassroomEvent> domainEvents = classroom.endQa("manual", now);
+
+        windowGeneration++;
+        List<SessionEvent> events = new ArrayList<>(emitHandLowers("qa_ended", now));
         cancel(handRaiseTask);
         handRaiseTask = null;
         cancel(handWindowTask);
         handWindowTask = null;
-        openHandRaises.clear();
-        return CommandResult.ok(appendClassroomEvents(classroom.endQa("manual", now), now));
+        events.addAll(appendClassroomEvents(domainEvents, now));
+        return CommandResult.ok(events);
     }
 
     private CommandResult handleEndSession() {
         requireInProgress("teacher.end_session");
         requireClassroomMode("teacher.end_session");
         Instant now = clock.now();
-        List<SessionEvent> events = new ArrayList<>(
-                appendClassroomEvents(classroom.endSession(now), now));
+        List<ClassroomEvent> domainEvents = classroom.endSession(now);
+
+        windowGeneration++;
+        List<SessionEvent> events = new ArrayList<>(emitHandLowers("session_ended", now));
+        events.addAll(appendClassroomEvents(domainEvents, now));
         session.end(now);
         events.add(append(SESSION_ENDED, sessionEndedPayload("manual"), now));
         cancelAllTasks();
-        openHandRaises.clear();
         return CommandResult.ok(events);
     }
 
@@ -520,11 +556,12 @@ public final class SessionActor {
         }
         Instant now = clock.now();
         session.fail(reason, now);
+        windowGeneration++;
+        emitHandLowers("session_failed", now);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("reason", reason.wireValue());
         append(SESSION_FAILED, payload, now);
         cancelAllTasks();
-        openHandRaises.clear();
     }
 
     public synchronized void onWsDisconnected(Instant now) {
@@ -638,13 +675,33 @@ public final class SessionActor {
         }
     }
 
+    /**
+     * Emits {@code student.hand_lowered} for every open hand and clears the open-hand map.
+     * Every caller must have completed its domain transition first, so an illegal command
+     * leaves both the scheduled timer and the open hands untouched.
+     */
+    private List<SessionEvent> emitHandLowers(String reason, Instant now) {
+        List<SessionEvent> events = new ArrayList<>(openHandRaises.size());
+        for (Map.Entry<UUID, UUID> entry : openHandRaises.entrySet()) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("student_id", entry.getValue());
+            payload.put("hand_raise_id", entry.getKey());
+            payload.put("reason", reason);
+            events.add(append(STUDENT_HAND_LOWERED, payload, now));
+        }
+        openHandRaises.clear();
+        return events;
+    }
+
     private void persistExaminerText(ClassroomEvent event, Instant now) {
         Object text = event.payload().get("text");
         if (!(text instanceof String value) || value.isBlank()) {
             return;
         }
+        Object questionId = event.payload().get("question_id");
+        UUID speakerRef = questionId instanceof UUID id ? id : null;
         textStore.save(new SessionText(
-                ids.nextId(), session.id(), "examiner", null, "manual", "question",
+                ids.nextId(), session.id(), "examiner", speakerRef, "manual", "question",
                 value, null, null, atMs(now), null, null, null, "final"));
     }
 
@@ -686,7 +743,13 @@ public final class SessionActor {
         SessionEvent event = append(STUDENT_ANSWER, payload, now);
         students.applyAnswer(student.id());
         answerStudents.put(answerId, student.id());
-        return List.of(event);
+
+        // P0: one answer round, then back to waiting_hands; follow-up rounds are deferred.
+        List<SessionEvent> events = new ArrayList<>();
+        events.add(event);
+        events.addAll(appendClassroomEvents(
+                classroom.answerFinished(student.id(), false, now), now));
+        return events;
     }
 
     private ContentRequest contentRequest(VirtualStudentRuntime student) {

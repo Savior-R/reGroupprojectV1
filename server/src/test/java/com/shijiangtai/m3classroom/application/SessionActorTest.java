@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.shijiangtai.m3classroom.application.port.ContentResponse;
 import com.shijiangtai.m3classroom.domain.classroom.ClassroomMacroState;
 import com.shijiangtai.m3classroom.domain.classroom.ClassroomStateMachine;
+import com.shijiangtai.m3classroom.domain.classroom.QaPhase;
 import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentBehavior;
 import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentDynamics;
 import com.shijiangtai.m3classroom.domain.interview.InterviewStateMachine;
@@ -15,6 +16,7 @@ import com.shijiangtai.m3classroom.domain.session.SessionContext;
 import com.shijiangtai.m3classroom.domain.session.SessionEvent;
 import com.shijiangtai.m3classroom.domain.session.SessionSnapshot;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
+import com.shijiangtai.m3classroom.domain.session.SessionText;
 import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.m3classroom.domain.task.TaskSnapshot;
@@ -30,6 +32,7 @@ import com.shijiangtai.shared.domain.CourseId;
 import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.lang.reflect.RecordComponent;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -164,12 +167,22 @@ class SessionActorTest {
         free.actor().handle(new SessionCommand.StartSession("start-free"));
         SessionSnapshot snapshot = free.actor().snapshot();
 
-        assertThat(collectKeys(snapshot)).doesNotContain(
-                "weights", "reference_material", "material", "answer_points",
-                "personality", "personality_text", "ability", "question_rate",
-                "activity", "attention_baseline", "discipline_probability");
-        assertThat(collectValues(snapshot)).doesNotContain(
-                SECRET_REFERENCE_TEXT, SECRET_PERSONALITY_TEXT, SECRET_ANSWER_POINTS);
+        Set<String> keys = collectKeys(snapshot);
+        Set<String> values = collectValues(snapshot);
+        // Guard: the reflective walker must actually see record components and nested maps.
+        assertThat(keys).contains("status", "publicConfig", "virtualStudents", "topic");
+        assertThat(keys.size()).isGreaterThan(5);
+        assertThat(values).isNotEmpty();
+        assertThat(values).contains("荷塘月色");
+
+        assertThat(keys).doesNotContain(
+                "weights", "rubric_weights", "reference_material", "material",
+                "parsed_text", "object_key", "answer_points", "personality",
+                "personality_text", "ability", "question_rate", "activity",
+                "attention_baseline", "discipline_probability");
+        assertThat(values).doesNotContain(
+                SECRET_REFERENCE_TEXT, SECRET_PERSONALITY_TEXT, SECRET_ANSWER_POINTS,
+                "SECRET_MATERIAL_FILENAME.pdf", "materials/secret");
         assertThat(snapshot.virtualStudents()).isNotEmpty();
         assertThat(snapshot.publicConfig()).containsKey("topic");
 
@@ -177,9 +190,14 @@ class SessionActorTest {
         interview.actor().handle(ready("ready-interview", StreamType.CAMERA, StreamType.AUDIO));
         interview.actor().handle(new SessionCommand.StartSession("start-interview"));
         SessionSnapshot interviewSnapshot = interview.actor().snapshot();
-        assertThat(collectKeys(interviewSnapshot)).doesNotContain(
-                "weights", "reference_material", "answer_points", "personality_text");
-        assertThat(collectValues(interviewSnapshot)).doesNotContain(SECRET_ANSWER_POINTS);
+        Set<String> interviewKeys = collectKeys(interviewSnapshot);
+        Set<String> interviewValues = collectValues(interviewSnapshot);
+        assertThat(interviewKeys).contains("interview", "current");
+        assertThat(interviewValues).isNotEmpty();
+        assertThat(interviewKeys).doesNotContain(
+                "weights", "rubric_weights", "reference_material", "material",
+                "parsed_text", "object_key", "answer_points", "personality_text");
+        assertThat(interviewValues).doesNotContain(SECRET_ANSWER_POINTS);
         assertThat(interviewSnapshot.interview()).containsKey("current");
     }
 
@@ -281,6 +299,129 @@ class SessionActorTest {
         assertThat(timeouts.get(0).payload().get("hand_raise_ids"))
                 .isEqualTo(raisedIds);
         assertThat(fixture.classroom().macroState()).isEqualTo(ClassroomMacroState.LECTURING);
+
+        List<SessionEvent> lowers = eventsOfType(fixture, "student.hand_lowered");
+        assertThat(lowers).hasSameSizeAs(raisedIds);
+        for (SessionEvent lower : lowers) {
+            assertThat(lower.payload().get("reason")).isEqualTo("teacher_timeout");
+            assertThat(raisedIds).contains(lower.payload().get("hand_raise_id"));
+        }
+        assertThat(indexOfType(fixture, "student.hand_lowered"))
+                .isLessThan(indexOfType(fixture, "classroom.hand_window_timeout"));
+    }
+
+    @Test
+    void callOnLowersOtherOpenHands() {
+        ActorFixture fixture = freeFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1"));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        fixture.actor().handle(new SessionCommand.AskClass("ask-1"));
+        fixture.scheduler().advance(Duration.ofSeconds(3));
+
+        List<SessionEvent> raises = eventsOfType(fixture, "student.hand_raised");
+        assertThat(raises).hasSize(2);
+        UUID calledStudent = (UUID) raises.get(0).payload().get("student_id");
+        UUID calledHand = (UUID) raises.get(0).payload().get("hand_raise_id");
+        UUID otherHand = (UUID) raises.get(1).payload().get("hand_raise_id");
+
+        var result = fixture.actor().handle(
+                new SessionCommand.CallOn("call-1", calledStudent, calledHand));
+
+        assertThat(result.ok()).isTrue();
+        List<SessionEvent> lowers = eventsOfType(fixture, "student.hand_lowered");
+        assertThat(lowers).hasSize(1);
+        assertThat(lowers.get(0).payload().get("hand_raise_id")).isEqualTo(otherHand);
+        assertThat(lowers.get(0).payload().get("reason")).isEqualTo("called_on");
+        assertThat(lowers).noneMatch(
+                event -> calledHand.equals(event.payload().get("hand_raise_id")));
+    }
+
+    @Test
+    void illegalEndDialogueKeepsHandWindowTimerAndHands() {
+        ActorFixture fixture = freeFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1"));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        fixture.actor().handle(new SessionCommand.AskClass("ask-1"));
+        fixture.scheduler().advance(Duration.ofSeconds(3));
+        int raisedCount = eventsOfType(fixture, "student.hand_raised").size();
+        assertThat(raisedCount).isPositive();
+        assertThat(fixture.scheduler().pendingTasks()).isEqualTo(1);
+
+        var result = fixture.actor().handle(
+                new SessionCommand.EndDialogue("end-1", UUID.randomUUID()));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.SESSION_STATE_INVALID);
+        assertThat(fixture.scheduler().pendingTasks()).isEqualTo(1);
+
+        fixture.scheduler().advance(Duration.ofSeconds(31));
+        assertThat(eventsOfType(fixture, "classroom.hand_window_timeout")).hasSize(1);
+        assertThat(eventsOfType(fixture, "student.hand_lowered")).hasSize(raisedCount);
+    }
+
+    @Test
+    void answerFinishesAndReturnsToWaitingHands() {
+        ActorFixture fixture = freeFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1"));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        fixture.actor().handle(new SessionCommand.AskClass("ask-1"));
+        fixture.scheduler().advance(Duration.ofSeconds(3));
+        SessionEvent raise = eventsOfType(fixture, "student.hand_raised").get(0);
+
+        var result = fixture.actor().handle(new SessionCommand.CallOn(
+                "call-1", (UUID) raise.payload().get("student_id"),
+                (UUID) raise.payload().get("hand_raise_id")));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(fixture.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+        List<SessionEvent> stateChanges = eventsOfType(fixture, "classroom.state_changed");
+        assertThat(stateChanges.get(stateChanges.size() - 1).payload().get("trigger"))
+                .isEqualTo("answer_finished");
+    }
+
+    @Test
+    void endDialogueFinishesAnswerWhileStudentAnswering() {
+        ActorFixture fixture = freeFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1"));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        fixture.actor().handle(new SessionCommand.AskClass("ask-1"));
+        fixture.scheduler().advance(Duration.ofSeconds(3));
+        SessionEvent raise = eventsOfType(fixture, "student.hand_raised").get(0);
+        UUID studentId = (UUID) raise.payload().get("student_id");
+        fixture.actor().handle(new SessionCommand.CallOn(
+                "call-1", studentId, (UUID) raise.payload().get("hand_raise_id")));
+
+        // Put the domain back into student_answering to exercise the explicit-finish branch.
+        fixture.classroom().callOn(studentId, NOW);
+        assertThat(fixture.classroom().qaPhase()).isEqualTo(QaPhase.STUDENT_ANSWERING);
+
+        var result = fixture.actor().handle(
+                new SessionCommand.EndDialogue("end-1", UUID.randomUUID()));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(fixture.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+        List<SessionEvent> stateChanges = eventsOfType(fixture, "classroom.state_changed");
+        assertThat(stateChanges.get(stateChanges.size() - 1).payload().get("trigger"))
+                .isEqualTo("answer_finished");
+    }
+
+    @Test
+    void endQaLowersOpenHands() {
+        ActorFixture fixture = freeFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1"));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        fixture.actor().handle(new SessionCommand.AskClass("ask-1"));
+        fixture.scheduler().advance(Duration.ofSeconds(3));
+        int raisedCount = eventsOfType(fixture, "student.hand_raised").size();
+
+        var result = fixture.actor().handle(new SessionCommand.EndQa("end-qa-1"));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(fixture.classroom().macroState()).isEqualTo(ClassroomMacroState.LECTURING);
+        List<SessionEvent> lowers = eventsOfType(fixture, "student.hand_lowered");
+        assertThat(lowers).hasSize(raisedCount);
+        assertThat(lowers).allMatch(
+                event -> "qa_ended".equals(event.payload().get("reason")));
     }
 
     @Test
@@ -374,6 +515,21 @@ class SessionActorTest {
                 .get("text")).isEqualTo("请谈谈荷塘月色的写作背景。");
     }
 
+    @Test
+    void interviewerTextReferencesQuestionId() {
+        ActorFixture fixture = interviewFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1", StreamType.CAMERA, StreamType.AUDIO));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+
+        List<SessionText> examinerTexts =
+                fixture.textStore().bySession(fixture.session().id(), "examiner");
+        assertThat(examinerTexts).hasSize(1);
+        assertThat(examinerTexts.get(0).speakerRef()).isEqualTo(
+                fixture.task().interview().questions().get(0).questionId());
+        assertThat(examinerTexts.get(0).text()).isEqualTo("请谈谈荷塘月色的写作背景。");
+        assertThat(examinerTexts.get(0).kind()).isEqualTo("question");
+    }
+
     // ---------------------------------------------------------------------
     // Fixture helpers
     // ---------------------------------------------------------------------
@@ -408,8 +564,8 @@ class SessionActorTest {
                 session, taskSnapshot, context, classroom, dynamics, interview,
                 new ContentGenerationService(client), eventStore, textStore, ids,
                 () -> NOW, scheduler, new java.util.Random(11));
-        return new ActorFixture(actor, session, context, scheduler, client, eventStore,
-                textStore, dynamics, classroom, interview);
+        return new ActorFixture(actor, session, taskSnapshot, context, scheduler, client,
+                eventStore, textStore, dynamics, classroom, interview);
     }
 
     private static TaskSnapshot taskSnapshot(TaskMode mode) {
@@ -475,10 +631,46 @@ class SessionActorTest {
                 .toList();
     }
 
+    private static int indexOfType(ActorFixture fixture, String type) {
+        List<SessionEvent> events = fixture.context().after(0);
+        for (int i = 0; i < events.size(); i++) {
+            if (events.get(i).type().equals(type)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private static Set<String> collectKeys(Object value) {
         Set<String> keys = new HashSet<>();
-        collect(value, keys, new ArrayList<>());
+        collectKeys(value, keys);
         return keys;
+    }
+
+    private static void collectKeys(Object value, Set<String> keys) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                keys.add(String.valueOf(entry.getKey()));
+                collectKeys(entry.getValue(), keys);
+            }
+        } else if (value instanceof Iterable<?> iterable) {
+            for (Object element : iterable) {
+                collectKeys(element, keys);
+            }
+        } else if (value.getClass().isRecord()) {
+            for (RecordComponent component : value.getClass().getRecordComponents()) {
+                keys.add(component.getName());
+                try {
+                    collectKeys(component.getAccessor().invoke(value), keys);
+                } catch (ReflectiveOperationException exception) {
+                    throw new AssertionError(
+                            "无法读取 record 组件 " + component.getName(), exception);
+                }
+            }
+        }
     }
 
     private static Set<String> collectValues(Object value) {
@@ -487,20 +679,10 @@ class SessionActorTest {
         return values;
     }
 
-    private static void collect(Object value, Set<String> keys, List<Object> values) {
-        if (value instanceof Map<?, ?> map) {
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                keys.add(String.valueOf(entry.getKey()));
-                collect(entry.getValue(), keys, values);
-            }
-        } else if (value instanceof Iterable<?> iterable) {
-            for (Object element : iterable) {
-                collect(element, keys, values);
-            }
-        }
-    }
-
     private static void collectValues(Object value, Set<String> values) {
+        if (value == null) {
+            return;
+        }
         if (value instanceof Map<?, ?> map) {
             for (Object nested : map.values()) {
                 collectValues(nested, values);
@@ -511,12 +693,22 @@ class SessionActorTest {
             }
         } else if (value instanceof String text) {
             values.add(text);
+        } else if (value.getClass().isRecord()) {
+            for (RecordComponent component : value.getClass().getRecordComponents()) {
+                try {
+                    collectValues(component.getAccessor().invoke(value), values);
+                } catch (ReflectiveOperationException exception) {
+                    throw new AssertionError(
+                            "无法读取 record 组件 " + component.getName(), exception);
+                }
+            }
         }
     }
 
     private record ActorFixture(
             SessionActor actor,
             Session session,
+            TaskSnapshot task,
             SessionContext context,
             FakeScheduler scheduler,
             FakeContentClient contentClient,
