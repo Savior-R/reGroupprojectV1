@@ -40,7 +40,7 @@ public class DevDataConfig {
             UUID.fromString("00000000-0000-0000-0000-000000000302");
 
     @Bean
-    public CourseQueryPort courseQueryPort() {
+    public InMemoryCourseQueryAdapter courseQueryPort() {
         InMemoryCourseQueryAdapter adapter = new InMemoryCourseQueryAdapter();
         CourseId courseId = new CourseId(COURSE_ID);
         adapter.addCourse(new CourseInfo(
@@ -56,7 +56,7 @@ public class DevDataConfig {
     }
 
     @Bean
-    public QuestionBankQueryPort questionBankQueryPort() {
+    public InMemoryQuestionBankQueryAdapter questionBankQueryPort() {
         InMemoryQuestionBankQueryAdapter adapter = new InMemoryQuestionBankQueryAdapter();
         adapter.addQuestion(new PublishQuestion(
                 QUESTION1_ID, "请谈谈以学生为中心的理解。", "以学生发展为本，尊重个体差异。",
