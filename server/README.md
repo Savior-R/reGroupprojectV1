@@ -31,6 +31,44 @@ Smoke flow: create a free task, upload a `.txt` material, publish, then list
 student tasks. The full request sequence and expected responses are in
 `docs/team/evidence/2026-11-04-m3a-docker-postgres.md` §3.
 
+## Control WebSocket smoke
+
+The M3B classroom control channel is a raw WebSocket (no STOMP):
+`/ws/v1/sessions/{session_id}?ticket=...`. Tickets are one-time, valid for 30 s, and are
+issued over REST with the student dev headers.
+
+```bash
+# 1) Create/publish a task and create a session (M3A flow), then export its id.
+SESSION_ID=<session_id>
+
+# 2) Request a one-time ticket.
+TICKET=$(curl -fsS -X POST \
+  "http://localhost:8080/api/v1/sessions/$SESSION_ID/ws-ticket" \
+  -H 'X-Account-Id: 00000000-0000-0000-0000-000000000020' \
+  -H 'X-School-Id: 00000000-0000-0000-0000-000000000001' \
+  -H 'X-Account-Type: STUDENT' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["ticket"])')
+
+# 3) Connect with any WebSocket client (for example Node `ws` or `wscat`).
+wscat -c "ws://localhost:8080/ws/v1/sessions/$SESSION_ID?ticket=$TICKET"
+```
+
+After the server sends `session.snapshot`, send these envelopes (one JSON object per line):
+
+```jsonc
+{"v":1,"type":"recording.ready","command_id":"ready-1","payload":{"streams":[{"stream_type":"camera","status":"ready"},{"stream_type":"screen","status":"ready"},{"stream_type":"audio","status":"ready"}]}}
+{"v":1,"type":"session.start","command_id":"start-1","payload":{}}
+```
+
+Expected order: `session.snapshot` → `recording.ready_ack` → `server.ack` →
+`session.started` → `server.ack`; after the start a `session.time_tick` arrives every second.
+Command events are pushed once by the actor sink; `server.ack` only confirms the command.
+A full transcript, close-code checks, and the DB verification SQL are in
+`docs/team/evidence/2026-11-04-m3b-classroom-ws.md` §5.
+
+> `allowedOrigins("*")` is dev-only until the M1 gateway/JWT layer lands; tighten it before
+> release.
+
 ## Migration commands
 
 ```bash

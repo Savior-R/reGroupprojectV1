@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Random;
 import java.util.UUID;
 import java.util.random.RandomGenerator;
 
@@ -73,7 +74,9 @@ public final class VirtualStudentDynamics {
     private Instant rawDisciplineLevelSince;
 
     public VirtualStudentDynamics() {
-        this(RandomGenerator.getDefault());
+        // java.util.Random lives in java.base; the Alpine JRE used by the Docker image does not
+        // ship the jdk.random module required by RandomGenerator.getDefault().
+        this(new Random());
     }
 
     public VirtualStudentDynamics(RandomGenerator eventRandom) {

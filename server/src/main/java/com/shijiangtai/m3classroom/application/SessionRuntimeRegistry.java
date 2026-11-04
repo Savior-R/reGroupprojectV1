@@ -25,9 +25,9 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.random.RandomGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -234,8 +234,7 @@ public final class SessionRuntimeRegistry {
                     Map.of("task_id", task.id().value().toString()));
         }
 
-        VirtualStudentDynamics students = new VirtualStudentDynamics(
-                RandomGenerator.getDefault());
+        VirtualStudentDynamics students = new VirtualStudentDynamics(new Random());
         if (session.mode() != TaskMode.INTERVIEW) {
             students.initialize(snapshot.virtualStudents().stream()
                     .map(SessionRuntimeRegistry::toConfig)
@@ -256,7 +255,7 @@ public final class SessionRuntimeRegistry {
                 idGenerator,
                 clockProvider,
                 scheduler,
-                RandomGenerator.getDefault());
+                new Random());
         actor.attachStatusListener(status -> onStatusChanged(id, actor, status));
         return actor;
     }
