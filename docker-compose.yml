@@ -1,0 +1,50 @@
+name: shijiangtai
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: shijiangtai
+      POSTGRES_USER: shijiangtai
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shijiangtai_dev}
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./server/docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shijiangtai -d shijiangtai"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  flyway:
+    profiles: ["migrate"]
+    image: flyway/flyway:12
+    depends_on:
+      postgres: { condition: service_healthy }
+    volumes:
+      - ./server/src/main/resources/db/migration:/flyway/sql:ro
+    command:
+      - "-url=jdbc:postgresql://postgres:5432/shijiangtai_test"
+      - "-user=shijiangtai"
+      - "-password=${POSTGRES_PASSWORD:-shijiangtai_dev}"
+      - "-locations=filesystem:/flyway/sql"
+      - "migrate"
+
+  flyway-demo:
+    profiles: ["demo"]
+    image: flyway/flyway:12
+    depends_on:
+      postgres: { condition: service_healthy }
+    volumes:
+      - ./server/src/main/resources/db/migration:/flyway/sql:ro
+      - ./server/src/main/resources/db/demo:/flyway/demo:ro
+    command:
+      - "-url=jdbc:postgresql://postgres:5432/shijiangtai_demo"
+      - "-user=shijiangtai"
+      - "-password=${POSTGRES_PASSWORD:-shijiangtai_dev}"
+      - "-locations=filesystem:/flyway/sql,filesystem:/flyway/demo"
+      - "migrate"
+
+volumes:
+  postgres-data:
