@@ -172,18 +172,49 @@ class SessionTest {
         preparing.fail(FailureReason.RECORDING_LOST, NOW.plusSeconds(5));
         assertThat(preparing.status()).isEqualTo(SessionStatus.FAILED);
         assertThat(preparing.updatedAt()).isEqualTo(NOW.plusSeconds(5));
+        assertThat(preparing.endedAt()).isEqualTo(NOW.plusSeconds(5));
+        assertThat(preparing.durationMs()).isNull();
 
         Session inProgress = inProgress();
         inProgress.fail(FailureReason.GRACE_TIMEOUT, NOW.plusSeconds(20));
         assertThat(inProgress.status()).isEqualTo(SessionStatus.FAILED);
+        assertThat(inProgress.endedAt()).isEqualTo(NOW.plusSeconds(20));
+        assertThat(inProgress.durationMs()).isEqualTo(10_000L);
 
         Session ended = ended();
         ended.fail(FailureReason.TRACK_ENDED, NOW.plusSeconds(200));
         assertThat(ended.status()).isEqualTo(SessionStatus.FAILED);
+        assertThat(ended.endedAt()).isEqualTo(NOW.plusSeconds(130));
+        assertThat(ended.durationMs()).isEqualTo(120_000L);
 
         Session reviewing = reviewing();
         reviewing.fail(FailureReason.WS_ERROR, NOW.plusSeconds(200));
         assertThat(reviewing.status()).isEqualTo(SessionStatus.FAILED);
+        assertThat(reviewing.endedAt()).isEqualTo(NOW.plusSeconds(130));
+        assertThat(reviewing.durationMs()).isEqualTo(120_000L);
+    }
+
+    @Test
+    void failFromEndedPreservesEndTimeAndDuration() {
+        Session ended = ended();
+
+        ended.fail(FailureReason.TRACK_ENDED, NOW.plusSeconds(500));
+
+        assertThat(ended.status()).isEqualTo(SessionStatus.FAILED);
+        assertThat(ended.endedAt()).isEqualTo(NOW.plusSeconds(130));
+        assertThat(ended.durationMs()).isEqualTo(120_000L);
+        assertThat(ended.updatedAt()).isEqualTo(NOW.plusSeconds(500));
+    }
+
+    @Test
+    void failBeforeStartedAtFailsLikeEnd() {
+        Session session = inProgress();
+
+        assertStateInvalid(() -> session.fail(FailureReason.INTERNAL, NOW.plusSeconds(5)));
+
+        assertThat(session.status()).isEqualTo(SessionStatus.IN_PROGRESS);
+        assertThat(session.endedAt()).isNull();
+        assertThat(session.durationMs()).isNull();
     }
 
     @Test

@@ -174,6 +174,16 @@ public final class Session {
         this.updatedAt = now;
     }
 
+    /**
+     * Marks the session as failed. When {@code endedAt} is still null, it is set to {@code now}
+     * and, if the session had started, {@code durationMs} is recomputed from {@code startedAt};
+     * a {@code now} before {@code startedAt} is rejected with {@link ErrorCode#SESSION_STATE_INVALID}.
+     * When {@code endedAt} is already set (failure from {@code ENDED}/{@code REVIEWING}), the
+     * existing {@code endedAt} and {@code durationMs} are preserved.
+     *
+     * <p>Terminal sessions ({@code SUBMITTED}, {@code CANCELLED}, {@code FAILED}) cannot fail;
+     * this throws {@link DomainException} with {@link ErrorCode#SESSION_STATE_INVALID}.
+     */
     public void fail(FailureReason reason, Instant now) {
         Objects.requireNonNull(reason, "reason");
         Objects.requireNonNull(now, "now");
@@ -181,6 +191,15 @@ public final class Session {
                 || status == SessionStatus.CANCELLED
                 || status == SessionStatus.FAILED) {
             throw stateInvalid("fail", "会话已处于终态");
+        }
+        if (endedAt == null) {
+            if (startedAt != null && now.isBefore(startedAt)) {
+                throw stateInvalid("fail", "失败时间早于开始时间");
+            }
+            this.endedAt = now;
+            if (startedAt != null) {
+                this.durationMs = Duration.between(startedAt, now).toMillis();
+            }
         }
         this.status = SessionStatus.FAILED;
         this.updatedAt = now;
