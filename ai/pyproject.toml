@@ -1,0 +1,40 @@
+[project]
+name = "shijiangtai-ai"
+version = "0.1.0"
+description = "Stateless AI capability service for the Shijiangtai platform"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.116,<1.0",
+  "uvicorn[standard]>=0.35,<1.0",
+  "pydantic>=2.11,<3.0",
+  "pydantic-settings>=2.10,<3.0",
+  "httpx>=0.28,<1.0",
+  "websockets>=15,<18",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.4,<10.0",
+  "pytest-asyncio>=1.0,<2.0",
+  "respx>=0.22,<1.0",
+]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-q"
+filterwarnings = [
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated.*",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

@@ -1,0 +1,37 @@
+{
+  "context": {
+    "session_id": "fixture-session",
+    "task_id": "fixture-task",
+    "mode": "free",
+    "topic": "光合作用",
+    "recent_texts": [
+      "同学们，今天我们来学习光合作用。"
+    ],
+    "screen_text": "光合作用：植物利用光能，把二氧化碳和水转化为有机物，并释放氧气。",
+    "scenario": "",
+    "student": {
+      "student_id": "s1",
+      "name": "小明",
+      "personality": "好奇、喜欢追问",
+      "ability": 0.6,
+      "activity": 0.7,
+      "question_rate": 0.6,
+      "attention": 0.8,
+      "discipline": 0.9
+    }
+  },
+  "question": {
+    "question_kind": "student_question",
+    "max_chars": 120
+  },
+  "answer": {
+    "question": "老师，光合作用为什么需要光？",
+    "teacher_feedback": null,
+    "max_chars": 180
+  },
+  "classify": {
+    "text": "同学们，光合作用需要哪些条件？",
+    "recent_texts": [],
+    "mode": "free"
+  }
+}

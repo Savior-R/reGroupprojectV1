@@ -1,0 +1,9 @@
+{
+  "ocr_text_contains": "Hello OCR 123",
+  "asr_final_text_contains": "阿里巴巴语音实验室",
+  "ocr_image_width": 520,
+  "ocr_image_height": 140,
+  "asr_sample_rate": 16000,
+  "asr_channels": 1,
+  "asr_sample_width": 2
+}
