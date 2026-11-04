@@ -157,3 +157,27 @@ docker compose exec -T postgres psql -U shijiangtai -d shijiangtai_demo \
 # 样例 MinIO 资产（可选；无 ffmpeg 时跳过）
 bash server/docker/seed-demo-assets.sh
 ```
+
+## 8. 整分支复审与修复
+
+独立复审结论：**无 Critical / 阻塞问题**；schema 与 `12` §3–§12 逐语句一致（41/41 表、83/83 外键、索引一致），Flyway validate 通过，测试库无 demo 行。
+
+已修复的 4 个 Important demo 契约问题：
+
+1. 评测 / 最终分时间线：eval 3/4/5 与 final 3/4/5 全部移到对应提交之后。
+2. M6 模板 / 有效配置快照：改用 `08` §3.2 / §5.4 的键，包含 3 个虚拟学生与完整参考材料。
+3. M4 输入快照：`recording_ids` 改为指向 `recording_streams`；`flags` 改用 `06` §4.4 的键。
+4. M7 分数一致性：AI 总分改为 86.60 / 90.15，教师总分 80.20，最终分 84.68。
+
+修复验证：`verify-review-fixes.sh` RED→GREEN，随后全量 `verify-task-13.sh` 通过。
+
+Deferred minors（未在本次修复，记录待后续）：
+
+- 部分任务分配学生不是任务所属课程成员（面试 / 已关闭任务）。
+- `task_grading_configs.locked_at` 在已有教师评分时仍为空。
+- demo 事件 payload 字段名与 05A/02 契约不完全一致。
+- `dimension_scores.sub_scores` 使用维度键而非子项键。
+- README / 计划中的 `flyway info` 简写缺少连接参数。
+- `seed-demo-assets.sh` 缺少 MinIO 可用性保护，且未上传材料对象。
+- demo 的 `created_at` 仍取当前时间；训练材料 `expires_at` 为 2026-11-04。
+- `12` §14/§15.2 仍写 `V901` / `migration-demo` 与另一套顺序。
