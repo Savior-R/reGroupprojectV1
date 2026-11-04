@@ -1,0 +1,238 @@
+package com.shijiangtai.m3classroom.application;
+
+import com.shijiangtai.m3classroom.application.port.CourseQueryPort;
+import com.shijiangtai.m3classroom.application.port.RecordingLifecyclePort;
+import com.shijiangtai.m3classroom.application.port.SessionEventStore;
+import com.shijiangtai.m3classroom.application.view.SessionView;
+import com.shijiangtai.m3classroom.domain.recording.StreamType;
+import com.shijiangtai.m3classroom.domain.session.CommandResult;
+import com.shijiangtai.m3classroom.domain.session.Session;
+import com.shijiangtai.m3classroom.domain.session.SessionCommand;
+import com.shijiangtai.m3classroom.domain.session.SessionRepository;
+import com.shijiangtai.m3classroom.domain.session.SessionStatus;
+import com.shijiangtai.m3classroom.domain.session.SessionType;
+import com.shijiangtai.m3classroom.domain.task.CourseInfo;
+import com.shijiangtai.m3classroom.domain.task.Task;
+import com.shijiangtai.m3classroom.domain.task.TaskAssignment;
+import com.shijiangtai.m3classroom.domain.task.TaskAssignmentRepository;
+import com.shijiangtai.m3classroom.domain.task.TaskMode;
+import com.shijiangtai.m3classroom.domain.task.TaskRepository;
+import com.shijiangtai.m3classroom.domain.task.TaskStatus;
+import com.shijiangtai.shared.application.ClockProvider;
+import com.shijiangtai.shared.application.CurrentUser;
+import com.shijiangtai.shared.application.IdGenerator;
+import com.shijiangtai.shared.domain.DomainException;
+import com.shijiangtai.shared.domain.ErrorCode;
+import com.shijiangtai.shared.domain.SessionId;
+import com.shijiangtai.shared.domain.TaskId;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Session lifecycle application service (02 §4.3).
+ *
+ * <p>Creation validates the published task, the student assignment, the course window and the
+ * single-active-session rule, then stores a {@code preparing} attempt. Start/end/rest-cancel go
+ * through the live {@link SessionActor}, so REST is only an idempotent fallback for the
+ * WebSocket control channel.
+ */
+@Service
+public class SessionApplicationServiceImpl implements SessionApplicationService {
+
+    private static final SessionType TASK_SESSION = SessionType.TASK;
+
+    private final TaskRepository taskRepository;
+    private final TaskAssignmentRepository assignmentRepository;
+    private final CourseQueryPort courseQueryPort;
+    private final TaskAccessPolicy taskAccessPolicy;
+    private final SessionAccessPolicy sessionAccessPolicy;
+    private final SessionRepository sessionRepository;
+    private final SessionEventStore eventStore;
+    private final SessionRuntimeRegistry runtimeRegistry;
+    private final RecordingLifecyclePort recordingLifecyclePort;
+    private final IdGenerator idGenerator;
+    private final ClockProvider clockProvider;
+
+    public SessionApplicationServiceImpl(
+            TaskRepository taskRepository,
+            TaskAssignmentRepository assignmentRepository,
+            CourseQueryPort courseQueryPort,
+            TaskAccessPolicy taskAccessPolicy,
+            SessionAccessPolicy sessionAccessPolicy,
+            SessionRepository sessionRepository,
+            SessionEventStore eventStore,
+            SessionRuntimeRegistry runtimeRegistry,
+            RecordingLifecyclePort recordingLifecyclePort,
+            IdGenerator idGenerator,
+            ClockProvider clockProvider) {
+        this.taskRepository = Objects.requireNonNull(taskRepository, "taskRepository");
+        this.assignmentRepository = Objects.requireNonNull(
+                assignmentRepository, "assignmentRepository");
+        this.courseQueryPort = Objects.requireNonNull(courseQueryPort, "courseQueryPort");
+        this.taskAccessPolicy = Objects.requireNonNull(taskAccessPolicy, "taskAccessPolicy");
+        this.sessionAccessPolicy = Objects.requireNonNull(
+                sessionAccessPolicy, "sessionAccessPolicy");
+        this.sessionRepository = Objects.requireNonNull(sessionRepository, "sessionRepository");
+        this.eventStore = Objects.requireNonNull(eventStore, "eventStore");
+        this.runtimeRegistry = Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
+        this.recordingLifecyclePort = Objects.requireNonNull(
+                recordingLifecyclePort, "recordingLifecyclePort");
+        this.idGenerator = Objects.requireNonNull(idGenerator, "idGenerator");
+        this.clockProvider = Objects.requireNonNull(clockProvider, "clockProvider");
+    }
+
+    @Override
+    @Transactional
+    public SessionView createSession(CurrentUser student, TaskId taskId) {
+        Objects.requireNonNull(student, "student");
+        Objects.requireNonNull(taskId, "taskId");
+
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> notFound("任务不存在", "task_id", taskId.value()));
+        if (task.status() == TaskStatus.DRAFT) {
+            // Drafts are invisible to students.
+            throw notFound("任务不存在", "task_id", taskId.value());
+        }
+        if (task.status() == TaskStatus.CLOSED) {
+            throw new DomainException(ErrorCode.TASK_CLOSED, "任务已关闭",
+                    Map.of("task_id", taskId.value().toString()));
+        }
+        if (task.snapshot() == null) {
+            throw new DomainException(ErrorCode.TASK_CONFIG_INVALID, "任务快照不存在",
+                    Map.of("task_id", taskId.value().toString()));
+        }
+
+        CourseInfo course = courseQueryPort.findCourse(task.courseId())
+                .orElseThrow(() -> notFound("课程不存在", "course_id", task.courseId().value()));
+        TaskAssignment assignment = assignmentRepository
+                .find(taskId, student.accountId()).orElse(null);
+        taskAccessPolicy.requireStudentAssigned(student, course, assignment);
+        if (!course.active()) {
+            throw new DomainException(ErrorCode.COURSE_ARCHIVED, "课程已归档",
+                    Map.of("course_id", course.id().toString()));
+        }
+        if (course.endAt() != null && !course.endAt().isAfter(clockProvider.now())) {
+            throw new DomainException(ErrorCode.COURSE_ENDED, "课程已结束",
+                    Map.of("course_id", course.id().toString()));
+        }
+        if (sessionRepository.findActiveByStudentAndTask(
+                student.accountId(), taskId).isPresent()) {
+            throw new DomainException(ErrorCode.SESSION_ACTIVE_EXISTS, "已有进行中的会话",
+                    Map.of("task_id", taskId.value().toString()));
+        }
+
+        int attemptNo = Math.toIntExact(
+                sessionRepository.countByStudentAndTask(student.accountId(), taskId) + 1);
+        Session session = Session.createPreparing(
+                new SessionId(idGenerator.nextId()),
+                TASK_SESSION,
+                taskId,
+                task.courseId(),
+                student.accountId(),
+                TaskMode.fromWire(task.snapshot().mode()),
+                attemptNo,
+                clockProvider.now());
+        sessionRepository.save(session);
+        return toView(session);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SessionView get(CurrentUser user, SessionId sessionId) {
+        Session session = findSession(sessionId);
+        sessionAccessPolicy.requireRead(user, session);
+        return toView(session);
+    }
+
+    @Override
+    @Transactional
+    public SessionView start(CurrentUser student, SessionId sessionId) {
+        Session session = findSession(sessionId);
+        sessionAccessPolicy.requireOwner(student, session);
+        if (session.status() == SessionStatus.IN_PROGRESS) {
+            return toView(session);
+        }
+        SessionActor actor = runtimeRegistry.getOrCreate(sessionId);
+        requireOk(actor.handle(new SessionCommand.StartSession(
+                idGenerator.nextId().toString())));
+        Session updated = actor.session();
+        sessionRepository.save(updated);
+        return toView(updated);
+    }
+
+    @Override
+    @Transactional
+    public SessionView end(CurrentUser student, SessionId sessionId) {
+        Session session = findSession(sessionId);
+        sessionAccessPolicy.requireOwner(student, session);
+        if (isFinished(session.status())) {
+            return toView(session);
+        }
+        SessionActor actor = runtimeRegistry.getOrCreate(sessionId);
+        requireOk(actor.handle(new SessionCommand.EndSession(
+                idGenerator.nextId().toString())));
+        Session updated = actor.session();
+        sessionRepository.save(updated);
+        runtimeRegistry.remove(sessionId);
+        return toView(updated);
+    }
+
+    @Override
+    @Transactional
+    public void cancel(CurrentUser student, SessionId sessionId) {
+        Session session = findSession(sessionId);
+        sessionAccessPolicy.requireOwner(student, session);
+        session.cancel(clockProvider.now());
+        sessionRepository.save(session);
+        runtimeRegistry.remove(sessionId);
+        recordingLifecyclePort.abortAll(sessionId);
+    }
+
+    private Session findSession(SessionId sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId");
+        return sessionRepository.findById(sessionId)
+                .orElseThrow(() -> notFound("会话不存在", "session_id",
+                        sessionId.value()));
+    }
+
+    private static boolean isFinished(SessionStatus status) {
+        return status == SessionStatus.ENDED
+                || status == SessionStatus.REVIEWING
+                || status == SessionStatus.SUBMITTED;
+    }
+
+    private static void requireOk(CommandResult result) {
+        if (!result.ok()) {
+            throw new DomainException(result.errorCode(),
+                    result.message() == null ? "命令处理失败" : result.message());
+        }
+    }
+
+    private SessionView toView(Session session) {
+        Map<String, Long> offsets = new LinkedHashMap<>();
+        for (Map.Entry<StreamType, Long> entry : session.streamOffsets().entrySet()) {
+            offsets.put(entry.getKey().wireValue(), entry.getValue());
+        }
+        return new SessionView(
+                session.id().value(),
+                session.taskId().value(),
+                session.courseId() == null ? null : session.courseId().value(),
+                session.type().wireValue(),
+                session.mode().wireValue(),
+                session.status().wireValue(),
+                session.attemptNo(),
+                session.startedAt() == null ? null : session.startedAt().toString(),
+                session.endedAt() == null ? null : session.endedAt().toString(),
+                session.durationMs(),
+                offsets,
+                eventStore.maxSeq(session.id()));
+    }
+
+    private static DomainException notFound(String message, String field, Object value) {
+        return new DomainException(ErrorCode.RESOURCE_NOT_FOUND, message,
+                Map.of(field, value.toString()));
+    }
+}
