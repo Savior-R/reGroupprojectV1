@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: shijiangtai-server
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/shijiangtai?stringtype=unspecified}
+    username: ${SPRING_DATASOURCE_USERNAME:shijiangtai}
+    password: ${SPRING_DATASOURCE_PASSWORD:shijiangtai_dev}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    serialization:
+      write-dates-as-timestamps: false
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 21MB
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+m3:
+  storage: ${M3_STORAGE:memory}

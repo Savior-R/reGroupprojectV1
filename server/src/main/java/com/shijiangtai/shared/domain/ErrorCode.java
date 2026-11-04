@@ -1,0 +1,41 @@
+package com.shijiangtai.shared.domain;
+
+public enum ErrorCode {
+    VALIDATION_ERROR(400),
+    UNAUTHORIZED(401),
+    FORBIDDEN(403),
+    CROSS_SCHOOL_ACCESS(403),
+    ROLE_NOT_ALLOWED(403),
+    RESOURCE_NOT_FOUND(404),
+    TASK_ALREADY_PUBLISHED(409),
+    COURSE_ARCHIVED(422),
+    COURSE_ENDED(422),
+    TASK_NOT_DRAFT(422),
+    TASK_CLOSED(422),
+    TASK_NO_STUDENTS(422),
+    TASK_CONFIG_INVALID(422),
+    REFERENCE_MATERIAL_MISSING(422),
+    MATERIAL_NOT_APPLICABLE(422),
+    MATERIAL_PARSE_FAILED(422),
+    MATERIAL_TOO_LARGE(422),
+    MATERIAL_TYPE_UNSUPPORTED(422),
+    WEIGHT_SUM_INVALID(422),
+    QUESTION_COUNT_INVALID(422),
+    QUESTION_DUPLICATED(422),
+    QUESTION_BANK_EMPTY(422),
+    QUESTION_DISABLED(422),
+    ANSWER_POINTS_MISSING(422),
+    TEACHER_NOT_IN_GROUP(403),
+    INTERNAL_ERROR(500),
+    SERVICE_UNAVAILABLE(503);
+
+    private final int httpStatus;
+
+    ErrorCode(int httpStatus) {
+        this.httpStatus = httpStatus;
+    }
+
+    public int httpStatus() {
+        return httpStatus;
+    }
+}

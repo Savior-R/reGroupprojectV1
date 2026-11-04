@@ -48,5 +48,68 @@ services:
       - "-placeholderReplacement=false"
       - "migrate"
 
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: ${MINIO_IMAGE:-swr.cn-north-4.myhuaweicloud.com/ddn-k8s/quay.io/minio/minio:latest}
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [minio-data:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: ./server
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/shijiangtai?stringtype=unspecified
+      SPRING_DATASOURCE_USERNAME: shijiangtai
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-shijiangtai_dev}
+      M3_MINIO_ENDPOINT: http://minio:9000
+      M3_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      M3_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      M3_MINIO_BUCKET: shijiangtai
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+
+  test:
+    profiles: ["test"]
+    image: gradle:8.14.3-jdk21
+    user: "1000:1000"
+    working_dir: /workspace
+    volumes:
+      - ./server:/workspace
+      - gradle-cache:/home/gradle/.gradle
+    environment:
+      SPRING_PROFILES_ACTIVE: test
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/shijiangtai_test?stringtype=unspecified
+      SPRING_DATASOURCE_USERNAME: shijiangtai
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-shijiangtai_dev}
+      M3_STORAGE: memory
+    depends_on:
+      postgres: { condition: service_healthy }
+    command: ["gradle", "test", "--no-daemon", "--console=plain"]
+
 volumes:
   postgres-data:
+  redis-data:
+  minio-data:
+  gradle-cache:
