@@ -28,6 +28,7 @@ import com.shijiangtai.shared.domain.TaskId;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -92,18 +93,7 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
 
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> notFound("任务不存在", "task_id", taskId.value()));
-        if (task.status() == TaskStatus.DRAFT) {
-            // Drafts are invisible to students.
-            throw notFound("任务不存在", "task_id", taskId.value());
-        }
-        if (task.status() == TaskStatus.CLOSED) {
-            throw new DomainException(ErrorCode.TASK_CLOSED, "任务已关闭",
-                    Map.of("task_id", taskId.value().toString()));
-        }
-        if (task.snapshot() == null) {
-            throw new DomainException(ErrorCode.TASK_CONFIG_INVALID, "任务快照不存在",
-                    Map.of("task_id", taskId.value().toString()));
-        }
+        requireCreatable(task, taskId);
 
         CourseInfo course = courseQueryPort.findCourse(task.courseId())
                 .orElseThrow(() -> notFound("课程不存在", "course_id", task.courseId().value()));
@@ -118,25 +108,59 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
             throw new DomainException(ErrorCode.COURSE_ENDED, "课程已结束",
                     Map.of("course_id", course.id().toString()));
         }
-        if (sessionRepository.findActiveByStudentAndTask(
-                student.accountId(), taskId).isPresent()) {
-            throw new DomainException(ErrorCode.SESSION_ACTIVE_EXISTS, "已有进行中的会话",
+
+        try {
+            // The task row lock serializes validation + insert for the same task, matching
+            // the publish flow and avoiding a race on the partial active-session index.
+            return taskRepository.withLock(taskId, lockedTask -> {
+                requireCreatable(lockedTask, taskId);
+                if (sessionRepository.findActiveByStudentAndTask(
+                        student.accountId(), taskId).isPresent()) {
+                    throw activeSessionExists(taskId);
+                }
+                int attemptNo = Math.toIntExact(
+                        sessionRepository.countByStudentAndTask(
+                                student.accountId(), taskId) + 1);
+                Session session = Session.createPreparing(
+                        new SessionId(idGenerator.nextId()),
+                        TASK_SESSION,
+                        taskId,
+                        lockedTask.courseId(),
+                        student.accountId(),
+                        TaskMode.fromWire(lockedTask.snapshot().mode()),
+                        attemptNo,
+                        clockProvider.now());
+                try {
+                    sessionRepository.save(session);
+                } catch (DataIntegrityViolationException exception) {
+                    throw activeSessionExists(taskId);
+                }
+                return toView(session);
+            });
+        } catch (DataIntegrityViolationException exception) {
+            // The unique active-session index may surface while flushing/committing.
+            throw activeSessionExists(taskId);
+        }
+    }
+
+    private static void requireCreatable(Task task, TaskId taskId) {
+        if (task.status() == TaskStatus.DRAFT) {
+            // Drafts are invisible to students.
+            throw notFound("任务不存在", "task_id", taskId.value());
+        }
+        if (task.status() == TaskStatus.CLOSED) {
+            throw new DomainException(ErrorCode.TASK_CLOSED, "任务已关闭",
                     Map.of("task_id", taskId.value().toString()));
         }
+        if (task.snapshot() == null) {
+            throw new DomainException(ErrorCode.TASK_CONFIG_INVALID, "任务快照不存在",
+                    Map.of("task_id", taskId.value().toString()));
+        }
+    }
 
-        int attemptNo = Math.toIntExact(
-                sessionRepository.countByStudentAndTask(student.accountId(), taskId) + 1);
-        Session session = Session.createPreparing(
-                new SessionId(idGenerator.nextId()),
-                TASK_SESSION,
-                taskId,
-                task.courseId(),
-                student.accountId(),
-                TaskMode.fromWire(task.snapshot().mode()),
-                attemptNo,
-                clockProvider.now());
-        sessionRepository.save(session);
-        return toView(session);
+    private static DomainException activeSessionExists(TaskId taskId) {
+        return new DomainException(ErrorCode.SESSION_ACTIVE_EXISTS, "已有进行中的会话",
+                Map.of("task_id", taskId.value().toString()));
     }
 
     @Override
@@ -172,8 +196,11 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
             return toView(session);
         }
         SessionActor actor = runtimeRegistry.getOrCreate(sessionId);
-        requireOk(actor.handle(new SessionCommand.EndSession(
-                idGenerator.nextId().toString())));
+        String commandId = idGenerator.nextId().toString();
+        SessionCommand command = session.mode() == TaskMode.INTERVIEW
+                ? new SessionCommand.EndInterview(commandId)
+                : new SessionCommand.EndSession(commandId);
+        requireOk(actor.handle(command));
         Session updated = actor.session();
         sessionRepository.save(updated);
         runtimeRegistry.remove(sessionId);
@@ -185,8 +212,18 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
     public void cancel(CurrentUser student, SessionId sessionId) {
         Session session = findSession(sessionId);
         sessionAccessPolicy.requireOwner(student, session);
-        session.cancel(clockProvider.now());
-        sessionRepository.save(session);
+        SessionActor actor = runtimeRegistry.find(sessionId).orElse(null);
+        Session live;
+        if (actor == null) {
+            session.cancel(clockProvider.now());
+            live = session;
+        } else {
+            // Cancel through the live aggregate so its timers stop and later callbacks
+            // observe a terminal status; persist that same instance.
+            actor.cancel(clockProvider.now());
+            live = actor.session();
+        }
+        sessionRepository.save(live);
         runtimeRegistry.remove(sessionId);
         recordingLifecyclePort.abortAll(sessionId);
     }

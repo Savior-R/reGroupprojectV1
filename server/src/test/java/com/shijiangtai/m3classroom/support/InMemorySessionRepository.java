@@ -11,20 +11,27 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** In-memory {@link SessionRepository} fake for unit and controller tests (Task 9 adds JPA). */
+/**
+ * In-memory {@link SessionRepository} fake for unit and controller tests (Task 9 adds JPA).
+ *
+ * <p>Like the JPA adapter, {@link #findById} and the query methods return copies and
+ * {@link #save} stores a copy. Callers must therefore save a mutated session explicitly, which
+ * lets tests detect stale live actors that were bypassed by a repository-level update.
+ */
 public final class InMemorySessionRepository implements SessionRepository {
 
     private final Map<SessionId, Session> sessions = new ConcurrentHashMap<>();
 
     @Override
     public Session save(Session session) {
-        sessions.put(session.id(), session);
-        return session;
+        Session copy = copy(session);
+        sessions.put(copy.id(), copy);
+        return copy;
     }
 
     @Override
     public Optional<Session> findById(SessionId id) {
-        return Optional.ofNullable(sessions.get(id));
+        return Optional.ofNullable(sessions.get(id)).map(InMemorySessionRepository::copy);
     }
 
     @Override
@@ -33,13 +40,15 @@ public final class InMemorySessionRepository implements SessionRepository {
                 .filter(session -> belongsTo(session, studentAccountId, taskId))
                 .filter(session -> session.status() == SessionStatus.PREPARING
                         || session.status() == SessionStatus.IN_PROGRESS)
-                .findFirst();
+                .findFirst()
+                .map(InMemorySessionRepository::copy);
     }
 
     @Override
     public List<Session> findByStudentAndTask(AccountId studentAccountId, TaskId taskId) {
         return sessions.values().stream()
                 .filter(session -> belongsTo(session, studentAccountId, taskId))
+                .map(InMemorySessionRepository::copy)
                 .toList();
     }
 
@@ -57,5 +66,23 @@ public final class InMemorySessionRepository implements SessionRepository {
     private static boolean belongsTo(Session session, AccountId studentAccountId, TaskId taskId) {
         return session.studentAccountId().equals(studentAccountId)
                 && session.taskId().equals(taskId);
+    }
+
+    private static Session copy(Session session) {
+        return Session.rehydrate(
+                session.id(),
+                session.type(),
+                session.taskId(),
+                session.courseId(),
+                session.studentAccountId(),
+                session.mode(),
+                session.status(),
+                session.attemptNo(),
+                session.startedAt(),
+                session.endedAt(),
+                session.durationMs(),
+                session.streamOffsets(),
+                session.createdAt(),
+                session.updatedAt());
     }
 }

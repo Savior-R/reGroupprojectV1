@@ -26,10 +26,16 @@ import com.shijiangtai.m3classroom.application.view.SessionView;
 import com.shijiangtai.m3classroom.domain.recording.StreamType;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionCommand;
+import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.task.AssignmentStatus;
 import com.shijiangtai.m3classroom.domain.task.CourseInfo;
+import com.shijiangtai.m3classroom.domain.task.PublishQuestion;
+import com.shijiangtai.m3classroom.domain.task.QuestionConfig;
+import com.shijiangtai.m3classroom.domain.task.RubricWeights;
 import com.shijiangtai.m3classroom.domain.task.Task;
 import com.shijiangtai.m3classroom.domain.task.TaskAssignment;
+import com.shijiangtai.m3classroom.domain.task.TaskDraft;
+import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.m3classroom.domain.task.TaskSnapshot;
 import com.shijiangtai.m3classroom.domain.task.TaskSnapshotFactory;
 import com.shijiangtai.m3classroom.support.FakeCourseQueryPort;
@@ -42,12 +48,20 @@ import com.shijiangtai.m3classroom.support.InMemoryTaskRepository;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
+import com.shijiangtai.shared.domain.QuestionId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -213,6 +227,86 @@ class SessionApplicationServiceTest {
     }
 
     @Test
+    void interviewEndTransitionsToEnded() {
+        TaskId interviewTaskId = createPublishedInterviewTask();
+        SessionView created = service.createSession(student(), interviewTaskId);
+        SessionId sessionId = new SessionId(created.sessionId());
+        SessionActor actor = registry.getOrCreate(sessionId);
+        assertThat(actor.handle(ready("ready-interview")).ok()).isTrue();
+
+        SessionView started = service.start(student(), sessionId);
+        assertThat(started.mode()).isEqualTo("interview");
+        assertThat(started.status()).isEqualTo("in_progress");
+
+        SessionView ended = service.end(student(), sessionId);
+
+        assertThat(ended.status()).isEqualTo("ended");
+        assertThat(events.maxSeq(sessionId)).isGreaterThan(0);
+    }
+
+    @Test
+    void cancelThroughLiveActorStopsTimersAndCommands() {
+        SessionView created = service.createSession(student(), taskId);
+        SessionId sessionId = new SessionId(created.sessionId());
+        SessionActor actor = registry.getOrCreate(sessionId);
+        assertThat(actor.handle(ready("ready-1")).ok()).isTrue();
+        assertThat(service.start(student(), sessionId).status()).isEqualTo("in_progress");
+        assertThat(actor.handle(new SessionCommand.AskClass("ask-1")).ok()).isTrue();
+        assertThat(scheduler.pendingTasks()).isPositive();
+        long seqBeforeCancel = events.maxSeq(sessionId);
+
+        service.cancel(student(), sessionId);
+
+        assertThat(actor.session().status()).isEqualTo(SessionStatus.CANCELLED);
+        assertThat(service.get(student(), sessionId).status()).isEqualTo("cancelled");
+        assertThat(scheduler.pendingTasks()).isZero();
+
+        scheduler.advance(Duration.ofSeconds(60));
+
+        assertThat(events.maxSeq(sessionId)).isEqualTo(seqBeforeCancel);
+        var rejected = actor.handle(new SessionCommand.AskClass("ask-after-cancel"));
+        assertThat(rejected.ok()).isFalse();
+        assertThat(rejected.errorCode()).isEqualTo(ErrorCode.SESSION_STATE_INVALID);
+    }
+
+    @Test
+    void concurrentCreateHasOneWinner() throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Callable<Object> create = () -> {
+                start.await();
+                try {
+                    return service.createSession(student(), taskId);
+                } catch (DomainException exception) {
+                    return exception;
+                }
+            };
+            Future<Object> first = executor.submit(create);
+            Future<Object> second = executor.submit(create);
+            start.countDown();
+
+            List<SessionView> successes = new ArrayList<>();
+            List<DomainException> failures = new ArrayList<>();
+            for (Future<Object> future : List.of(first, second)) {
+                Object result = future.get(15, TimeUnit.SECONDS);
+                if (result instanceof SessionView view) {
+                    successes.add(view);
+                } else {
+                    failures.add((DomainException) result);
+                }
+            }
+
+            assertThat(successes).hasSize(1);
+            assertThat(failures).hasSize(1);
+            assertThat(failures.get(0).code()).isEqualTo(ErrorCode.SESSION_ACTIVE_EXISTS);
+            assertThat(sessions.countByStudentAndTask(STUDENT, taskId)).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void startAndEndRejectOtherStudents() {
         SessionView created = service.createSession(student(), taskId);
         SessionId sessionId = new SessionId(created.sessionId());
@@ -255,6 +349,26 @@ class SessionApplicationServiceTest {
                 new TaskId(UUID.randomUUID()), COURSE, TEACHER, freeDraft(), NOW);
         TaskSnapshot snapshot = new TaskSnapshotFactory().create(
                 task, course(), List.of(), NOW);
+        task.publish(snapshot, NOW);
+        tasks.save(task);
+        assignments.saveAll(List.of(new TaskAssignment(
+                UUID.randomUUID(), task.id(), STUDENT, CLASS, NOW, AssignmentStatus.ASSIGNED)));
+        return task.id();
+    }
+
+    private TaskId createPublishedInterviewTask() {
+        UUID questionId = UUID.randomUUID();
+        QuestionConfig questionConfig =
+                new QuestionConfig(List.of(new QuestionId(questionId)), 300);
+        TaskDraft draft = new TaskDraft(
+                TaskMode.INTERVIEW, "结构化面试", null, 300, 300,
+                RubricWeights.defaults(TaskMode.INTERVIEW), null, List.of(), questionConfig);
+        Task task = Task.createDraft(
+                new TaskId(UUID.randomUUID()), COURSE, TEACHER, draft, NOW);
+        PublishQuestion question = new PublishQuestion(
+                questionId, "请做一下自我介绍。", "姓名、经历、优势", null, null, SCHOOL_ID, true);
+        TaskSnapshot snapshot = new TaskSnapshotFactory().create(
+                task, course(), List.of(question), NOW);
         task.publish(snapshot, NOW);
         tasks.save(task);
         assignments.saveAll(List.of(new TaskAssignment(

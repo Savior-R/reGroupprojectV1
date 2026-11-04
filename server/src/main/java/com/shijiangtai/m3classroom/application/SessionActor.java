@@ -167,6 +167,20 @@ public final class SessionActor {
     // Command entry point
     // ------------------------------------------------------------------
 
+    /**
+     * Cancels the live session from the REST fallback: moves the aggregate to {@code CANCELLED},
+     * invalidates in-flight timer generations, clears open hands and cancels every scheduled
+     * task. A callback already running either finished before this lock or observes the
+     * terminal status and becomes a no-op.
+     */
+    public synchronized void cancel(Instant now) {
+        Objects.requireNonNull(now, "now");
+        session.cancel(now);
+        windowGeneration++;
+        openHandRaises.clear();
+        cancelAllTasks();
+    }
+
     public synchronized CommandResult handle(SessionCommand command) {
         Objects.requireNonNull(command, "command");
         CommandResult duplicate = commandHistory.get(command.commandId());

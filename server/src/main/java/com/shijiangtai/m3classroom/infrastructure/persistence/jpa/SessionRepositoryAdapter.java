@@ -31,7 +31,9 @@ public class SessionRepositoryAdapter implements SessionRepository {
 
     @Override
     public Session save(Session session) {
-        repository.save(toEntity(session));
+        // Flush so the partial unique active-session index surfaces here and can be
+        // translated into SESSION_ACTIVE_EXISTS instead of an opaque commit-time 500.
+        repository.saveAndFlush(toEntity(session));
         return session;
     }
 

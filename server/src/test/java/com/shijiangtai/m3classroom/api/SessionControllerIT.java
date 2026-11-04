@@ -1,5 +1,6 @@
 package com.shijiangtai.m3classroom.api;
 
+import static com.shijiangtai.m3classroom.TestFixtures.COURSE;
 import static com.shijiangtai.m3classroom.TestFixtures.COURSE_ID;
 import static com.shijiangtai.m3classroom.TestFixtures.SCHOOL_ID;
 import static com.shijiangtai.m3classroom.TestFixtures.STUDENT_ID;
@@ -7,6 +8,8 @@ import static com.shijiangtai.m3classroom.TestFixtures.STUDENT2_ID;
 import static com.shijiangtai.m3classroom.TestFixtures.TEACHER_ID;
 import static com.shijiangtai.m3classroom.TestFixtures.freeCommandWithStudent;
 import static com.shijiangtai.m3classroom.TestFixtures.teacher;
+import static com.shijiangtai.m3classroom.infrastructure.config.DevDataConfig.QUESTION1_ID;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -14,13 +17,23 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.shijiangtai.m3classroom.application.SessionActor;
+import com.shijiangtai.m3classroom.application.SessionRuntimeRegistry;
 import com.shijiangtai.m3classroom.application.TaskApplicationService;
 import com.shijiangtai.m3classroom.application.TaskMaterialService;
 import com.shijiangtai.m3classroom.application.TaskPublishService;
+import com.shijiangtai.m3classroom.application.command.CreateTaskCommand;
 import com.shijiangtai.m3classroom.application.view.TaskView;
+import com.shijiangtai.m3classroom.domain.recording.StreamType;
+import com.shijiangtai.m3classroom.domain.session.SessionCommand;
+import com.shijiangtai.m3classroom.domain.task.QuestionConfig;
+import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.m3classroom.persistence.PostgresIntegrationTest;
+import com.shijiangtai.shared.domain.QuestionId;
+import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,6 +57,9 @@ class SessionControllerIT extends PostgresIntegrationTest {
 
     @Autowired
     private TaskPublishService publishService;
+
+    @Autowired
+    private SessionRuntimeRegistry runtimeRegistry;
 
     private TaskId taskId;
 
@@ -88,6 +104,28 @@ class SessionControllerIT extends PostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.session_id").value(sessionId))
                 .andExpect(jsonPath("$.status").value("preparing"));
+    }
+
+    @Test
+    void interviewRestEndTransitionsToEnded() throws Exception {
+        TaskId interviewTaskId = publishInterviewTask();
+        String sessionId = createSession(interviewTaskId);
+        SessionActor actor = runtimeRegistry.getOrCreate(
+                new SessionId(UUID.fromString(sessionId)));
+        List<SessionCommand.RecordingReady.StreamStatus> streams = List.of(
+                new SessionCommand.RecordingReady.StreamStatus(StreamType.CAMERA, "ready"),
+                new SessionCommand.RecordingReady.StreamStatus(StreamType.AUDIO, "ready"));
+        assertThat(actor.handle(
+                new SessionCommand.RecordingReady("ready-interview-it", streams)).ok()).isTrue();
+
+        mockMvc.perform(asStudent(post("/api/v1/sessions/{sessionId}/start", sessionId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("interview"))
+                .andExpect(jsonPath("$.status").value("in_progress"));
+
+        mockMvc.perform(asStudent(post("/api/v1/sessions/{sessionId}/end", sessionId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ended"));
     }
 
     @Test
@@ -158,11 +196,26 @@ class SessionControllerIT extends PostgresIntegrationTest {
     }
 
     private String createSession() throws Exception {
+        return createSession(taskId);
+    }
+
+    private String createSession(TaskId targetTaskId) throws Exception {
         MvcResult result = mockMvc.perform(
-                        asStudent(post("/api/v1/tasks/{taskId}/sessions", taskId.value())))
+                        asStudent(post("/api/v1/tasks/{taskId}/sessions", targetTaskId.value())))
                 .andExpect(status().isOk())
                 .andReturn();
         return JsonPath.read(result.getResponse().getContentAsString(), "$.session_id");
+    }
+
+    private TaskId publishInterviewTask() {
+        CreateTaskCommand command = new CreateTaskCommand(
+                COURSE, TaskMode.INTERVIEW, "结构化面试", null,
+                null, null, null, null, List.of(),
+                new QuestionConfig(List.of(new QuestionId(QUESTION1_ID)), 300));
+        TaskView view = taskApplicationService.createDraft(teacher(), command);
+        TaskId id = new TaskId(view.taskId());
+        publishService.publish(teacher(), id);
+        return id;
     }
 
     private MockHttpServletRequestBuilder asStudent(MockHttpServletRequestBuilder builder) {
