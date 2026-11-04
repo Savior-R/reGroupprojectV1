@@ -17,6 +17,7 @@ public final class Task {
     private TaskDraft draft;
     private TaskStatus status;
     private ReferenceMaterial referenceMaterial;
+    private TaskSnapshot snapshot;
     private int configVersion;
     private Instant publishedAt;
     private Instant closedAt;
@@ -29,6 +30,7 @@ public final class Task {
             TaskDraft draft,
             TaskStatus status,
             ReferenceMaterial referenceMaterial,
+            TaskSnapshot snapshot,
             int configVersion,
             Instant publishedAt,
             Instant closedAt,
@@ -40,6 +42,7 @@ public final class Task {
         this.draft = draft;
         this.status = status;
         this.referenceMaterial = referenceMaterial;
+        this.snapshot = snapshot;
         this.configVersion = configVersion;
         this.publishedAt = publishedAt;
         this.closedAt = closedAt;
@@ -55,7 +58,31 @@ public final class Task {
         Objects.requireNonNull(draft, "draft");
         Objects.requireNonNull(now, "now");
         return new Task(id, courseId, createdBy, draft, TaskStatus.DRAFT,
-                null, 0, null, null, now, now);
+                null, null, 0, null, null, now, now);
+    }
+
+    public static Task rehydrate(
+            TaskId id,
+            CourseId courseId,
+            AccountId createdBy,
+            TaskDraft draft,
+            TaskStatus status,
+            ReferenceMaterial referenceMaterial,
+            TaskSnapshot snapshot,
+            int configVersion,
+            Instant publishedAt,
+            Instant closedAt,
+            Instant createdAt,
+            Instant updatedAt) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(courseId, "courseId");
+        Objects.requireNonNull(createdBy, "createdBy");
+        Objects.requireNonNull(draft, "draft");
+        Objects.requireNonNull(status, "status");
+        Objects.requireNonNull(createdAt, "createdAt");
+        Objects.requireNonNull(updatedAt, "updatedAt");
+        return new Task(id, courseId, createdBy, draft, status, referenceMaterial, snapshot,
+                configVersion, publishedAt, closedAt, createdAt, updatedAt);
     }
 
     public boolean updateDraft(TaskDraft newDraft, Instant now) {
@@ -99,6 +126,17 @@ public final class Task {
         this.updatedAt = now;
     }
 
+    public void publish(TaskSnapshot snapshot, Instant now) {
+        assertDraft();
+        Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(now, "now");
+        this.snapshot = snapshot;
+        this.status = TaskStatus.PUBLISHED;
+        this.configVersion = 1;
+        this.publishedAt = now;
+        this.updatedAt = now;
+    }
+
     public void assertDraft() {
         if (status != TaskStatus.DRAFT) {
             throw new DomainException(ErrorCode.TASK_NOT_DRAFT,
@@ -128,6 +166,10 @@ public final class Task {
 
     public ReferenceMaterial referenceMaterial() {
         return referenceMaterial;
+    }
+
+    public TaskSnapshot snapshot() {
+        return snapshot;
     }
 
     public int configVersion() {

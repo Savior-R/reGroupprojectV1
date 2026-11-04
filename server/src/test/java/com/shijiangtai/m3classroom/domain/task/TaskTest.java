@@ -10,6 +10,7 @@ import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.TaskId;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -76,6 +77,80 @@ class TaskTest {
     @Test
     void assertDraftPassesForDraft() {
         draftTask().assertDraft();
+    }
+
+    @Test
+    void publishStoresSnapshotAndSetsVersionOne() {
+        Task task = draftTask();
+        TaskSnapshot snapshot = snapshotFor(task);
+
+        task.publish(snapshot, NOW.plusSeconds(30));
+
+        assertThat(task.status()).isEqualTo(TaskStatus.PUBLISHED);
+        assertThat(task.configVersion()).isEqualTo(1);
+        assertThat(task.publishedAt()).isEqualTo(NOW.plusSeconds(30));
+        assertThat(task.snapshot()).isSameAs(snapshot);
+    }
+
+    @Test
+    void publishedTaskCannotBeEdited() {
+        Task task = draftTask();
+        task.publish(snapshotFor(task), NOW.plusSeconds(30));
+
+        assertThatThrownBy(() -> task.updateDraft(validFreeDraft(), NOW.plusSeconds(60)))
+                .isInstanceOfSatisfying(DomainException.class,
+                        ex -> assertThat(ex.code()).isEqualTo(ErrorCode.TASK_NOT_DRAFT));
+    }
+
+    @Test
+    void closePublishedMovesToClosed() {
+        Task task = draftTask();
+        task.publish(snapshotFor(task), NOW.plusSeconds(30));
+
+        task.close(NOW.plusSeconds(60));
+
+        assertThat(task.status()).isEqualTo(TaskStatus.CLOSED);
+        assertThat(task.closedAt()).isEqualTo(NOW.plusSeconds(60));
+        assertThat(task.updatedAt()).isEqualTo(NOW.plusSeconds(60));
+    }
+
+    @Test
+    void rehydratePreservesFields() {
+        Task task = draftTask();
+        task.attachMaterial(material(), NOW.plusSeconds(10));
+        task.publish(snapshotFor(task), NOW.plusSeconds(20));
+
+        Task rehydrated = Task.rehydrate(
+                task.id(), task.courseId(), task.createdBy(), task.draft(), task.status(),
+                task.referenceMaterial(), task.snapshot(), task.configVersion(),
+                task.publishedAt(), task.closedAt(), task.createdAt(), task.updatedAt());
+
+        assertThat(rehydrated.status()).isEqualTo(TaskStatus.PUBLISHED);
+        assertThat(rehydrated.configVersion()).isEqualTo(1);
+        assertThat(rehydrated.snapshot()).isSameAs(task.snapshot());
+        assertThat(rehydrated.referenceMaterial()).isSameAs(task.referenceMaterial());
+        assertThat(rehydrated.createdAt()).isEqualTo(task.createdAt());
+    }
+
+    private TaskSnapshot snapshotFor(Task task) {
+        return new TaskSnapshot(
+                1,
+                task.id().value(),
+                task.courseId().value(),
+                UUID.randomUUID(),
+                task.draft().mode().wireValue(),
+                task.draft().topic(),
+                task.draft().textbookVersion(),
+                new TaskSnapshot.DurationSnapshot(
+                        task.draft().durationRecommendedSeconds(),
+                        task.draft().durationMaxSeconds()),
+                Map.of("content", 30, "expression", 20, "interaction", 20, "board", 15, "time", 15),
+                null,
+                null,
+                List.of(),
+                null,
+                NOW,
+                task.createdBy().value());
     }
 
     private Task draftTask() {
