@@ -9,3 +9,4 @@ spring:
 
 m3:
   storage: memory
+  ticket-store: memory

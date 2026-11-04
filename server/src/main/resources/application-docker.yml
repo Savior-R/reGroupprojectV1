@@ -8,6 +8,7 @@ spring:
 
 m3:
   storage: minio
+  ticket-store: redis
   minio:
     endpoint: ${M3_MINIO_ENDPOINT:http://minio:9000}
     access-key: ${M3_MINIO_ACCESS_KEY:minioadmin}
