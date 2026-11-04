@@ -109,6 +109,42 @@ class DisciplineAggregatorTest {
     }
 
     @Test
+    void disciplineLevelDoesNotFlapAfterDurationEscalation() {
+        VirtualStudentDynamics dynamics = dynamics();
+        for (int seatNo : List.of(1, 2, 3)) {
+            dynamics.find(studentId(seatNo))
+                    .changeBehavior(VirtualStudentBehavior.DISTRACTED);
+        }
+
+        List<ClassroomEvent> entered = dynamics.disciplineLevelChangedIfNeeded(NOW);
+        assertThat(entered.get(0).payload())
+                .containsEntry("from", 0)
+                .containsEntry("to", 2);
+
+        List<ClassroomEvent> escalated =
+                dynamics.disciplineLevelChangedIfNeeded(NOW.plusSeconds(21));
+        assertThat(escalated.get(0).payload())
+                .containsEntry("from", 2)
+                .containsEntry("to", 3)
+                .containsEntry("duration_ms", 21_000L)
+                .containsEntry("reason", "level_duration");
+
+        // The raw-duration clock must not be reset by the 2 -> 3 escalation.
+        assertThat(dynamics.disciplineLevelChangedIfNeeded(NOW.plusSeconds(21))).isEmpty();
+        assertThat(dynamics.disciplineLevelChangedIfNeeded(NOW.plusSeconds(22))).isEmpty();
+        assertThat(dynamics.disciplineLevelChangedIfNeeded(NOW.plusSeconds(41))).isEmpty();
+
+        dynamics.find(studentId(3)).changeBehavior(VirtualStudentBehavior.FOCUSED);
+        List<ClassroomEvent> dropped =
+                dynamics.disciplineLevelChangedIfNeeded(NOW.plusSeconds(42));
+
+        assertThat(dropped).hasSize(1);
+        assertThat(dropped.get(0).payload())
+                .containsEntry("from", 3)
+                .containsEntry("to", 1);
+    }
+
+    @Test
     void disciplineEventsAreRecordOnly() {
         List<VirtualStudentRuntime> students = noisyStudents(20, 3, 0);
         List<Double> attentionBefore = students.stream()

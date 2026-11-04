@@ -64,16 +64,18 @@ class VirtualStudentDynamicsTest {
 
         assertThat(student.handRaiseEnergy()).isEqualTo(1.0);
 
-        student.markHandRaised(NOW);
+        // Noisy hand raise: -0.20 + (+20% = +0.04) energy, +0.05 - 20% attention.
+        dynamics.applyHandRaised(studentId(1), NOW, new ScriptedRandom(1.0, 0.0));
 
-        assertThat(student.handRaiseEnergy()).isCloseTo(0.8, within(1e-9));
+        assertThat(student.handRaiseEnergy()).isCloseTo(0.84, within(1e-9));
+        assertThat(student.attention()).isCloseTo(0.54, within(1e-9));
         assertThat(student.cooldownUntil()).isEqualTo(NOW.plusSeconds(45));
         assertThat(student.isCoolingDown(NOW)).isTrue();
         assertThat(student.isCoolingDown(NOW.plusSeconds(44))).isTrue();
         assertThat(student.isCoolingDown(NOW.plusSeconds(45))).isFalse();
 
         dynamics.tick(10, NOW.plusSeconds(46), new ConstantRandom(0.5));
-        assertThat(student.handRaiseEnergy()).isCloseTo(0.85, within(1e-9));
+        assertThat(student.handRaiseEnergy()).isCloseTo(0.89, within(1e-9));
 
         dynamics.tick(100, NOW.plusSeconds(146), new ConstantRandom(0.5));
         assertThat(student.handRaiseEnergy()).isEqualTo(1.0);
@@ -129,6 +131,36 @@ class VirtualStudentDynamicsTest {
     }
 
     @Test
+    void manageStudentReturnsDistractedAndWhisperingToFocused() {
+        VirtualStudentDynamics dynamics = dynamics(config(1, "0.50", "0.0"));
+        VirtualStudentRuntime student = dynamics.find(studentId(1));
+
+        student.changeBehavior(VirtualStudentBehavior.DISTRACTED);
+        List<ClassroomEvent> distracted = dynamics.applyManaged(studentId(1));
+
+        assertThat(student.behavior()).isEqualTo(VirtualStudentBehavior.FOCUSED);
+        assertThat(student.attention()).isCloseTo(0.75, within(1e-9));
+        assertThat(types(distracted)).containsExactly("student.state_changed");
+        assertThat(distracted.get(0).payload())
+                .containsEntry("student_id", studentId(1))
+                .containsEntry("from", "distracted")
+                .containsEntry("to", "focused")
+                .containsEntry("reason", "teacher_manage")
+                .hasSize(4);
+
+        student.changeBehavior(VirtualStudentBehavior.WHISPERING);
+        List<ClassroomEvent> whispering = dynamics.applyManaged(studentId(1));
+
+        assertThat(student.behavior()).isEqualTo(VirtualStudentBehavior.FOCUSED);
+        assertThat(student.attention()).isEqualTo(1.0);
+        assertThat(types(whispering)).containsExactly("student.state_changed");
+        assertThat(whispering.get(0).payload())
+                .containsEntry("from", "whispering")
+                .containsEntry("to", "focused")
+                .containsEntry("reason", "teacher_manage");
+    }
+
+    @Test
     void eventMatrixAppliesExpectedDeltas() {
         VirtualStudentDynamics dynamics = dynamics(
                 config(1, "0.50", "0.0"), config(2, "0.50", "0.0"));
@@ -157,13 +189,25 @@ class VirtualStudentDynamicsTest {
     }
 
     @Test
+    void studentQuestionAppliesAttentionAndEnergy() {
+        VirtualStudentDynamics dynamics = dynamics(config(1, "0.50", "0.0"));
+        VirtualStudentRuntime student = dynamics.find(studentId(1));
+        student.applyEnergyDelta(-0.5);
+
+        dynamics.applyStudentQuestion(studentId(1));
+
+        assertThat(student.attention()).isCloseTo(0.60, within(1e-9));
+        assertThat(student.handRaiseEnergy()).isCloseTo(0.55, within(1e-9));
+    }
+
+    @Test
     void handRaiseAnswerFollowUpAndClassWideEventsApplyExpectedDeltas() {
         VirtualStudentDynamics dynamics = dynamics(
                 config(1, "0.50", "0.0"), config(2, "0.50", "0.0"));
         VirtualStudentRuntime first = dynamics.find(studentId(1));
         VirtualStudentRuntime second = dynamics.find(studentId(2));
 
-        dynamics.applyHandRaised(studentId(1));
+        dynamics.applyHandRaised(studentId(1), NOW, new ConstantRandom(0.5));
         dynamics.applyAnswer(studentId(1));
         dynamics.applyFollowUp(studentId(1));
         dynamics.applyQaStarted();
@@ -219,6 +263,59 @@ class VirtualStudentDynamicsTest {
 
         assertThat(second.behavior()).isEqualTo(VirtualStudentBehavior.FOCUSED);
         assertThat(second.attention()).isCloseTo(0.50, within(1e-9));
+    }
+
+    @Test
+    void whisperingAppliesContagionBonusToAdjacentSeats() {
+        VirtualStudentDynamics dynamics = dynamics(
+                config(1, "0.50", "0.0"),
+                config(2, "0.50", "0.0"),
+                config(3, "0.50", "0.0"),
+                config(4, "0.50", "0.0"));
+
+        dynamics.applyStateChanged(studentId(2), VirtualStudentBehavior.WHISPERING);
+
+        assertThat(dynamics.find(studentId(1)).whisperContagionBonus())
+                .isCloseTo(0.02, within(1e-9));
+        assertThat(dynamics.find(studentId(2)).whisperContagionBonus()).isZero();
+        assertThat(dynamics.find(studentId(3)).whisperContagionBonus())
+                .isCloseTo(0.02, within(1e-9));
+        assertThat(dynamics.find(studentId(4)).whisperContagionBonus()).isZero();
+    }
+
+    @Test
+    void whisperContagionBonusDecaysEveryTickAndClamps() {
+        VirtualStudentDynamics dynamics = dynamics(config(1, "0.50", "0.0"));
+        VirtualStudentRuntime student = dynamics.find(studentId(1));
+
+        student.applyWhisperContagionBonus(0.03);
+        assertThat(student.whisperContagionBonus()).isCloseTo(0.03, within(1e-9));
+
+        dynamics.tick(1, NOW, new ConstantRandom(0.5));
+        assertThat(student.whisperContagionBonus()).isCloseTo(0.025, within(1e-9));
+
+        dynamics.tick(4, NOW.plusSeconds(5), new ConstantRandom(0.5));
+        assertThat(student.whisperContagionBonus()).isCloseTo(0.005, within(1e-9));
+
+        dynamics.tick(1, NOW.plusSeconds(6), new ConstantRandom(0.5));
+        assertThat(student.whisperContagionBonus()).isZero();
+
+        student.applyWhisperContagionBonus(0.5);
+        assertThat(student.whisperContagionBonus()).isCloseTo(0.2, within(1e-9));
+
+        student.applyWhisperContagionBonus(-1.0);
+        assertThat(student.whisperContagionBonus()).isZero();
+    }
+
+    @Test
+    void whisperContagionBonusRaisesDisciplineProbability() {
+        VirtualStudentDynamics dynamics = dynamics(config(1, "0.10", "0.0"));
+        VirtualStudentRuntime student = dynamics.find(studentId(1));
+        student.applyWhisperContagionBonus(0.02);
+
+        dynamics.tick(1, NOW, new ScriptedRandom(0.01, 0.8, 0.0));
+
+        assertThat(student.behavior()).isEqualTo(VirtualStudentBehavior.WHISPERING);
     }
 
     @Test
@@ -326,6 +423,10 @@ class VirtualStudentDynamicsTest {
 
     private static BigDecimal bd(String value) {
         return new BigDecimal(value);
+    }
+
+    private static List<String> types(List<ClassroomEvent> events) {
+        return events.stream().map(ClassroomEvent::type).toList();
     }
 
     private static List<ClassroomEvent> studentStateChanges(List<ClassroomEvent> events) {

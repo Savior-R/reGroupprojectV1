@@ -24,8 +24,9 @@ import java.util.random.RandomGenerator;
  *
  * <p>Discipline aggregation is record-only: it never changes attention, energy or behaviour.
  * The only events produced by this class are {@code student.state_changed} (behaviour
- * transitions caused by a tick) and {@code classroom.discipline_level_changed} (level changes
- * detected by {@link #disciplineLevelChangedIfNeeded(Instant)}).
+ * transitions caused by a tick or by teacher management) and
+ * {@code classroom.discipline_level_changed} (level changes detected by
+ * {@link #disciplineLevelChangedIfNeeded(Instant)}).
  */
 public final class VirtualStudentDynamics {
 
@@ -46,8 +47,12 @@ public final class VirtualStudentDynamics {
     private static final double MARKED_WRONG_ATTENTION = -0.10;
     private static final double MANAGED_ATTENTION = 0.25;
     private static final double HAND_RAISED_ATTENTION = 0.05;
+    private static final double HAND_RAISED_ENERGY = -0.20;
+    private static final double STUDENT_QUESTION_ATTENTION = 0.10;
+    private static final double STUDENT_QUESTION_ENERGY = 0.05;
     private static final double ANSWER_ATTENTION = 0.10;
     private static final double FOLLOW_UP_ATTENTION = 0.05;
+    private static final double WHISPER_CONTAGION_BONUS = 0.02;
     private static final double DISTRACTED_ATTENTION = -0.05;
     private static final double DISTRACTED_ENERGY = -0.05;
     private static final double DISTRACTED_NEIGHBOUR_ATTENTION = -0.02;
@@ -64,7 +69,8 @@ public final class VirtualStudentDynamics {
     private final List<VirtualStudentRuntime> students = new ArrayList<>();
 
     private int disciplineLevel = DisciplineLevel.QUIET.level();
-    private Instant disciplineLevelSince;
+    private int rawDisciplineLevel = DisciplineLevel.QUIET.level();
+    private Instant rawDisciplineLevelSince;
 
     public VirtualStudentDynamics() {
         this(RandomGenerator.getDefault());
@@ -82,7 +88,8 @@ public final class VirtualStudentDynamics {
             students.add(new VirtualStudentRuntime(Objects.requireNonNull(config, "config")));
         }
         disciplineLevel = DisciplineLevel.QUIET.level();
-        disciplineLevelSince = null;
+        rawDisciplineLevel = DisciplineLevel.QUIET.level();
+        rawDisciplineLevelSince = null;
     }
 
     /** Immutable view of the runtime students. */
@@ -110,6 +117,7 @@ public final class VirtualStudentDynamics {
         Objects.requireNonNull(now, "now");
         Objects.requireNonNull(random, "random");
         List<ClassroomEvent> events = new ArrayList<>();
+        List<VirtualStudentRuntime> newWhisperers = new ArrayList<>();
         for (VirtualStudentRuntime student : students) {
             VirtualStudentBehavior before = student.behavior();
             student.tick(elapsedSeconds, random);
@@ -119,7 +127,13 @@ public final class VirtualStudentDynamics {
                         ? "state_duration_elapsed"
                         : "low_attention";
                 events.add(stateChanged(student, before, after, reason));
+                if (after == VirtualStudentBehavior.WHISPERING) {
+                    newWhisperers.add(student);
+                }
             }
+        }
+        for (VirtualStudentRuntime whisperer : newWhisperers) {
+            applyWhisperContagionToNeighbours(whisperer);
         }
         events.addAll(disciplineLevelChangedIfNeeded(now));
         return List.copyOf(events);
@@ -130,6 +144,13 @@ public final class VirtualStudentDynamics {
         for (VirtualStudentRuntime student : students) {
             applyNoisyAttention(student, QUESTION_ASKED_ATTENTION);
         }
+    }
+
+    /** {@code student.question}: the asking student gains attention and hand-raise energy. */
+    public void applyStudentQuestion(UUID studentId) {
+        VirtualStudentRuntime student = find(studentId);
+        applyNoisyAttention(student, STUDENT_QUESTION_ATTENTION);
+        applyNoisyEnergy(student, STUDENT_QUESTION_ENERGY);
     }
 
     /** {@code teacher.call_on}: the called student gains, everybody else loses a little. */
@@ -158,18 +179,36 @@ public final class VirtualStudentDynamics {
         }
     }
 
-    /** {@code teacher.manage_student}: fixed {@code +0.25} attention delta. */
-    public void applyManaged(UUID studentId) {
-        applyNoisyAttention(find(studentId), MANAGED_ATTENTION);
+    /**
+     * {@code teacher.manage_student}: fixed {@code +0.25} attention delta and, when the student
+     * was distracted or whispering, a return to {@code FOCUSED} with a
+     * {@code student.state_changed {reason: teacher_manage}} event.
+     */
+    public List<ClassroomEvent> applyManaged(UUID studentId) {
+        VirtualStudentRuntime student = find(studentId);
+        applyNoisyAttention(student, MANAGED_ATTENTION);
+        VirtualStudentBehavior before = student.behavior();
+        if (before == VirtualStudentBehavior.DISTRACTED
+                || before == VirtualStudentBehavior.WHISPERING) {
+            student.changeBehavior(VirtualStudentBehavior.FOCUSED);
+            return List.of(stateChanged(
+                    student, before, VirtualStudentBehavior.FOCUSED, "teacher_manage"));
+        }
+        return List.of();
     }
 
     /**
-     * {@code student.hand_raised}: attention {@code +0.05}. The energy cost and 45 s cooldown
-     * belong to {@link VirtualStudentRuntime#markHandRaised(Instant)} so the event is applied
-     * exactly once.
+     * {@code student.hand_raised}: noisy attention {@code +0.05}, noisy energy {@code -0.20} and
+     * a fresh 45 s cooldown. This is the single application point for the event; both deltas use
+     * the supplied random generator.
      */
-    public void applyHandRaised(UUID studentId) {
-        applyNoisyAttention(find(studentId), HAND_RAISED_ATTENTION);
+    public void applyHandRaised(UUID studentId, Instant now, RandomGenerator random) {
+        Objects.requireNonNull(now, "now");
+        Objects.requireNonNull(random, "random");
+        VirtualStudentRuntime student = find(studentId);
+        double energyDelta = noisy(HAND_RAISED_ENERGY, random);
+        student.applyAttentionDelta(noisy(HAND_RAISED_ATTENTION, random));
+        student.markHandRaised(now, energyDelta);
     }
 
     /** {@code student.answer}: answering student gains attention. */
@@ -189,6 +228,7 @@ public final class VirtualStudentDynamics {
     public void applyStateChanged(UUID studentId, VirtualStudentBehavior behavior) {
         Objects.requireNonNull(behavior, "behavior");
         VirtualStudentRuntime student = find(studentId);
+        VirtualStudentBehavior before = student.behavior();
         student.changeBehavior(behavior);
         switch (behavior) {
             case DISTRACTED -> {
@@ -200,6 +240,9 @@ public final class VirtualStudentDynamics {
                 applyNoisyAttention(student, WHISPERING_ATTENTION);
                 applyNoisyEnergy(student, WHISPERING_ENERGY);
                 applyToNeighbours(student, WHISPERING_NEIGHBOUR_ATTENTION);
+                if (before != VirtualStudentBehavior.WHISPERING) {
+                    applyWhisperContagionToNeighbours(student);
+                }
             }
             default -> {
                 // other transitions carry no attention/energy delta
@@ -235,34 +278,44 @@ public final class VirtualStudentDynamics {
 
     /**
      * Aggregates the current behaviour states and emits {@code classroom.discipline_level_changed}
-     * only when the level changed. This is record-only: students are never mutated.
+     * only when the effective level changed. This is record-only: students are never mutated.
+     *
+     * <p>The raw aggregate level and the instant it last changed are tracked separately from the
+     * effective (possibly escalated) level. A raw level 2 escalates to 3 once the raw level has
+     * persisted for more than 20 s, and the raw-duration clock is <em>not</em> reset by that
+     * escalation; otherwise the next aggregation would see raw level 2 with a fresh duration and
+     * emit a spurious 3 -> 2 flap. The effective level drops normally as soon as the raw level
+     * falls to 1 or 0.
      */
     public List<ClassroomEvent> disciplineLevelChangedIfNeeded(Instant now) {
         Objects.requireNonNull(now, "now");
-        long durationMs = disciplineLevelSince == null
-                ? 0L
-                : Math.max(0L, Duration.between(disciplineLevelSince, now).toMillis());
-        DisciplineSnapshot snapshot = aggregator.aggregate(students, durationMs);
-        if (disciplineLevelSince == null) {
-            disciplineLevelSince = now;
+        int rawLevel = aggregator.aggregate(students, 0L).level();
+        long durationMs;
+        if (rawDisciplineLevelSince == null || rawLevel != rawDisciplineLevel) {
+            rawDisciplineLevel = rawLevel;
+            rawDisciplineLevelSince = now;
+            durationMs = 0L;
+        } else {
+            durationMs = Math.max(0L,
+                    Duration.between(rawDisciplineLevelSince, now).toMillis());
         }
-        if (snapshot.level() == disciplineLevel) {
+
+        DisciplineSnapshot snapshot = aggregator.aggregate(students, durationMs);
+        int effectiveLevel = snapshot.level();
+        if (effectiveLevel == disciplineLevel) {
             return List.of();
         }
 
-        int rawLevel = aggregator.aggregate(students, 0L).level();
+        int from = disciplineLevel;
+        disciplineLevel = effectiveLevel;
         String reason = rawLevel == DisciplineLevel.NOISY.level()
-                && snapshot.level() == DisciplineLevel.CHAOTIC.level()
+                && effectiveLevel == DisciplineLevel.CHAOTIC.level()
                 ? "level_duration"
                 : "aggregate";
 
-        int from = disciplineLevel;
-        disciplineLevel = snapshot.level();
-        disciplineLevelSince = now;
-
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("from", from);
-        payload.put("to", snapshot.level());
+        payload.put("to", effectiveLevel);
         payload.put("distracted_count", snapshot.distractedCount());
         payload.put("whispering_count", snapshot.whisperingCount());
         payload.put("noisy_ratio", snapshot.noisyRatio());
@@ -284,6 +337,18 @@ public final class VirtualStudentDynamics {
         }
     }
 
+    private void applyWhisperContagionToNeighbours(VirtualStudentRuntime whisperer) {
+        int seatNo = whisperer.config().seatNo();
+        for (VirtualStudentRuntime student : students) {
+            if (student.id().equals(whisperer.id())) {
+                continue;
+            }
+            if (Math.abs(student.config().seatNo() - seatNo) == 1) {
+                student.applyWhisperContagionBonus(WHISPER_CONTAGION_BONUS);
+            }
+        }
+    }
+
     private void applyNoisyAttention(VirtualStudentRuntime student, double delta) {
         if (delta != 0.0) {
             student.applyAttentionDelta(noisy(delta));
@@ -297,8 +362,13 @@ public final class VirtualStudentDynamics {
     }
 
     private double noisy(double delta) {
+        return noisy(delta, eventRandom);
+    }
+
+    private double noisy(double delta, RandomGenerator random) {
+        Objects.requireNonNull(random, "random");
         double amplitude = Math.max(Math.abs(delta) * EVENT_NOISE_RATIO, MIN_EVENT_NOISE);
-        return delta + (eventRandom.nextDouble() * 2.0 - 1.0) * amplitude;
+        return delta + (random.nextDouble() * 2.0 - 1.0) * amplitude;
     }
 
     private static ClassroomEvent stateChanged(

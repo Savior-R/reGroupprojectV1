@@ -21,6 +21,8 @@ import java.util.random.RandomGenerator;
  * decay_rate = 0.002 + 0.004 * (1 - attention_baseline)
  * attention  = clamp(attention - decay_rate * seconds, 0.05, 1)
  * energy     = clamp(energy + 0.005 * seconds, 0, 1)
+ * contagion  = clamp(contagion - 0.005 * seconds, 0, 0.2)
+ * p_discipline = discipline_probability * (1 - attention) + contagion
  * </pre>
  * While attention is below 0.35 a focused student can become distracted or whisper; the
  * resulting behaviour lasts 10-40 seconds.
@@ -32,11 +34,13 @@ public final class VirtualStudentRuntime {
     public static final double MIN_HAND_RAISE_ENERGY = 0.0;
     public static final double MAX_HAND_RAISE_ENERGY = 1.0;
     public static final double LOW_ATTENTION_THRESHOLD = 0.35;
+    public static final double MIN_WHISPER_CONTAGION_BONUS = 0.0;
+    public static final double MAX_WHISPER_CONTAGION_BONUS = 0.2;
 
     private static final double BASE_DECAY_PER_SECOND = 0.002;
     private static final double BASELINE_DECAY_PER_SECOND = 0.004;
     private static final double ENERGY_RECOVERY_PER_SECOND = 0.005;
-    private static final double HAND_RAISE_ENERGY_COST = 0.20;
+    private static final double WHISPER_CONTAGION_DECAY_PER_SECOND = 0.005;
     private static final double STATE_FACTOR = 1.0;
     private static final long MIN_DISCIPLINE_SECONDS = 10;
     private static final long MAX_DISCIPLINE_SECONDS = 40;
@@ -45,6 +49,7 @@ public final class VirtualStudentRuntime {
     private final VirtualStudentConfig config;
     private double attention;
     private double handRaiseEnergy = MAX_HAND_RAISE_ENERGY;
+    private double whisperContagionBonus = MIN_WHISPER_CONTAGION_BONUS;
     private Instant cooldownUntil;
     private VirtualStudentBehavior behavior = VirtualStudentBehavior.FOCUSED;
     private long behaviorRemainingSeconds;
@@ -68,6 +73,11 @@ public final class VirtualStudentRuntime {
 
     public double handRaiseEnergy() {
         return handRaiseEnergy;
+    }
+
+    /** Additive discipline-probability bonus from seat-adjacent whisperers, {@code [0, 0.2]}. */
+    public double whisperContagionBonus() {
+        return whisperContagionBonus;
     }
 
     /** End of the current 45 s hand-raise cooldown, or {@code null} if never raised. */
@@ -98,8 +108,8 @@ public final class VirtualStudentRuntime {
     }
 
     /**
-     * Advances attention, hand-raise energy and autonomous discipline behaviour by the given
-     * number of seconds.
+     * Advances attention, hand-raise energy, whisper contagion and autonomous discipline
+     * behaviour by the given number of seconds.
      */
     public void tick(long elapsedSeconds, RandomGenerator random) {
         Objects.requireNonNull(random, "random");
@@ -115,6 +125,9 @@ public final class VirtualStudentRuntime {
                 MIN_ATTENTION, MAX_ATTENTION);
         handRaiseEnergy = clamp(handRaiseEnergy + ENERGY_RECOVERY_PER_SECOND * elapsedSeconds,
                 MIN_HAND_RAISE_ENERGY, MAX_HAND_RAISE_ENERGY);
+        whisperContagionBonus = clamp(
+                whisperContagionBonus - WHISPER_CONTAGION_DECAY_PER_SECOND * elapsedSeconds,
+                MIN_WHISPER_CONTAGION_BONUS, MAX_WHISPER_CONTAGION_BONUS);
 
         if (behaviorRemainingSeconds > 0) {
             behaviorRemainingSeconds -= elapsedSeconds;
@@ -126,8 +139,10 @@ public final class VirtualStudentRuntime {
         }
         if (behavior == VirtualStudentBehavior.FOCUSED
                 && attention < LOW_ATTENTION_THRESHOLD) {
-            double probability = config.disciplineProbability().doubleValue()
-                    * (1.0 - attention) * STATE_FACTOR;
+            double probability = Math.min(1.0,
+                    config.disciplineProbability().doubleValue()
+                            * (1.0 - attention) * STATE_FACTOR
+                            + whisperContagionBonus);
             if (random.nextDouble() < probability) {
                 behavior = random.nextDouble() < 0.5
                         ? VirtualStudentBehavior.DISTRACTED
@@ -148,14 +163,21 @@ public final class VirtualStudentRuntime {
                 MIN_HAND_RAISE_ENERGY, MAX_HAND_RAISE_ENERGY);
     }
 
+    /** Adds a whisper-contagion bonus from an adjacent whisperer, clamped to {@code [0, 0.2]}. */
+    public void applyWhisperContagionBonus(double delta) {
+        whisperContagionBonus = clamp(whisperContagionBonus + delta,
+                MIN_WHISPER_CONTAGION_BONUS, MAX_WHISPER_CONTAGION_BONUS);
+    }
+
     /**
-     * Applies the hand-raise cost: energy {@code -0.20} and a fresh 45 s cooldown. The
-     * corresponding {@code student.hand_raised} attention delta is applied by
-     * {@link VirtualStudentDynamics#applyHandRaised(UUID)} so this event is applied exactly once.
+     * Applies the supplied hand-raise energy delta (already noised by the caller) and starts a
+     * fresh 45 s cooldown. Attention is applied by
+     * {@link VirtualStudentDynamics#applyHandRaised(UUID, Instant, RandomGenerator)} so the
+     * {@code student.hand_raised} event has exactly one application point.
      */
-    public void markHandRaised(Instant now) {
+    public void markHandRaised(Instant now, double energyDelta) {
         Objects.requireNonNull(now, "now");
-        applyEnergyDelta(-HAND_RAISE_ENERGY_COST);
+        applyEnergyDelta(energyDelta);
         cooldownUntil = now.plus(HAND_RAISE_COOLDOWN);
     }
 
