@@ -124,6 +124,7 @@ dependencies {
     implementation("io.minio:minio:8.5.17")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("com.tngtech.archunit:archunit-junit5:1.5.1")
 }
 
