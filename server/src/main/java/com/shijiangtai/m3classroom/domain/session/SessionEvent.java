@@ -14,6 +14,12 @@ import java.util.UUID;
  * <p>{@code seq} is monotonic per session and starts at 1; {@code atMs} is the session-relative
  * millisecond offset from {@code session.started} (t0). The payload is copied defensively and
  * exposed read-only.
+ *
+ * <p>Events produced in memory may carry rich Java values ({@code UUID}, {@code Long}, ...).
+ * Events reloaded from a JSON-backed event store carry JSON-native values only: UUIDs are
+ * strings equal to {@code uuid.toString()}, and integral numbers are {@code Number} instances
+ * that may narrow (for example {@code Long} to {@code Integer}). Consumers must not assume the
+ * producer's Java type when reading a persisted payload.
  */
 public record SessionEvent(
         UUID eventId,

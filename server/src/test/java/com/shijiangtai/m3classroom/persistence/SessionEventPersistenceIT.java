@@ -110,6 +110,27 @@ class SessionEventPersistenceIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void payloadRoundTripExposesJsonNativeValues() {
+        SessionId sessionId = seedSession();
+        UUID studentId = UUID.randomUUID();
+        eventStore.append(new SessionEvent(
+                UUID.randomUUID(), sessionId, 1, "student.hand_raised", 1500,
+                Map.of("student_id", studentId, "seq_value", 3L), NOW));
+
+        SessionEvent reloaded = eventStore.after(sessionId, 0, 10).get(0);
+
+        assertThat(reloaded.seq()).isEqualTo(1L);
+        assertThat(eventStore.maxSeq(sessionId)).isEqualTo(1L);
+        assertThat(reloaded.payload().get("student_id"))
+                .isInstanceOf(String.class)
+                .isEqualTo(studentId.toString());
+        assertThat(reloaded.payload().get("seq_value"))
+                .isInstanceOf(Number.class)
+                .extracting(value -> ((Number) value).longValue())
+                .isEqualTo(3L);
+    }
+
+    @Test
     void savesAndReadsSessionTexts() {
         SessionId sessionId = seedSession();
         SessionText teacherText = new SessionText(
