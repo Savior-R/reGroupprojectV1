@@ -20,7 +20,6 @@ import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Optional;
 import java.util.UUID;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +39,7 @@ class WsTicketServiceTest {
     @BeforeEach
     void setUp() {
         service = new WsTicketService(
-                new InMemoryWsTicketStore(clock), Optional.of(sessions), clock);
+                new InMemoryWsTicketStore(clock), sessions, clock);
     }
 
     @Test

@@ -14,15 +14,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 /**
  * Issues one-time WebSocket tickets bound to a session and its owning student (02 §2.3).
  *
- * <p>The repository is optional only while the JPA adapter is pending (Task 9): this keeps the
- * application context bootable for the intermediate Task 8 commit. Once the adapter exists every
- * context resolves it and {@link #issue} always verifies ownership through it.
+ * <p>{@link #issue} verifies session ownership through the {@link SessionRepository}; the JPA
+ * adapter is a hard dependency so a context with no registered repository fails fast at startup.
  */
 @Service
 public final class WsTicketService {
@@ -30,12 +28,12 @@ public final class WsTicketService {
     public static final Duration TICKET_TTL = Duration.ofSeconds(30);
 
     private final WsTicketStore ticketStore;
-    private final Optional<SessionRepository> sessionRepository;
+    private final SessionRepository sessionRepository;
     private final ClockProvider clock;
 
     public WsTicketService(
             WsTicketStore ticketStore,
-            Optional<SessionRepository> sessionRepository,
+            SessionRepository sessionRepository,
             ClockProvider clock) {
         this.ticketStore = Objects.requireNonNull(ticketStore, "ticketStore");
         this.sessionRepository = Objects.requireNonNull(sessionRepository, "sessionRepository");
@@ -45,11 +43,10 @@ public final class WsTicketService {
     public IssuedTicket issue(CurrentUser student, SessionId sessionId) {
         Objects.requireNonNull(student, "student");
         Objects.requireNonNull(sessionId, "sessionId");
-        SessionRepository repository = sessionRepository.orElseThrow(() -> new DomainException(
-                ErrorCode.SERVICE_UNAVAILABLE, "会话存储尚未就绪"));
-        Session session = repository.findById(sessionId).orElseThrow(() -> new DomainException(
-                ErrorCode.RESOURCE_NOT_FOUND, "会话不存在",
-                Map.of("session_id", sessionId.value().toString())));
+        Session session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new DomainException(
+                        ErrorCode.RESOURCE_NOT_FOUND, "会话不存在",
+                        Map.of("session_id", sessionId.value().toString())));
         if (!session.studentAccountId().equals(student.accountId())) {
             throw new DomainException(ErrorCode.WS_SESSION_FORBIDDEN, "无权连接该会话",
                     Map.of("session_id", sessionId.value().toString()));
