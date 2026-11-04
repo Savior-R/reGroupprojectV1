@@ -95,6 +95,8 @@ public final class SessionActor {
     private static final String HAND_WINDOW_TIMEOUT_EVENT = "classroom.hand_window_timeout";
     private static final String INTERVIEW_QUESTION_SHOWN = "interview.question_shown";
     private static final String TIME_TICK = "session.time_tick";
+    private static final String END_REASON_MANUAL = "manual";
+    private static final String END_REASON_TIMEOUT = "timeout";
 
     private static final Set<String> NON_REPLAYABLE =
             Set.of(TIME_TICK, "ping", "pong", "time.sync");
@@ -298,6 +300,14 @@ public final class SessionActor {
         return CommandResult.ok(events);
     }
 
+    /**
+     * Grace reconnect (05A §8). The event sink is the single live push path: the actor pushes
+     * {@code session.resumed} first and then the replayable tail after {@code lastSeq}
+     * ({@code session.time_tick}/{@code ping} excluded) in append order, even though the replayed
+     * {@code seq} values are lower than the resume event. The returned events mirror that push
+     * order; the Task 12 handler only sends {@code server.ack}/{@code error} itself and must not
+     * send {@link CommandResult#events()} again.
+     */
     public synchronized CommandResult resume(long lastSeq, RecordingState state) {
         Objects.requireNonNull(state, "state");
         if (session.status() == SessionStatus.FAILED) {
@@ -320,6 +330,7 @@ public final class SessionActor {
         for (SessionEvent event : replayAfter(lastSeq)) {
             if (event.seq() != resumed.seq()) {
                 events.add(event);
+                push(event);
             }
         }
         return CommandResult.ok(events);
@@ -517,17 +528,24 @@ public final class SessionActor {
     private CommandResult handleEndSession() {
         requireInProgress("teacher.end_session");
         requireClassroomMode("teacher.end_session");
-        Instant now = clock.now();
+        return CommandResult.ok(endClassroomSession(clock.now(), END_REASON_MANUAL));
+    }
+
+    /**
+     * Ends a free/scenario classroom session, either manually ({@code manual}) or when
+     * {@code duration.max_seconds} is reached ({@code timeout}, 05C §6.3).
+     */
+    private List<SessionEvent> endClassroomSession(Instant now, String reason) {
         List<ClassroomEvent> domainEvents = classroom.endSession(now);
 
         windowGeneration++;
         List<SessionEvent> events = new ArrayList<>(emitHandLowers("session_ended", now));
         events.addAll(appendClassroomEvents(domainEvents, now));
         session.end(now);
-        events.add(append(SESSION_ENDED, sessionEndedPayload("manual"), now));
+        events.add(append(SESSION_ENDED, sessionEndedPayload(reason), now));
         cancelAllTasks();
         notifyStatusChanged();
-        return CommandResult.ok(events);
+        return events;
     }
 
     // ------------------------------------------------------------------
@@ -572,10 +590,14 @@ public final class SessionActor {
         if (session.status() != SessionStatus.IN_PROGRESS) {
             return;
         }
-        if (isInterviewMode()
-                && interview.state() == InterviewState.PRESENTING
-                && interview.snapshot(now).remainingMs() <= 0L) {
-            endInterview(now, InterviewStateMachine.REASON_TIMEOUT);
+        if (isInterviewMode()) {
+            if (interview.state() == InterviewState.PRESENTING
+                    && interview.snapshot(now).remainingMs() <= 0L) {
+                endInterview(now, InterviewStateMachine.REASON_TIMEOUT);
+                return;
+            }
+        } else if (remainingMs(now) <= 0L) {
+            endClassroomSession(now, END_REASON_TIMEOUT);
             return;
         }
 
@@ -609,13 +631,19 @@ public final class SessionActor {
         Instant now = clock.now();
         session.fail(reason, now);
         windowGeneration++;
-        emitHandLowers("session_failed", now);
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("reason", reason.wireValue());
-        append(SESSION_FAILED, payload, now);
-        forceFlush();
-        cancelAllTasks();
-        notifyStatusChanged();
+        try {
+            emitHandLowers("session_failed", now);
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("reason", reason.wireValue());
+            append(SESSION_FAILED, payload, now);
+        } finally {
+            // The aggregate is already failed: timers and the registry entry must be released
+            // even if a hand-lower or session.failed append throws (persistence error is
+            // propagated after cleanup).
+            forceFlush();
+            cancelAllTasks();
+            notifyStatusChanged();
+        }
     }
 
     public synchronized void onWsDisconnected(Instant now) {
@@ -704,11 +732,16 @@ public final class SessionActor {
     private SessionEvent append(String type, Map<String, Object> payload, Instant now) {
         SessionEvent event = context.append(SessionEventDraft.of(type, payload), atMs(now));
         eventStore.append(event);
+        push(event);
+        return event;
+    }
+
+    /** Single live push path to the attached WS event sink; no-op before the handler attaches. */
+    private void push(SessionEvent event) {
         Consumer<SessionEvent> sink = eventSink;
         if (sink != null) {
             sink.accept(event);
         }
-        return event;
     }
 
     private List<SessionEvent> appendClassroomEvents(

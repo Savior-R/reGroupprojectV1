@@ -1,6 +1,7 @@
 package com.shijiangtai.m3classroom.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.shijiangtai.m3classroom.domain.classroom.ClassroomStateMachine;
 import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentDynamics;
@@ -13,10 +14,17 @@ import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionCommand;
 import com.shijiangtai.m3classroom.domain.session.SessionContext;
 import com.shijiangtai.m3classroom.domain.session.SessionEvent;
+import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.session.SessionType;
+import com.shijiangtai.m3classroom.domain.task.CourseInfo;
+import com.shijiangtai.m3classroom.domain.task.RubricWeights;
+import com.shijiangtai.m3classroom.domain.task.Task;
+import com.shijiangtai.m3classroom.domain.task.TaskDraft;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
+import com.shijiangtai.m3classroom.domain.task.TaskRepository;
 import com.shijiangtai.m3classroom.domain.task.TaskSnapshot;
+import com.shijiangtai.m3classroom.domain.task.TaskSnapshotFactory;
 import com.shijiangtai.m3classroom.domain.task.VirtualStudentConfig;
 import com.shijiangtai.m3classroom.support.FakeContentClient;
 import com.shijiangtai.m3classroom.support.FakeScheduler;
@@ -36,6 +44,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -248,11 +257,125 @@ class SessionReconnectTest {
                 .isEqualTo(SessionStatus.ENDED);
     }
 
+    @Test
+    void normalCommandPushesEventsExactlyOnce() {
+        ReconnectFixture fixture = fixture();
+        start(fixture);
+        List<SessionEvent> pushed = new CopyOnWriteArrayList<>();
+        fixture.actor().attachEventSink(pushed::add);
+
+        CommandResult result = fixture.actor().handle(new SessionCommand.AskClass("ask-1"));
+
+        assertThat(result.events()).isNotEmpty();
+        assertThat(pushed).containsExactlyElementsOf(result.events());
+        assertThat(pushed.stream().map(SessionEvent::seq).distinct().count())
+                .isEqualTo(pushed.size());
+    }
+
+    @Test
+    void resumePushesResumedAndReplayTailExactlyOnceInOrder() {
+        ReconnectFixture fixture = fixture();
+        start(fixture);
+        fixture.actor().handle(new SessionCommand.AskClass("ask-1"));
+        fixture.actor().onTick(NOW.plusMillis(1_000));
+        fixture.actor().handle(new SessionCommand.EndQa("end-qa-1"));
+        List<SessionEvent> pushed = new CopyOnWriteArrayList<>();
+        fixture.actor().attachEventSink(pushed::add);
+
+        CommandResult result = fixture.actor().resume(2L, RecordingState.ACTIVE);
+
+        assertThat(pushed).containsExactlyElementsOf(result.events());
+        assertThat(pushed.get(0).type()).isEqualTo("session.resumed");
+        assertThat(pushed).noneMatch(event -> event.type().equals("session.time_tick"));
+        assertThat(pushed.subList(1, pushed.size()))
+                .isSortedAccordingTo(
+                        (left, right) -> Long.compare(left.seq(), right.seq()));
+        assertThat(pushed.stream().map(SessionEvent::seq).distinct().count())
+                .isEqualTo(pushed.size());
+    }
+
+    @Test
+    void freeSessionAutoEndsAtMaxDurationWithTimeoutReason() {
+        ReconnectFixture fixture = fixture();
+        start(fixture);
+
+        fixture.actor().onTick(NOW.plusSeconds(1_199));
+
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.IN_PROGRESS);
+        List<SessionEvent> ticks = eventsOfType(fixture, "session.time_tick");
+        assertThat(ticks).hasSize(1);
+        assertThat(ticks.get(0).payload().get("remaining_ms")).isEqualTo(1_000L);
+
+        fixture.actor().onTick(NOW.plusSeconds(1_200));
+
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.ENDED);
+        List<SessionEvent> ended = eventsOfType(fixture, "session.ended");
+        assertThat(ended).hasSize(1);
+        assertThat(ended.get(0).payload().get("reason")).isEqualTo("timeout");
+        assertThat(eventsOfType(fixture, "session.time_tick")).hasSize(1);
+        assertThat(fixture.scheduler().pendingTasks()).isZero();
+        assertThat(fixture.registry().find(fixture.session().id())).isEmpty();
+    }
+
+    @Test
+    void terminalSaveFailureKeepsActorAndPreventsInProgressResurrection() {
+        ToggleSessionRepository sessions = new ToggleSessionRepository();
+        InMemoryTaskRepository tasks = new InMemoryTaskRepository();
+        tasks.save(publishedTask());
+        ReconnectFixture fixture = fixture(new InMemorySessionEventStore(), sessions, tasks);
+        start(fixture);
+        // Mirrors SessionApplicationServiceImpl.start: the live in_progress row is persisted.
+        sessions.save(fixture.actor().session());
+        sessions.failSaves();
+
+        fixture.actor().fail(FailureReason.GRACE_TIMEOUT);
+
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.FAILED);
+        assertThat(fixture.registry().find(fixture.session().id())).contains(fixture.actor());
+        assertThat(fixture.registry().getOrCreate(fixture.session().id()).session().status())
+                .isEqualTo(SessionStatus.FAILED);
+        // The row write failed, so the stale row is still in_progress: the retained live actor
+        // must shield in-process reconnects from rebuilding it.
+        assertThat(sessions.findById(fixture.session().id()).orElseThrow().status())
+                .isEqualTo(SessionStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void failCleanupRunsWhenSessionFailedPersistThrows() {
+        FailingEventStore eventStore = new FailingEventStore();
+        ReconnectFixture fixture = fixture(
+                eventStore, new InMemorySessionRepository(), new InMemoryTaskRepository());
+        start(fixture);
+        fixture.actor().onWsDisconnected(NOW);
+        eventStore.failFromNow();
+
+        assertThatThrownBy(() -> fixture.actor().fail(FailureReason.INTERNAL))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.FAILED);
+        assertThat(fixture.scheduler().pendingTasks()).isZero();
+        assertThat(fixture.registry().find(fixture.session().id())).isEmpty();
+        assertThat(fixture.sessions().findById(fixture.session().id()).orElseThrow().status())
+                .isEqualTo(SessionStatus.FAILED);
+        assertThat(fixture.eventStore().all())
+                .noneMatch(event -> event.type().equals("session.failed"));
+        // The in-memory context appended the event before the store rejected it.
+        assertThat(eventsOfType(fixture, "session.failed")).hasSize(1);
+    }
+
     // ---------------------------------------------------------------------
     // Fixture helpers
     // ---------------------------------------------------------------------
 
     private ReconnectFixture fixture() {
+        return fixture(new InMemorySessionEventStore(), new InMemorySessionRepository(),
+                new InMemoryTaskRepository());
+    }
+
+    private ReconnectFixture fixture(
+            InMemorySessionEventStore eventStore,
+            SessionRepository sessions,
+            TaskRepository tasks) {
         Session session = Session.createPreparing(
                 new SessionId(UUID.randomUUID()), SessionType.TASK, new TaskId(TASK_ID),
                 new CourseId(COURSE_ID), new AccountId(STUDENT_ACCOUNT_ID), TaskMode.FREE,
@@ -265,17 +388,15 @@ class SessionReconnectTest {
                 .map(SessionReconnectTest::toConfig)
                 .toList());
         FakeScheduler scheduler = new FakeScheduler();
-        InMemorySessionEventStore eventStore = new InMemorySessionEventStore();
         InMemorySessionTextStore textStore = new InMemorySessionTextStore();
         SessionActor actor = new SessionActor(
                 session, taskSnapshot, context, new ClassroomStateMachine(), dynamics,
                 new InterviewStateMachine(ids::nextId),
                 new ContentGenerationService(new FakeContentClient()),
                 eventStore, textStore, ids, () -> NOW, scheduler, new Random(11));
-        InMemorySessionRepository sessions = new InMemorySessionRepository();
         sessions.save(session);
         SessionRuntimeRegistry registry = new SessionRuntimeRegistry(
-                sessions, new InMemoryTaskRepository(), eventStore, textStore, ids, () -> NOW,
+                sessions, tasks, eventStore, textStore, ids, () -> NOW,
                 scheduler, new FakeContentClient());
         registry.register(actor);
         return new ReconnectFixture(
@@ -335,6 +456,78 @@ class SessionReconnectTest {
                 student.seatNo(), student.sortOrder());
     }
 
+    private static Task publishedTask() {
+        TaskDraft draft = new TaskDraft(TaskMode.FREE, "荷塘月色", "部编版", 900, 1200,
+                RubricWeights.defaults(TaskMode.FREE), null, List.of(), null);
+        Task task = Task.createDraft(new TaskId(TASK_ID), new CourseId(COURSE_ID),
+                new AccountId(UUID.randomUUID()), draft, NOW);
+        TaskSnapshot snapshot = new TaskSnapshotFactory().create(
+                task, new CourseInfo(COURSE_ID, SCHOOL_ID, "语文教学论", true,
+                        Instant.parse("2027-06-30T00:00:00Z"), List.of()),
+                List.of(), NOW);
+        task.publish(snapshot, NOW);
+        return task;
+    }
+
+    /** Event store that starts failing on demand, after the session has started. */
+    private static final class FailingEventStore extends InMemorySessionEventStore {
+
+        private boolean failing;
+
+        private void failFromNow() {
+            failing = true;
+        }
+
+        @Override
+        public synchronized void append(SessionEvent event) {
+            if (failing) {
+                throw new IllegalStateException("event store unavailable");
+            }
+            super.append(event);
+        }
+    }
+
+    /** Session repository whose terminal write can be made to fail. */
+    private static final class ToggleSessionRepository implements SessionRepository {
+
+        private final InMemorySessionRepository delegate = new InMemorySessionRepository();
+        private boolean failSaves;
+
+        private void failSaves() {
+            failSaves = true;
+        }
+
+        @Override
+        public Session save(Session session) {
+            if (failSaves) {
+                throw new IllegalStateException("session row unavailable");
+            }
+            return delegate.save(session);
+        }
+
+        @Override
+        public Optional<Session> findById(SessionId id) {
+            return delegate.findById(id);
+        }
+
+        @Override
+        public Optional<Session> findActiveByStudentAndTask(
+                AccountId studentAccountId, TaskId taskId) {
+            return delegate.findActiveByStudentAndTask(studentAccountId, taskId);
+        }
+
+        @Override
+        public List<Session> findByStudentAndTask(
+                AccountId studentAccountId, TaskId taskId) {
+            return delegate.findByStudentAndTask(studentAccountId, taskId);
+        }
+
+        @Override
+        public long countByStudentAndTask(AccountId studentAccountId, TaskId taskId) {
+            return delegate.countByStudentAndTask(studentAccountId, taskId);
+        }
+    }
+
     private record ReconnectFixture(
             SessionActor actor,
             Session session,
@@ -343,6 +536,6 @@ class SessionReconnectTest {
             InMemorySessionEventStore eventStore,
             VirtualStudentDynamics dynamics,
             SessionRuntimeRegistry registry,
-            InMemorySessionRepository sessions) {
+            SessionRepository sessions) {
     }
 }

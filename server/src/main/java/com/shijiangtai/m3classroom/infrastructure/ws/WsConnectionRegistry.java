@@ -21,6 +21,20 @@ public final class WsConnectionRegistry {
 
     private final Map<SessionId, Consumer<SessionEvent>> connections =
             new ConcurrentHashMap<>();
+    private final Consumer<SessionId> failureListener;
+
+    /** Creates a registry without a transport-failure callback. */
+    public WsConnectionRegistry() {
+        this(sessionId -> { });
+    }
+
+    /**
+     * @param failureListener invoked with the session id after a sink throws; Task 12 uses it to
+     *     enter the 30 s grace path for that session
+     */
+    public WsConnectionRegistry(Consumer<SessionId> failureListener) {
+        this.failureListener = Objects.requireNonNull(failureListener, "failureListener");
+    }
 
     /**
      * Registers (or replaces) the active connection for a session.
@@ -34,13 +48,30 @@ public final class WsConnectionRegistry {
         return connections.put(sessionId, sink);
     }
 
-    /** Pushes an event to the current connection; a missing connection is a no-op. */
+    /**
+     * Pushes an event to the current connection; a missing connection is a no-op.
+     *
+     * <p>A sink that throws is treated as a transport failure: the connection is unregistered and
+     * {@code failureListener} is invoked so the handler can enter the grace path. Sink and
+     * listener exceptions never escape, because transport failure must not affect domain state
+     * or command results.
+     */
     public void send(SessionId sessionId, SessionEvent event) {
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(event, "event");
         Consumer<SessionEvent> sink = connections.get(sessionId);
-        if (sink != null) {
+        if (sink == null) {
+            return;
+        }
+        try {
             sink.accept(event);
+        } catch (RuntimeException exception) {
+            connections.remove(sessionId, sink);
+            try {
+                failureListener.accept(sessionId);
+            } catch (RuntimeException ignored) {
+                // A failing failure-handler must not break the actor's command path either.
+            }
         }
     }
 

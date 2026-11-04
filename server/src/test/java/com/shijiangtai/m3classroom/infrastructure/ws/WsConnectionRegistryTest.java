@@ -63,6 +63,34 @@ class WsConnectionRegistryTest {
         assertThat(received).containsExactly(event);
     }
 
+    @Test
+    void throwingSinkIsUnregisteredAndFailureCallbackRuns() {
+        List<SessionId> failures = new ArrayList<>();
+        WsConnectionRegistry registry = new WsConnectionRegistry(failures::add);
+        registry.register(SESSION_ID, event -> {
+            throw new IllegalStateException("socket closed");
+        });
+
+        registry.send(SESSION_ID, event(1));
+
+        assertThat(failures).containsExactly(SESSION_ID);
+        assertThat(registry.isConnected(SESSION_ID)).isFalse();
+    }
+
+    @Test
+    void throwingFailureCallbackDoesNotEscape() {
+        WsConnectionRegistry registry = new WsConnectionRegistry(sessionId -> {
+            throw new IllegalStateException("grace handler failed");
+        });
+        registry.register(SESSION_ID, event -> {
+            throw new IllegalStateException("socket closed");
+        });
+
+        registry.send(SESSION_ID, event(1));
+
+        assertThat(registry.isConnected(SESSION_ID)).isFalse();
+    }
+
     private static SessionEvent event(long seq) {
         return new SessionEvent(
                 UUID.randomUUID(), SESSION_ID, seq, "session.time_tick", 0L,

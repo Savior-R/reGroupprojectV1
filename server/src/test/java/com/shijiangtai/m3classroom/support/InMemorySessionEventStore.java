@@ -7,8 +7,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** In-memory append-only event log used by unit tests. */
-public final class InMemorySessionEventStore implements SessionEventStore {
+/** In-memory append-only event log used by unit tests; subclassable to inject failures. */
+public class InMemorySessionEventStore implements SessionEventStore {
 
     private final List<SessionEvent> events = new ArrayList<>();
 

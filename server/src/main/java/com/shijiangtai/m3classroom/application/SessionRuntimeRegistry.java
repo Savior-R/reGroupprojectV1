@@ -28,6 +28,8 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.random.RandomGenerator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -41,6 +43,7 @@ import org.springframework.stereotype.Component;
 @Component
 public final class SessionRuntimeRegistry {
 
+    private static final Logger LOG = LoggerFactory.getLogger(SessionRuntimeRegistry.class);
     private static final Duration TICK_INTERVAL = Duration.ofSeconds(1);
 
     private final Map<SessionId, SessionActor> actors = new ConcurrentHashMap<>();
@@ -146,27 +149,31 @@ public final class SessionRuntimeRegistry {
         }
     }
 
+    /**
+     * Terminal transitions triggered by timers (grace timeout / recording lost) never pass
+     * through the REST service, so the registry persists the terminal row itself. The row must be
+     * durable <em>before</em> the actor is evicted: otherwise a concurrent reconnect would
+     * reload the stale {@code in_progress} row and rebuild a live actor for a failed session.
+     * When the save fails the live actor is deliberately kept registered (it already holds the
+     * terminal state) and the failure is logged; as long as that actor lives, an in-process
+     * reconnect observes its {@code failed}/{@code ended} status instead of reloading the stale
+     * row.
+     */
     private void onStatusChanged(SessionId id, SessionActor actor, SessionStatus status) {
         if (status == SessionStatus.IN_PROGRESS) {
             ensureTick(id, actor);
             return;
         }
         stopTick(id);
-        actors.remove(id, actor);
-        persistTerminal(actor);
-    }
-
-    /**
-     * Keeps the session row in sync for terminal transitions triggered by timers (grace timeout /
-     * recording lost) that never pass through the REST service. A failure here must not break the
-     * actor's already-persisted terminal event, so it is contained.
-     */
-    private void persistTerminal(SessionActor actor) {
         try {
             sessionRepository.save(actor.session());
-        } catch (RuntimeException ignored) {
-            // The terminal event is already durable; the next read/persist repairs the row.
+        } catch (RuntimeException exception) {
+            LOG.error("Failed to persist terminal session {} ({}); keeping the live actor "
+                    + "registered so it cannot be rebuilt as in_progress",
+                    id.value(), status.wireValue(), exception);
+            return;
         }
+        actors.remove(id, actor);
     }
 
     /** One self-rescheduling 1 s tick; {@link #cancel()} stops both the current and next run. */
