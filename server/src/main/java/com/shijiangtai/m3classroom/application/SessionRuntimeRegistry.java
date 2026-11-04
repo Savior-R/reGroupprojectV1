@@ -113,6 +113,42 @@ public final class SessionRuntimeRegistry {
         stopTick(id);
     }
 
+    /**
+     * Evicts a terminal actor only when the persisted row is also terminal.
+     *
+     * <p>This preserves {@link #onStatusChanged}'s save-failure shield: when persisting a
+     * terminal transition fails, the live terminal actor is deliberately kept so an in-process
+     * reconnect cannot reload the stale {@code in_progress} row and rebuild a runnable actor.
+     * The control-WebSocket handler uses this on terminal-session connects instead of the
+     * unconditional {@link #remove(SessionId)}.
+     *
+     * @return {@code true} when the actor was removed
+     */
+    public boolean removeIfPersistedTerminal(SessionId id) {
+        Objects.requireNonNull(id, "id");
+        SessionActor actor = actors.get(id);
+        if (actor == null || !isTerminal(actor.session().status())) {
+            return false;
+        }
+        Session persisted = sessionRepository.findById(id).orElse(null);
+        if (persisted == null || !isTerminal(persisted.status())) {
+            return false;
+        }
+        if (actors.remove(id, actor)) {
+            stopTick(id);
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean isTerminal(SessionStatus status) {
+        return status == SessionStatus.ENDED
+                || status == SessionStatus.REVIEWING
+                || status == SessionStatus.SUBMITTED
+                || status == SessionStatus.CANCELLED
+                || status == SessionStatus.FAILED;
+    }
+
     // ------------------------------------------------------------------
     // Tick scheduling
     // ------------------------------------------------------------------

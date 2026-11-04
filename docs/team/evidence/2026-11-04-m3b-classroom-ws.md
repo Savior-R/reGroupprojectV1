@@ -91,7 +91,7 @@ docker compose --profile test run --rm test \
   gradle clean test --no-daemon --console=plain
 ```
 
-结果：`BUILD SUCCESSFUL in 1m 8s`，**50 个测试类 / 382 条用例，0 failure / 0 error / 0 skipped**。Task 11 基线为 365 条，本任务新增 17 条（6 条信封契约 + 10 条 WS IT + 1 条 `preparing` 断线 grace UT）。
+结果：`BUILD SUCCESSFUL in 1m 9s`，**50 个测试类 / 385 条用例，0 failure / 0 error / 0 skipped**。Task 11 基线为 365 条，本任务新增 20 条（6 条信封契约 + 10 条 WS IT + 4 条 `SessionReconnectTest` 用例：`preparing` 断线 grace、重连/start 取消 grace、终态 eviction 保护）。
 
 ## 5. Docker Compose smoke
 
@@ -158,6 +158,32 @@ select seq, type from m3_classroom.events where session_id = '<session>' order b
 
 结论：命令事件只出现一次；`session.started` 后 ack 的 seq 与事件 seq 一致；结束事件落库并按序推送；4001/4005/time.sync/终态路径与契约测试一致；客户端正常关闭 1000。
 
+### 5.1 `preparing` 断线重连 + 31 秒 grace 场景
+
+独立会话 `01a1a748-aa90-7f34-894a-dfa3ec138dd2`（redis ticket store，真实 30 秒调度器）：
+
+```text
+<< session.snapshot {"state":"preparing",...,"last_seq":0,"elapsed_ms":0}
+CLOSE 1000 arming grace
+# 重新申请 ticket 并连接（onWsConnected 取消旧 grace）
+<< session.snapshot {"state":"preparing",...}
+<< recording.ready_ack ... / server.ack grace-ready
+<< session.started ... / server.ack grace-start
+# 等待 31 秒，期间收到 15 秒 ping 并回复 pong
+<< ping {"server_time_ms":1793807937203}
+<< server.ack {"command_id":"pong-...","ok":true}
+# 31 秒后旧 grace deadline 已过，会话仍可执行命令
+<< classroom.question_asked {"intent":"answer","source":"manual"}
+<< classroom.state_changed {"from":"lecturing","to":"qa","qa_phase":"waiting_hands","trigger":"manual"}
+<< server.ack {"command_id":"grace-ask","ok":true}
+<< session.ended {"reason":"manual","duration_ms":31423}
+<< server.ack {"command_id":"grace-end","ok":true}
+CLOSE 1000 grace smoke done
+RESULT {"firstClose":1000,"secondClose":1000,"askAckOk":true}
+```
+
+数据库：该会话最终 `ended|t|t`，事件中无 `session.failed`；证明重连/start 后旧 `PREPARING` grace 不再误杀 `in_progress` 会话。该场景同时验证了 15 秒 `ping` 与客户端 `pong`。
+
 ## 6. smoke 中发现并修复的问题
 
 ### 6.1 Alpine JRE 缺少 `jdk.random`，首个 WS 连接 1011
@@ -175,6 +201,14 @@ select seq, type from m3_classroom.events where session_id = '<session>' order b
 3. **超大帧关闭 4005**：注册 `ServletServerContainerFactoryBean`，文本/二进制缓冲提升到 256 KB（MOCK 测试上下文无 `ServerContainer` 时安全跳过），handler 仍按 UTF-8 字节数执行 64 KB 协议限制并关闭 4005；容器层面的 `SessionLimitExceededException` 也映射到 4005。覆盖：`oversizedFrameCloses4005` + §5 smoke（70,000 字节帧）。
 4. **终态 actor 不缓存 + `preparing` 断线 grace**：连接终态会话时发送 snapshot 后关闭（`ended/reviewing` 1000，`failed` 4002，`cancelled/submitted` 4003），并从 `SessionRuntimeRegistry` 移除 actor；`SessionActor.onWsDisconnected` 现在同时接受 `PREPARING` 和 `IN_PROGRESS`，30 秒超时以 `grace_timeout` 失败。覆盖：`terminalSessionConnectClosesNormallyAndEvictsActor`、`preparingDisconnectFailsAfterGraceWithoutStart`、`reconnectOutsideGraceCloses4002` 的 registry 断言 + §5 terminal 场景。
 
+### 6.3 复审修复（第 3 轮，2 项）
+
+1. **`PREPARING` grace 在重连 / start 时取消**：新增 `SessionActor.onWsConnected()`（handler 连接建立时调用）并在 `handleStart` 中取消 `graceTask`；否则 30 秒后旧 timer 会失败一个已连接且 `in_progress` 的会话。覆盖：
+   - `reconnectAndStartCancelsPreparingGrace`：`preparing` 断线 → `onWsConnected` → 推进 31 s 仍 `PREPARING` → `session.start` → 再推进 30 s 仍 `IN_PROGRESS`，无 `session.failed`。
+   - `startCancelsPreparingGraceWithoutReconnect`：即使没有 `onWsConnected`，`session.start` 也会取消旧 grace。
+   - Docker smoke 的 grace 场景：断线 → 重连 → start → 等待 31 s → `teacher.ask_class` ack `ok=true` → `session.ended`，证明真实调度器下未被旧 timer 失败。
+2. **终态 eviction 不绕过 registry 的保存失败保护**：新增 `SessionRuntimeRegistry.removeIfPersistedTerminal(sessionId)`，只有 actor 与持久化行都为终态时才移除；若终态保存失败、DB 行仍为 `in_progress`，保留 actor 作为防重建 shield。handler 的终态连接分支改用该方法。覆盖：`terminalActorIsEvictedOnlyWhenPersistedRowIsTerminal`（先让保存失败 → `removeIfPersistedTerminal=false` 且 actor 保留；恢复保存并持久化终态后 → `true` 且 actor 移除）。
+
 ## 7. 覆盖与未覆盖
 
 已覆盖：
@@ -186,8 +220,9 @@ select seq, type from m3_classroom.events where session_id = '<session>' order b
 - 失败会话关闭 4002；非法 ticket 关闭 4001；超大帧关闭 4005。
 - `time.sync` 返回 `at_ms` / `server_time_ms`。
 - 新连接替换旧连接（旧连接 1000）；终态会话 snapshot 后正常关闭且不残留 actor。
-- `preparing` 断线 30 秒 grace → `grace_timeout`（fake scheduler UT）。
-- Docker 全栈：Flyway、PostgreSQL 事件落库、Redis 一次性 ticket、真实 WS transcript。
+- `preparing` 断线 30 秒 grace → `grace_timeout`；重连 / `session.start` 取消旧 grace，31 秒后仍 `in_progress`。
+- 终态 actor 只在持久化行也是终态时移除；保存失败时保留 shield actor。
+- Docker 全栈：Flyway、PostgreSQL 事件落库、Redis 一次性 ticket、真实 WS transcript（含 15 秒 ping / pong 与 31 秒 grace 场景）。
 
 未覆盖 / 后续：
 
@@ -206,15 +241,15 @@ select seq, type from m3_classroom.events where session_id = '<session>' order b
 - `server/src/main/java/com/shijiangtai/m3classroom/infrastructure/ws/WsHandshakeInterceptor.java`
 - `server/src/main/java/com/shijiangtai/m3classroom/infrastructure/ws/ClassroomWebSocketHandler.java`
 - `server/src/main/java/com/shijiangtai/m3classroom/infrastructure/ws/WebSocketConfig.java`
-- `server/src/main/java/com/shijiangtai/m3classroom/application/SessionActor.java`（`preparing` 断线 grace）
-- `server/src/main/java/com/shijiangtai/m3classroom/application/SessionRuntimeRegistry.java`（随机源修复）
+- `server/src/main/java/com/shijiangtai/m3classroom/application/SessionActor.java`（`preparing` 断线 grace、`onWsConnected` / start 取消 grace）
+- `server/src/main/java/com/shijiangtai/m3classroom/application/SessionRuntimeRegistry.java`（随机源修复、`removeIfPersistedTerminal` 保护）
 - `server/src/main/java/com/shijiangtai/m3classroom/domain/classroom/VirtualStudentDynamics.java`（随机源修复）
 
 测试：
 
 - `server/src/test/java/com/shijiangtai/m3classroom/ws/WsEnvelopeTest.java`
 - `server/src/test/java/com/shijiangtai/m3classroom/ws/ClassroomWebSocketIT.java`
-- `server/src/test/java/com/shijiangtai/m3classroom/application/SessionReconnectTest.java`（新增 `preparing` 断线 grace 用例）
+- `server/src/test/java/com/shijiangtai/m3classroom/application/SessionReconnectTest.java`（新增 `preparing` 断线 grace、重连/start 取消 grace、终态 eviction 保护 4 条用例）
 
 文档：
 

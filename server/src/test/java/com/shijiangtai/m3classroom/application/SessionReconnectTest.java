@@ -148,6 +148,68 @@ class SessionReconnectTest {
     }
 
     @Test
+    void reconnectAndStartCancelsPreparingGrace() {
+        ReconnectFixture fixture = fixture();
+        fixture.actor().onWsDisconnected(NOW);
+        fixture.scheduler().advance(Duration.ofSeconds(10));
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.PREPARING);
+
+        fixture.actor().onWsConnected();
+        fixture.scheduler().advance(Duration.ofSeconds(31));
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.PREPARING);
+        assertThat(eventsOfType(fixture, "session.failed")).isEmpty();
+
+        assertThat(fixture.actor().handle(ready("ready-1")).ok()).isTrue();
+        assertThat(fixture.actor()
+                .handle(new SessionCommand.StartSession("start-1")).ok()).isTrue();
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.IN_PROGRESS);
+
+        fixture.scheduler().advance(Duration.ofSeconds(30));
+
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.IN_PROGRESS);
+        assertThat(eventsOfType(fixture, "session.failed")).isEmpty();
+    }
+
+    @Test
+    void startCancelsPreparingGraceWithoutReconnect() {
+        ReconnectFixture fixture = fixture();
+        assertThat(fixture.actor().handle(ready("ready-1")).ok()).isTrue();
+        fixture.actor().onWsDisconnected(NOW);
+        fixture.scheduler().advance(Duration.ofSeconds(10));
+
+        assertThat(fixture.actor()
+                .handle(new SessionCommand.StartSession("start-1")).ok()).isTrue();
+        fixture.scheduler().advance(Duration.ofSeconds(30));
+
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.IN_PROGRESS);
+        assertThat(eventsOfType(fixture, "session.failed")).isEmpty();
+    }
+
+    @Test
+    void terminalActorIsEvictedOnlyWhenPersistedRowIsTerminal() {
+        ToggleSessionRepository sessions = new ToggleSessionRepository();
+        InMemoryTaskRepository tasks = new InMemoryTaskRepository();
+        tasks.save(publishedTask());
+        ReconnectFixture fixture = fixture(
+                new InMemorySessionEventStore(), sessions, tasks);
+        start(fixture);
+        sessions.save(fixture.actor().session());
+        sessions.failSaves();
+
+        fixture.actor().fail(FailureReason.GRACE_TIMEOUT);
+
+        assertThat(fixture.registry().find(fixture.session().id())).contains(fixture.actor());
+        assertThat(fixture.registry.removeIfPersistedTerminal(fixture.session().id())).isFalse();
+        assertThat(fixture.registry().find(fixture.session().id())).contains(fixture.actor());
+
+        sessions.allowSaves();
+        sessions.save(fixture.actor().session());
+
+        assertThat(fixture.registry.removeIfPersistedTerminal(fixture.session().id())).isTrue();
+        assertThat(fixture.registry().find(fixture.session().id())).isEmpty();
+    }
+
+    @Test
     void preparingDisconnectFailsAfterGraceWithoutStart() {
         ReconnectFixture fixture = fixture();
 
@@ -519,6 +581,10 @@ class SessionReconnectTest {
 
         private void failSaves() {
             failSaves = true;
+        }
+
+        private void allowSaves() {
+            failSaves = false;
         }
 
         @Override

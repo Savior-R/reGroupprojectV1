@@ -133,9 +133,10 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
                 if (status == SessionStatus.FAILED
                         || status == SessionStatus.CANCELLED
                         || status == SessionStatus.SUBMITTED) {
-                    // getOrCreate may have cached an actor for a terminal session: never keep
-                    // it in the live registry after this connection.
-                    runtimeRegistry.remove(sessionId);
+                    // getOrCreate may have cached an actor for a terminal session. Evict it only
+                    // when the persisted row is terminal too: a failed terminal save keeps the
+                    // actor as a shield against rebuilding a stale in_progress row.
+                    runtimeRegistry.removeIfPersistedTerminal(sessionId);
                     connection.close(
                             status == SessionStatus.FAILED ? CLOSE_FAILED : CLOSE_STATE,
                             status == SessionStatus.FAILED ? "会话已失败" : "当前状态不允许连接");
@@ -149,11 +150,12 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
                                 sessionId, snapshot.lastSeq(), snapshot.elapsedMs(),
                                 snapshotPayload(snapshot)));
                     } finally {
-                        runtimeRegistry.remove(sessionId);
+                        runtimeRegistry.removeIfPersistedTerminal(sessionId);
                     }
                     connection.close(CloseStatus.NORMAL.getCode(), "会话已结束");
                     return;
                 }
+                actor.onWsConnected();
                 Consumer<SessionEvent> previous = connectionRegistry.register(
                         sessionId, connection.sink);
                 actor.attachEventSink(new SessionEventSinkAdapter(

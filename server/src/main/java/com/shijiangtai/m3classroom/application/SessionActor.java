@@ -286,6 +286,9 @@ public final class SessionActor {
         }
 
         Instant now = clock.now();
+        // A start from a reconnected client must not be killed by a stale PREPARING grace
+        // timer; the connection may not have gone through onWsConnected (e.g. REST fallback).
+        cancelGrace();
         session.start(now);
         List<SessionEvent> events = new ArrayList<>();
         events.add(append(SESSION_STARTED, Map.of("started_at_ms", 0L), now));
@@ -318,8 +321,7 @@ public final class SessionActor {
             return CommandResult.error(ErrorCode.SESSION_FAILED, "录制已丢失");
         }
         requireStatus("session.resume", SessionStatus.IN_PROGRESS);
-        cancel(graceTask);
-        graceTask = null;
+        cancelGrace();
         Instant now = clock.now();
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("last_seq", lastSeq);
@@ -658,9 +660,18 @@ public final class SessionActor {
         if (status != SessionStatus.PREPARING && status != SessionStatus.IN_PROGRESS) {
             return;
         }
-        cancel(graceTask);
+        cancelGrace();
         graceTask = scheduler.schedule(
                 () -> fail(FailureReason.GRACE_TIMEOUT), WS_GRACE);
+    }
+
+    /**
+     * Cancels the reconnect grace when a control connection is (re)established. A PREPARING
+     * session may then be started over the new socket; without this cancellation the stale
+     * timer would fail an in-progress, connected session 30 s after the original disconnect.
+     */
+    public synchronized void onWsConnected() {
+        cancelGrace();
     }
 
     public synchronized List<SessionEvent> replayAfter(long seq) {
@@ -1096,6 +1107,10 @@ public final class SessionActor {
         handRaiseTask = null;
         cancel(handWindowTask);
         handWindowTask = null;
+        cancelGrace();
+    }
+
+    private void cancelGrace() {
         cancel(graceTask);
         graceTask = null;
     }
