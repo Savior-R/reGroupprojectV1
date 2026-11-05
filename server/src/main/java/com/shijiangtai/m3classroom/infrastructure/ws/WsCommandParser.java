@@ -20,8 +20,10 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p>Protocol version 1 and a non-blank {@code command_id} are mandatory. Invalid JSON,
  * unsupported versions, unknown command types and malformed payloads all surface as
- * {@link ErrorCode#VALIDATION_ERROR}; no command reaches the actor in those cases. The 64 KB
- * frame limit is enforced before command dispatch.
+ * {@link ErrorCode#VALIDATION_ERROR}; no command reaches the actor in those cases. A negative
+ * {@code session.resume.last_seq} is rejected here rather than leaking the domain record's
+ * {@link IllegalArgumentException} as an internal error. The 64 KB frame limit is enforced
+ * before command dispatch.
  */
 @Component
 public final class WsCommandParser {
@@ -81,10 +83,16 @@ public final class WsCommandParser {
             case "recording.ready" ->
                     new SessionCommand.RecordingReady(commandId, streams(payload));
             case "session.start" -> new SessionCommand.StartSession(commandId);
-            case "session.resume" -> new SessionCommand.ResumeSession(
-                    commandId,
-                    requireLong(payload, "last_seq"),
-                    RecordingState.fromWire(requireString(payload, "recording_state")));
+            case "session.resume" -> {
+                long lastSeq = requireLong(payload, "last_seq");
+                if (lastSeq < 0) {
+                    throw validation("last_seq 不能为负数", Map.of("field", "last_seq"));
+                }
+                yield new SessionCommand.ResumeSession(
+                        commandId,
+                        lastSeq,
+                        RecordingState.fromWire(requireString(payload, "recording_state")));
+            }
             case "teacher.ask_class" -> new SessionCommand.AskClass(commandId);
             case "teacher.ask_student_question" ->
                     new SessionCommand.AskStudentQuestion(commandId);

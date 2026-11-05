@@ -119,6 +119,21 @@ class WsEnvelopeTest {
     }
 
     @Test
+    void rejectsNegativeResumeLastSeqButAcceptsZero() {
+        assertValidationError(() -> parser.toCommand(parser.parse("""
+                {"v":1,"type":"session.resume","command_id":"resume-negative",
+                 "payload":{"last_seq":-1,"recording_state":"active"}}
+                """)));
+
+        SessionCommand resume = parser.toCommand(parser.parse("""
+                {"v":1,"type":"session.resume","command_id":"resume-zero",
+                 "payload":{"last_seq":0,"recording_state":"active"}}
+                """));
+        assertThat(resume).isInstanceOf(SessionCommand.ResumeSession.class);
+        assertThat(((SessionCommand.ResumeSession) resume).lastSeq()).isZero();
+    }
+
+    @Test
     void rejectsMissingCommandIdAndUnsupportedVersion() {
         assertValidationError(() -> parser.parse(
                 "{\"v\":1,\"type\":\"session.start\",\"payload\":{}}"));

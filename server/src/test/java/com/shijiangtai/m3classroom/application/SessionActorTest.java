@@ -663,6 +663,99 @@ class SessionActorTest {
         assertThat(examinerTexts.get(0).kind()).isEqualTo("question");
     }
 
+    @Test
+    void interviewNextQuestionEmitsAnswerEndedNextQuestionShownAndAnswerStarted() {
+        ActorFixture fixture = interviewFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1", StreamType.CAMERA, StreamType.AUDIO));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        int eventsBeforeNext = fixture.context().after(0).size();
+
+        var result = fixture.actor().handle(new SessionCommand.NextQuestion("next-1"));
+
+        assertThat(result.ok()).isTrue();
+        List<SessionEvent> emitted = fixture.context().after(0);
+        List<SessionEvent> tail = emitted.subList(eventsBeforeNext, emitted.size());
+        assertThat(tail).extracting(SessionEvent::type).containsExactly(
+                "interview.answer_ended",
+                "interview.next_question",
+                "interview.question_shown",
+                "interview.answer_started");
+
+        TaskSnapshot.QuestionSnapshot first = fixture.task().interview().questions().get(0);
+        TaskSnapshot.QuestionSnapshot second = fixture.task().interview().questions().get(1);
+        assertThat(tail.get(0).payload().get("question_id"))
+                .isEqualTo(first.questionId());
+        assertThat(tail.get(1).payload().get("question_id"))
+                .isEqualTo(second.questionId());
+        assertThat(tail.get(1).payload().get("order")).isEqualTo(2);
+        assertThat(tail.get(2).payload().get("text")).isEqualTo(second.stem());
+        assertThat(tail.get(3).payload().get("question_id"))
+                .isEqualTo(second.questionId());
+        assertThat(tail.get(0).payload().get("answer_id"))
+                .isNotEqualTo(tail.get(3).payload().get("answer_id"));
+    }
+
+    @Test
+    void interviewEndEmitsAnswerEndedInterviewEndedAndSessionEnded() {
+        ActorFixture fixture = interviewFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1", StreamType.CAMERA, StreamType.AUDIO));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        int eventsBeforeEnd = fixture.context().after(0).size();
+
+        var result = fixture.actor().handle(new SessionCommand.EndInterview("end-1"));
+
+        assertThat(result.ok()).isTrue();
+        List<SessionEvent> emitted = fixture.context().after(0);
+        List<SessionEvent> tail = emitted.subList(eventsBeforeEnd, emitted.size());
+        assertThat(tail).extracting(SessionEvent::type).containsExactly(
+                "interview.answer_ended", "interview.ended", "session.ended");
+        assertThat(tail.get(1).payload()).isEmpty();
+        assertThat(tail.get(2).payload().get("reason")).isEqualTo("manual");
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.ENDED);
+    }
+
+    @Test
+    void interviewTimeoutOnTickEndsWithTimeoutReason() {
+        ActorFixture fixture = interviewFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1", StreamType.CAMERA, StreamType.AUDIO));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        int eventsBeforeTick = fixture.context().after(0).size();
+
+        fixture.actor().onTick(NOW.plusSeconds(301));
+
+        List<SessionEvent> emitted = fixture.context().after(0);
+        List<SessionEvent> tail = emitted.subList(eventsBeforeTick, emitted.size());
+        assertThat(tail).extracting(SessionEvent::type).containsExactly(
+                "interview.answer_ended", "interview.ended", "session.ended");
+        assertThat(tail.get(2).payload().get("reason")).isEqualTo("timeout");
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.ENDED);
+    }
+
+    @Test
+    void interviewNextOnLastQuestionReturnsInterviewNoMoreQuestions() {
+        ActorFixture fixture = interviewFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1", StreamType.CAMERA, StreamType.AUDIO));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        assertThat(fixture.actor().handle(new SessionCommand.NextQuestion("next-1")).ok())
+                .isTrue();
+        int eventsBeforeRejected = fixture.context().after(0).size();
+        long seqBeforeRejected = fixture.context().lastSeq();
+        Object answerIdBefore = fixture.actor().snapshot().interview().get("answer_id");
+
+        var result = fixture.actor().handle(new SessionCommand.NextQuestion("next-2"));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.INTERVIEW_NO_MORE_QUESTIONS);
+        assertThat(fixture.context().after(0)).hasSize(eventsBeforeRejected);
+        assertThat(fixture.context().lastSeq()).isEqualTo(seqBeforeRejected);
+        assertThat(fixture.actor().snapshot().interview().get("answer_id"))
+                .isEqualTo(answerIdBefore);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> current =
+                (Map<String, Object>) fixture.actor().snapshot().interview().get("current");
+        assertThat(current.get("order")).isEqualTo(2);
+    }
+
     // ---------------------------------------------------------------------
     // Fixture helpers
     // ---------------------------------------------------------------------

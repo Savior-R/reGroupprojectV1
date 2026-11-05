@@ -27,6 +27,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -59,8 +61,8 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger LOG =
             LoggerFactory.getLogger(ClassroomWebSocketHandler.class);
-    private static final Duration PING_INTERVAL = Duration.ofSeconds(15);
-    private static final Duration PONG_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration DEFAULT_PING_INTERVAL = Duration.ofSeconds(15);
+    private static final Duration DEFAULT_PONG_TIMEOUT = Duration.ofSeconds(30);
 
     private final SessionRuntimeRegistry runtimeRegistry;
     private final WsConnectionRegistry connectionRegistry;
@@ -70,6 +72,8 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
     private final ClockProvider clock;
     private final SchedulerPort scheduler;
     private final ObjectMapper objectMapper;
+    private final Duration pingInterval;
+    private final Duration pongTimeout;
     private final Map<String, Connection> connections = new ConcurrentHashMap<>();
 
     public ClassroomWebSocketHandler(
@@ -81,6 +85,22 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
             ClockProvider clock,
             SchedulerPort scheduler,
             ObjectMapper objectMapper) {
+        this(runtimeRegistry, connectionRegistry, sessionRepository, startGuard, commandParser,
+                clock, scheduler, objectMapper, DEFAULT_PING_INTERVAL, DEFAULT_PONG_TIMEOUT);
+    }
+
+    @Autowired
+    public ClassroomWebSocketHandler(
+            SessionRuntimeRegistry runtimeRegistry,
+            WsConnectionRegistry connectionRegistry,
+            SessionRepository sessionRepository,
+            SessionStartGuard startGuard,
+            WsCommandParser commandParser,
+            ClockProvider clock,
+            SchedulerPort scheduler,
+            ObjectMapper objectMapper,
+            @Value("${m3.ws.ping-interval:15s}") Duration pingInterval,
+            @Value("${m3.ws.pong-timeout:30s}") Duration pongTimeout) {
         this.runtimeRegistry = Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
         this.connectionRegistry = Objects.requireNonNull(
                 connectionRegistry, "connectionRegistry");
@@ -90,6 +110,16 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.pingInterval = requirePositive(pingInterval, "pingInterval");
+        this.pongTimeout = requirePositive(pongTimeout, "pongTimeout");
+    }
+
+    private static Duration requirePositive(Duration value, String name) {
+        Objects.requireNonNull(value, name);
+        if (value.isZero() || value.isNegative()) {
+            throw new IllegalArgumentException(name + " must be positive");
+        }
+        return value;
     }
 
     @Override
@@ -397,7 +427,7 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
         }
 
         private void scheduleHeartbeat() {
-            heartbeat = scheduler.schedule(this::heartbeatTick, PING_INTERVAL);
+            heartbeat = scheduler.schedule(this::heartbeatTick, pingInterval);
         }
 
         private void heartbeatTick() {
@@ -407,7 +437,7 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
             }
             Instant now = clock.now();
             long nowMs = now.toEpochMilli();
-            if (nowMs - lastPongAt.get() >= PONG_TIMEOUT.toMillis()) {
+            if (nowMs - lastPongAt.get() >= pongTimeout.toMillis()) {
                 close(CLOSE_HEARTBEAT, "心跳超时");
                 return;
             }
@@ -418,7 +448,7 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
                 close(CLOSE_TOO_LARGE, "心跳发送失败");
                 return;
             }
-            heartbeat = scheduler.schedule(this::heartbeatTick, PING_INTERVAL);
+            heartbeat = scheduler.schedule(this::heartbeatTick, pingInterval);
         }
 
         private void close(int code, String reason) {

@@ -277,7 +277,7 @@ from m3_classroom.sessions where id = '01a1a91e-dadf-7a89-80dc-88a033009fce';
 
 未覆盖 / 后续：
 
-- 15 秒 ping / 30 秒 4004 与慢消费者路径：代码已实现，但 IT 不等待真实 15/30 秒计时；建议后续用可注入时钟或调度器补时控用例。
+- 心跳 / 4004 已由 `WsHeartbeatIT` 用可配置间隔覆盖（见 §9）；慢消费者路径仍只由 4005 / `SessionLimitExceededException` 用例间接覆盖，尚未模拟真实背压。
 - 终态会话由 `getOrCreate` 重建 actor 时，`session.snapshot.last_seq` 为 0（内存 context 不重放 DB 事件）；终态连接不用于事件回放，前端如需要应以 REST `SessionView.last_seq` 为准。是否在终态快照中补 `max_seq` 留待前端联调确认。
 - 感知通道、前端课堂 / 面试 / 回放、M3C 录制、E2E、NFR 不在本任务范围。
 
@@ -314,3 +314,79 @@ from m3_classroom.sessions where id = '01a1a91e-dadf-7a89-80dc-88a033009fce';
 - 修改生产类：`SessionActor.java`（行为状态事件、空举手窗口、`endedAt` 钳制、`question_id`、内部异常日志）、`SessionApplicationServiceImpl.java`（start 前 guard）、`SessionRuntimeRegistry.java`（`eventStore.maxSeq` 续接 `lastSeq`）、`VirtualStudentDynamics.java`（行为状态转移 + `student.state_changed`）、`SessionContext.java`（持久化 `lastSeq` 构造器）、`SessionRepository.java` / `SessionJpaRepository.java` / `SessionRepositoryAdapter.java`（`findByStatusIn`）、`ClassroomWebSocketHandler.java`（start guard、持久化失败 error + 4002、`lastSeq` 单调、`endedAt` 钳制、异常日志）。
 - 新增测试：`server/src/test/java/com/shijiangtai/m3classroom/application/SessionStartupReconcilerTest.java`、`server/src/test/java/com/shijiangtai/m3classroom/infrastructure/ws/ClassroomWebSocketHandlerTest.java`。
 - 修改测试：`SessionActorTest.java`、`SessionApplicationServiceTest.java`、`SessionReconnectTest.java`、`VirtualStudentDynamicsTest.java`、`SessionRepositoryIT.java`、`InMemorySessionRepository.java`、`ClassroomWebSocketIT.java`。
+
+## 9. 2026-11-05 测试矩阵补齐（M3-T15 / M3-T18）
+
+本次只补测试矩阵缺口，不改变协议、表或事件契约；生产改动限于把心跳间隔改为可配置，并让负数 `last_seq` 在解析层返回 `VALIDATION_ERROR`。
+
+### 9.1 新增 / 修改用例
+
+| 文件 | 用例 | 覆盖 |
+|---|---|---|
+| `SessionActorTest` | `interviewNextQuestionEmitsAnswerEndedNextQuestionShownAndAnswerStarted` | 第二题事件顺序 `answer_ended → next_question → question_shown → answer_started`、题号 / 题目文本 / answer_id 切换 |
+| `SessionActorTest` | `interviewEndEmitsAnswerEndedInterviewEndedAndSessionEnded` | `interview.end` 事件顺序、`interview.ended` 空 payload、`session.ended.reason=manual`、状态 `ENDED` |
+| `SessionActorTest` | `interviewTimeoutOnTickEndsWithTimeoutReason` | `onTick(total+1s)` 触发 `answer_ended → interview.ended → session.ended`，原因 `timeout` |
+| `SessionActorTest` | `interviewNextOnLastQuestionReturnsInterviewNoMoreQuestions` | 最后一题再 next 返回 `INTERVIEW_NO_MORE_QUESTIONS`，事件数 / `lastSeq` / `answer_id` / 当前题不变 |
+| `ClassroomWebSocketIT` | `interviewFlowShowsAdvancesAndEndsQuestions` | REST 取 ticket → snapshot（`mode=interview`）→ 仅 camera+audio `recording.ready` → start Q1 → next Q2 → end；逐条断言 `interview.*` 事件顺序、Q2 文本与 `session.ended`，最后正常关闭 1000 |
+| `ClassroomWebSocketIT` | `negativeResumeLastSeqReturnsValidationError` | `session.resume {last_seq:-1}` 收到 `error VALIDATION_ERROR`（含 `command_id`），连接保持打开，会话仍 `preparing` |
+| `WsEnvelopeTest` | `rejectsNegativeResumeLastSeqButAcceptsZero` | `last_seq:-1` → `DomainException(VALIDATION_ERROR)`；`last_seq:0` 正常映射为 `ResumeSession` |
+| `WsHeartbeatIT` | `missingPongCloses4004WithinPongTimeout` | 注入 `m3.ws.ping-interval=200ms` / `m3.ws.pong-timeout=500ms`；不回 pong 时服务端 3 秒内关闭 4004，且至少收到一次 `ping` |
+| `WsHeartbeatIT` | `pongResponseKeepsConnectionOpen` | 持续回 `pong` 时超过 500 ms 仍保持连接，`time.sync` 仍能收到 ack，客户端正常关闭 1000 |
+
+生产改动：
+
+- `ClassroomWebSocketHandler` 的心跳间隔改为 `Duration` 字段，`@Value("${m3.ws.ping-interval:15s}")` / `@Value("${m3.ws.pong-timeout:30s}")` 注入；原 8 参数构造器保留并委托默认值，既有单测不受影响。
+- `WsCommandParser` 在构造 `SessionCommand.ResumeSession` 前校验 `last_seq >= 0`，负数返回 `VALIDATION_ERROR`，不再以 `IllegalArgumentException` 冒泡成 `INTERNAL_ERROR`。
+
+### 9.2 RED / GREEN
+
+RED（先写测试，生产改动前执行）：
+
+```bash
+docker compose --profile test run --rm test \
+  gradle test --tests '*WsEnvelopeTest' --tests '*WsHeartbeatIT' \
+  --no-daemon --console=plain
+```
+
+结果：`12 tests completed, 3 failed`，与预期一致：
+
+- `WsEnvelopeTest.rejectsNegativeResumeLastSeqButAcceptsZero`：`AssertionError`（负数仍抛 `IllegalArgumentException`）。
+- `WsHeartbeatIT.missingPongCloses4004WithinPongTimeout`：`TimeoutException`（默认 15 s / 30 s 心跳未在 10 s 内关闭）。
+- `WsHeartbeatIT.pongResponseKeepsConnectionOpen`：`AssertionFailedError`（3 s 内未收到 2 次 `ping`，证明测试属性未被读取）。
+
+面试 4 条 actor 用例是针对已实现行为的规格化补测，首次执行即通过；它们与下面的 GREEN 一起作为 M3-T18 的证据。
+
+GREEN（生产改动后聚焦执行）：
+
+```bash
+docker compose --profile test run --rm test \
+  gradle test --tests '*WsEnvelopeTest' --tests '*WsHeartbeatIT' \
+  --tests '*SessionActorTest' \
+  --tests '*ClassroomWebSocketIT.interviewFlowShowsAdvancesAndEndsQuestions' \
+  --tests '*ClassroomWebSocketIT.negativeResumeLastSeqReturnsValidationError' \
+  --no-daemon --console=plain
+```
+
+结果：`BUILD SUCCESSFUL in 43s`。
+
+全量：
+
+```bash
+docker compose --profile test run --rm test \
+  gradle clean test --no-daemon --console=plain
+```
+
+结果：`BUILD SUCCESSFUL in 1m 15s`；XML 汇总 **56 个测试类 / 423 条用例，0 failure / 0 error / 0 skipped**。该数字包含同一工作区中暂停的 M3C 任务未跟踪测试（`domain/recording` 3 个类 / 13 条用例）；按本任务提交范围（M3B）统计为 **53 个测试类 / 410 条用例**，相对 401 基线新增 1 个类 / 9 条用例（SessionActorTest 4、ClassroomWebSocketIT 2、WsEnvelopeTest 1、WsHeartbeatIT 2）。M3C 文件不进入本次提交。
+
+### 9.3 覆盖与说明
+
+- `ping` / `pong` 真实计时路径现已由 `WsHeartbeatIT` 覆盖；默认上下文仍由 `ClassroomWebSocketIT` 使用（15 s / 30 s），心跳属性只在 `WsHeartbeatIT` 的独立上下文中缩短。
+- `last_seq` 负数在 WS 与解析器两层均有断言：解析器返回 `VALIDATION_ERROR`，WS `error` 携带同一错误码和 `command_id`，连接不关闭。
+- 面试 WS 流程使用 `DevDataConfig.QUESTION1_ID` / `QUESTION2_ID` 与默认面试权重（40/30/30）、时长 300/300、无材料 / 无虚拟学生；与 actor 用例共同覆盖 Q1 → next → end 的事件顺序。
+- 未新增 E2E / 性能 / 安全用例，G3—G8 与模块完成度保持未标记。
+
+### 9.4 本次变更文件
+
+- 生产：`server/src/main/java/com/shijiangtai/m3classroom/infrastructure/ws/ClassroomWebSocketHandler.java`、`WsCommandParser.java`
+- 测试：`server/src/test/java/com/shijiangtai/m3classroom/application/SessionActorTest.java`、`ws/ClassroomWebSocketIT.java`、`ws/WsEnvelopeTest.java`、`ws/WsHeartbeatIT.java`（新增）
+- 文档：`docs/team/evidence/2026-11-04-m3b-classroom-ws.md`、`docs/team/02-进度看板.md`

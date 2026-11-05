@@ -8,13 +8,18 @@ import com.shijiangtai.m3classroom.application.SessionRuntimeRegistry;
 import com.shijiangtai.m3classroom.application.TaskApplicationService;
 import com.shijiangtai.m3classroom.application.TaskMaterialService;
 import com.shijiangtai.m3classroom.application.TaskPublishService;
+import com.shijiangtai.m3classroom.application.command.CreateTaskCommand;
 import com.shijiangtai.m3classroom.application.view.SessionView;
 import com.shijiangtai.m3classroom.application.view.TaskView;
 import com.shijiangtai.m3classroom.domain.session.FailureReason;
 import com.shijiangtai.m3classroom.domain.task.CourseInfo;
+import com.shijiangtai.m3classroom.domain.task.QuestionConfig;
+import com.shijiangtai.m3classroom.domain.task.TaskMode;
+import com.shijiangtai.m3classroom.infrastructure.config.DevDataConfig;
 import com.shijiangtai.m3classroom.infrastructure.crossmodule.InMemoryCourseQueryAdapter;
 import com.shijiangtai.m3classroom.persistence.PostgresIntegrationTest;
 import com.shijiangtai.shared.application.ClockProvider;
+import com.shijiangtai.shared.domain.QuestionId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.io.IOException;
@@ -359,6 +364,94 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void interviewFlowShowsAdvancesAndEndsQuestions() throws Exception {
+        TaskId interviewTaskId = publishInterviewTask();
+        SessionView created = sessionApplicationService.createSession(
+                TestFixtures.student(), interviewTaskId);
+        SessionId id = new SessionId(created.sessionId());
+        sessionId = id;
+
+        Connection connection = connect(id);
+        JsonNode snapshot = connection.nextOfType("session.snapshot");
+        assertServerEnvelope(snapshot, id);
+        assertThat(snapshot.get("payload").get("state").asString()).isEqualTo("preparing");
+        assertThat(snapshot.get("payload").get("mode").asString()).isEqualTo("interview");
+
+        send(connection, "recording.ready", "interview-ready", Map.of(
+                "streams", List.of(
+                        Map.of("stream_type", "camera", "status", "ready"),
+                        Map.of("stream_type", "audio", "status", "ready"))));
+        JsonNode readyAck = connection.nextOfType("recording.ready_ack");
+        assertThat(readyAck.get("payload").get("required_streams").toString())
+                .isEqualTo("[\"camera\",\"audio\"]");
+        assertThat(readyAck.get("payload").get("ok").asBoolean()).isTrue();
+        connection.nextOfType("server.ack");
+
+        send(connection, "session.start", "interview-start", Map.of());
+        JsonNode firstShown = connection.nextOfType("interview.question_shown");
+        JsonNode firstAnswer = connection.nextOfType("interview.answer_started");
+        connection.nextOfType("server.ack");
+        assertThat(firstShown.get("payload").get("order").asInt()).isEqualTo(1);
+        assertThat(firstShown.get("payload").get("total").asInt()).isEqualTo(2);
+        assertThat(firstShown.get("payload").get("text").asString())
+                .isEqualTo("请谈谈以学生为中心的理解。");
+        assertThat(firstAnswer.get("seq").asLong())
+                .isGreaterThan(firstShown.get("seq").asLong());
+
+        send(connection, "interview.next_question", "interview-next", Map.of());
+        JsonNode answerEnded = connection.nextOfType("interview.answer_ended");
+        JsonNode nextQuestion = connection.nextOfType("interview.next_question");
+        JsonNode secondShown = connection.nextOfType("interview.question_shown");
+        JsonNode secondAnswer = connection.nextOfType("interview.answer_started");
+        connection.nextOfType("server.ack");
+
+        assertThat(List.of(
+                answerEnded.get("seq").asLong(),
+                nextQuestion.get("seq").asLong(),
+                secondShown.get("seq").asLong(),
+                secondAnswer.get("seq").asLong()))
+                .isSorted()
+                .doesNotHaveDuplicates();
+        assertThat(nextQuestion.get("payload").get("order").asInt()).isEqualTo(2);
+        assertThat(secondShown.get("payload").get("order").asInt()).isEqualTo(2);
+        assertThat(secondShown.get("payload").get("text").asString())
+                .isEqualTo("如何落实核心素养？");
+
+        send(connection, "interview.end", "interview-end", Map.of());
+        connection.nextOfType("interview.answer_ended");
+        connection.nextOfType("interview.ended");
+        JsonNode sessionEnded = connection.nextOfType("session.ended");
+        connection.nextOfType("server.ack");
+        assertThat(sessionEnded.get("payload").get("reason").asString()).isEqualTo("manual");
+        assertThat(sessionApplicationService.get(TestFixtures.student(), id).status())
+                .isEqualTo("ended");
+
+        connection.close();
+        assertThat(connection.handler.closed.get(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
+                .getCode()).isEqualTo(CloseStatus.NORMAL.getCode());
+    }
+
+    @Test
+    void negativeResumeLastSeqReturnsValidationError() throws Exception {
+        SessionId id = createSession();
+        Connection connection = connect(id);
+        connection.nextOfType("session.snapshot");
+
+        send(connection, "session.resume", "resume-negative", Map.of(
+                "last_seq", -1, "recording_state", "active"));
+
+        JsonNode error = connection.nextOfType("error");
+        assertServerEnvelope(error, id);
+        assertThat(error.get("payload").get("code").asString())
+                .isEqualTo("VALIDATION_ERROR");
+        assertThat(error.get("payload").get("command_id").asString())
+                .isEqualTo("resume-negative");
+        assertThat(connection.socket.isOpen()).isTrue();
+        assertThat(sessionApplicationService.get(TestFixtures.student(), id).status())
+                .isEqualTo("preparing");
+    }
+
+    @Test
     void archivedCourseStartIsRejected() throws Exception {
         SessionId id = createSession();
         Connection connection = connect(id);
@@ -423,6 +516,21 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
                 TestFixtures.student(), taskId);
         sessionId = new SessionId(view.sessionId());
         return sessionId;
+    }
+
+    private TaskId publishInterviewTask() {
+        CreateTaskCommand command = new CreateTaskCommand(
+                TestFixtures.COURSE, TaskMode.INTERVIEW, "结构化面试", null,
+                300, 300, Map.of("content", 40, "expression", 30, "time", 30),
+                null, List.of(),
+                new QuestionConfig(List.of(
+                        new QuestionId(DevDataConfig.QUESTION1_ID),
+                        new QuestionId(DevDataConfig.QUESTION2_ID)), 300));
+        TaskView view = taskApplicationService.createDraft(
+                TestFixtures.teacher(), command);
+        TaskId id = new TaskId(view.taskId());
+        publishService.publish(TestFixtures.teacher(), id);
+        return id;
     }
 
     private void sendReady(Connection connection, String commandPrefix) throws Exception {
