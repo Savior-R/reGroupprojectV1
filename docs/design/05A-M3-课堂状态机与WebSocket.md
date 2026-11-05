@@ -252,7 +252,7 @@ preparing → in_progress → ended → reviewing → selected → evaluated
 | `lecturing` | — | 开始 / 问答结束 | 老师提问 / 学生提问 / 结束 |
 | `qa` | `waiting_hands` | 老师手动提问、语音高置信触发、让学生提问 | 点名 / 30 秒超时 / 结束 |
 | `qa` | `student_answering` | 点名回答 | 回答结束：追问 → `dialogue`；不追问 → `waiting_hands`；`teacher.end_qa` → `lecturing` |
-| `qa` | `dialogue` | 学生追问 | 最多 3 轮 / `teacher.end_dialogue` → `waiting_hands`；`teacher.end_qa` → `lecturing` |
+| `qa` | `dialogue` | 学生追问 | 最多 3 轮、学生不追问或 `teacher.end_dialogue` → `waiting_hands`；`teacher.end_qa` → `lecturing` |
 | `qa` | `teacher_answering` | 学生提问被点名 | 教师结束问答 → `lecturing` |
 | `ended` | — | 结束试讲 | — |
 
@@ -265,7 +265,7 @@ preparing → in_progress → ended → reviewing → selected → evaluated
 - **学生提问（student_question intent）**：
   - 老师点「让学生提问」→ `qa.waiting_hands`；点名后进入 `teacher_answering`。
 - **举手**：1—3 人，保底至少 1 人；30 秒未点名 → `classroom.hand_window_timeout`，回 `lecturing`。
-- **对话 / 问答结束**：`teacher.end_dialogue` 只结束当前对话 → `waiting_hands`；`teacher.end_qa` 结束整个问答 → `classroom.qa_ended`，回 `lecturing`；不做自动超时 / 语音判断结束。
+- **对话 / 问答结束**：`teacher.end_dialogue` 只结束当前对话 → `waiting_hands`；学生不追问或达到 3 轮上限时自动结束对话（`no_follow_up` / `max_rounds`）→ `waiting_hands`；`teacher.end_qa` 结束整个问答 → `classroom.qa_ended`，回 `lecturing`；不做自动超时 / 语音判断结束。
 - **结束试讲**：`teacher.end_session` → `ended`。
 - **结构化面试**：不进入 `qa` 的虚拟学生分支；由 05C 定义 `interview.*` 状态与事件。
 
@@ -410,9 +410,33 @@ p_discipline = discipline_probability * (1 - attention) * state_factor
     - ≥ 0.7 → correct；≥ 0.4 → partial；否则 wrong；
   - `question_clarity` 本轮默认 0.5；后续接教师话语分类。
 - 回答以文字出现；教师点 `teacher.mark_answer` 标记 correct / partial / wrong。
-- 多轮：回答结束后，Java 按 `question_rate` / `ability` / 当前轮次决定是否追问，最多 3 轮；教师可 `teacher.end_dialogue` 或说“请坐”结束当前对话。
-- `teacher.end_dialogue` 写 `dialogue.ended`，回 `waiting_hands`；`teacher.end_qa` 写 `classroom.qa_ended`，回 `lecturing`；不做自动超时 / 语音判断。
+- 回答结束后按 `p_follow_up = question_rate * 0.5` 掷骰：
+  - 未命中 → 保持 P0 路径：`classroom.state_changed(qa.student_answering → qa.waiting_hands, trigger=answer_finished)` + 学生 `answering → focused`；
+  - 命中 → 进入 `qa.dialogue`，事件顺序固定为：
+    `classroom.state_changed(qa.student_answering → qa.dialogue, trigger=follow_up)` →
+    `student.state_changed(answering → dialogue, reason=follow_up)` →
+    `dialogue.started {dialogue_id, student_id}` →
+    `student.follow_up {student_id, answer_id, text_id}`；
+  - `student.follow_up.answer_id` 复用初始 `student.answer.answer_id`；全文写入 `session_texts(kind=follow_up)`；内容服务失败时用模板问题兜底（confidence 0.0）。
+- 对话最多 3 轮（初始追问为第 1 轮）。只有教师 ASR final 的起点不早于 `dialogueAwaitingSinceMs` 时才推进对话：
+  - `finalStart = start_ms`，缺省 `end_ms`，再缺省当前 `at_ms`；
+  - `finalStart < dialogueAwaitingSinceMs` → 只落库，不推进（同一句被 ASR 切成多个 final，前一个 final 属于上一段话）；
+  - 每发一次 `student.follow_up`，`dialogueAwaitingSinceMs` 前移到该追问的 `at_ms`；
+  - 命中追问 → 轮次 +1，写 `session_texts(kind=follow_up)` + `student.follow_up`（学生行为已是 `dialogue`，不再发 `state_changed`）；
+  - 未命中 → `dialogue.ended(reason=no_follow_up)` → 学生 `focused` → `classroom.state_changed(qa.dialogue → qa.waiting_hands, trigger=no_follow_up)`；
+  - 已到第 3 轮 → `dialogue.ended(reason=max_rounds)` → 学生 `focused` → `classroom.state_changed(qa.dialogue → qa.waiting_hands, trigger=max_rounds)`。
+- 教师可 `teacher.end_dialogue` 主动结束当前对话：`dialogue.ended(reason=teacher)` → 学生 `focused` → `classroom.state_changed(qa.dialogue → qa.waiting_hands, trigger=end_dialogue)`；`teacher.end_qa` 结束整个问答：`dialogue.ended(reason=qa_ended)` → 学生 `focused` → `classroom.qa_ended` → `classroom.state_changed(qa → lecturing)`，没有中间 `waiting_hands` 事件。
+- `teacher.end_dialogue` 的 `dialogue_id` 可选；提供时必须匹配活动对话，否则返回 `SESSION_STATE_INVALID` 且不改变状态（防止陈旧 id 结束新对话）。`qa.student_answering` 阶段收到 `teacher.end_dialogue` 仍按 P0 结束回答，不产生 dialogue 事件。
+- 其他结束 / 重置路径先结束活动对话，再追加各自领域事件：
+  - `teacher.ask_class` / `teacher.ask_student_question`：`dialogue.ended(reason=qa_restarted)` → 学生 `focused` → `question_asked` → `classroom.state_changed(qa → qa.waiting_hands)`；
+  - `teacher.end_session` / 超时：`dialogue.ended(reason=session_ended)` → 学生 `focused` → `classroom.state_changed(qa → ended)` → `session.ended`；
+  - `fail`：`dialogue.ended(reason=session_ended)` → 学生 `focused` → `session.failed`。
+- 所有路径的事件顺序统一为 `dialogue.ended` → 学生 `state_changed(dialogue → focused, reason=dialogue_ended)` → 调用方领域事件；结束对话不直接产生 `waiting_hands` 中间状态，避免重复 `classroom.state_changed`。
+- `dialogue.ended.reason` 取值：`teacher` / `no_follow_up` / `max_rounds` / `qa_ended` / `qa_restarted` / `session_ended`。
 - 一个学生同一时间只能在一个对话中；对话事件必须绑定 `dialogue_id`。
+- 对话中（`qa` 宏观状态）教师话语分类直接忽略；只有 `lecturing` 的教师 final 才可能触发 `classroom.question_asked` / `question_suggested`。
+
+> **与 02 的口径差异**：`02` 中 `teacher.end_dialogue` 仍写作“结束问答”，属旧描述；本设计以 05A 为准——它只结束当前对话并回到 `qa.waiting_hands`，不结束整个问答。`02` 由 Foundation Owner 维护，待其修正，M3B 不直接修改。
 
 ### 5.6 结构化面试
 
@@ -476,8 +500,8 @@ p_discipline = discipline_probability * (1 - attention) * state_factor
 | `student.question` | `{student_id, text_id, question_id}` | 学生提问；全文在 `session_texts` |
 | `student.answer` | `{student_id, answer_id, text_id, quality}` | 学生回答；全文在 `session_texts` |
 | `student.follow_up` | `{student_id, answer_id, text_id}` | 追问；全文在 `session_texts` |
-| `dialogue.started` | `{dialogue_id, student_id}` | 对话开始 |
-| `dialogue.ended` | `{dialogue_id, reason}` | 对话结束 |
+| `dialogue.started` | `{dialogue_id, student_id}` | 对话开始；顺序为 `classroom.state_changed` → `student.state_changed` → `dialogue.started` → `student.follow_up` |
+| `dialogue.ended` | `{dialogue_id, student_id, reason}` | 对话结束；`reason` 见 §5.5，随后学生 `focused`，再由调用方追加 `classroom.*` / `session.*` |
 | `discipline.event` | `{level, student_ids, event_type}` | 纪律事件 |
 | `interview.question_shown` | `{question_id, order, total, text}` | 面试题目 |
 | `interview.answer_started` | `{question_id, answer_id}` | 回答开始 |
@@ -667,7 +691,7 @@ Prompt 返回 JSON：
 ## 14. 测试
 
 - 状态机：任务 / 训练全路径；非法命令；关闭 / 归档 / end_at。
-- Actor：并发命令串行；重复 command_id；tick 与命令交错。
+- Actor：并发命令串行；重复 command_id；tick 与命令交错；对话追问边界（`dialogueAwaitingSinceMs`）与 `no_follow_up` / `max_rounds` 终止路径。
 - 虚拟学生：注意力衰减、纪律概率、提醒恢复、举手 1—3 人且保底 1 人、`hand_raise_energy` 下降 / 恢复 / 45 秒冷却、30 秒未点名回讲解、多轮最多 3 轮、语音高置信触发 / 低置信提示、教师显式结束问答。
 - 静态参数：五个参数默认 / 边界；`attention_baseline` 影响衰减、`ability` 影响回答质量、`question_rate` 影响追问、`activity` 影响举手。
 - 纪律聚合：走神 / 小声触发等级变化，写 `classroom.discipline_level_changed`；聚合事件不回灌概率；教师提醒后降级。

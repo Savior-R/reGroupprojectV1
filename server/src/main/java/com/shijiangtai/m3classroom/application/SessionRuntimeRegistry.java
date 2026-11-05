@@ -28,8 +28,11 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
+import java.util.random.RandomGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -56,7 +59,13 @@ public final class SessionRuntimeRegistry {
     private final ClockProvider clockProvider;
     private final SchedulerPort scheduler;
     private final ContentGenerationService contentGeneration;
+    private final Supplier<RandomGenerator> randomFactory;
 
+    /**
+     * Production wiring: every rebuilt actor gets a fresh {@link Random}. Explicitly annotated
+     * because the random-factory overload below makes this a multi-constructor class.
+     */
+    @Autowired
     public SessionRuntimeRegistry(
             SessionRepository sessionRepository,
             TaskRepository taskRepository,
@@ -66,6 +75,26 @@ public final class SessionRuntimeRegistry {
             ClockProvider clockProvider,
             SchedulerPort scheduler,
             ContentClient contentClient) {
+        this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
+                clockProvider, scheduler, contentClient, Random::new);
+    }
+
+    /**
+     * Test seam: the factory supplies the generator used for hand-raise delay, behaviour noise
+     * and follow-up rolls. Production callers use the constructor above ({@link Random::new});
+     * integration tests pass a shared deterministic generator so a teacher ASR final always
+     * advances the dialogue. Production behavior is unchanged.
+     */
+    public SessionRuntimeRegistry(
+            SessionRepository sessionRepository,
+            TaskRepository taskRepository,
+            SessionEventStore eventStore,
+            SessionTextStore textStore,
+            IdGenerator idGenerator,
+            ClockProvider clockProvider,
+            SchedulerPort scheduler,
+            ContentClient contentClient,
+            Supplier<RandomGenerator> randomFactory) {
         this.sessionRepository = Objects.requireNonNull(
                 sessionRepository, "sessionRepository");
         this.taskRepository = Objects.requireNonNull(taskRepository, "taskRepository");
@@ -76,6 +105,7 @@ public final class SessionRuntimeRegistry {
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
         this.contentGeneration = new ContentGenerationService(
                 Objects.requireNonNull(contentClient, "contentClient"));
+        this.randomFactory = Objects.requireNonNull(randomFactory, "randomFactory");
     }
 
     public void register(SessionActor actor) {
@@ -270,7 +300,7 @@ public final class SessionRuntimeRegistry {
                     Map.of("task_id", task.id().value().toString()));
         }
 
-        VirtualStudentDynamics students = new VirtualStudentDynamics(new Random());
+        VirtualStudentDynamics students = new VirtualStudentDynamics(randomFactory.get());
         if (session.mode() != TaskMode.INTERVIEW) {
             students.initialize(snapshot.virtualStudents().stream()
                     .map(SessionRuntimeRegistry::toConfig)
@@ -294,7 +324,7 @@ public final class SessionRuntimeRegistry {
                 idGenerator,
                 clockProvider,
                 scheduler,
-                new Random());
+                randomFactory.get());
         actor.attachStatusListener(status -> onStatusChanged(id, actor, status));
         return actor;
     }

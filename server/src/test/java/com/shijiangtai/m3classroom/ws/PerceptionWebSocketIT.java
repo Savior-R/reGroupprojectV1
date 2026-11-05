@@ -15,6 +15,7 @@ import com.shijiangtai.m3classroom.application.TaskMaterialService;
 import com.shijiangtai.m3classroom.application.TaskPublishService;
 import com.shijiangtai.m3classroom.application.command.CreateTaskCommand;
 import com.shijiangtai.m3classroom.application.port.AsrChunk;
+import com.shijiangtai.m3classroom.application.port.ContentClient;
 import com.shijiangtai.m3classroom.application.port.SchedulerPort;
 import com.shijiangtai.m3classroom.application.port.SessionEventStore;
 import com.shijiangtai.m3classroom.application.port.SessionTextStore;
@@ -28,12 +29,15 @@ import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.session.SessionText;
 import com.shijiangtai.m3classroom.domain.task.QuestionConfig;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
+import com.shijiangtai.m3classroom.domain.task.TaskRepository;
 import com.shijiangtai.m3classroom.infrastructure.config.DevDataConfig;
 import com.shijiangtai.m3classroom.infrastructure.time.SystemScheduler;
 import com.shijiangtai.m3classroom.persistence.PostgresIntegrationTest;
 import com.shijiangtai.m3classroom.support.FakeAsrStreamClient;
 import com.shijiangtai.m3classroom.support.FakeTeacherSpeechClassifier;
+import com.shijiangtai.m3classroom.support.MutableRandom;
 import com.shijiangtai.shared.application.ClockProvider;
+import com.shijiangtai.shared.application.IdGenerator;
 import com.shijiangtai.shared.domain.QuestionId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
@@ -142,6 +146,9 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
     @Autowired
     private BlockingScheduler scheduler;
 
+    @Autowired
+    private MutableRandom mutableRandom;
+
     private final HttpClient http = HttpClient.newHttpClient();
     private final List<WebSocketSession> openSockets = new CopyOnWriteArrayList<>();
 
@@ -168,6 +175,33 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
         BlockingScheduler blockingScheduler() {
             return new BlockingScheduler();
         }
+
+        /** Shared deterministic generator: 0.0 wins every follow-up roll, 0.99 loses. */
+        @Bean
+        MutableRandom mutableRandom() {
+            return new MutableRandom(0.0);
+        }
+
+        /**
+         * Replaces the production registry so every actor built during this IT shares the
+         * mutable generator; production wiring stays on the {@code Random::new} constructor.
+         */
+        @Bean
+        @Primary
+        SessionRuntimeRegistry dialogueSessionRuntimeRegistry(
+                SessionRepository sessionRepository,
+                TaskRepository taskRepository,
+                SessionEventStore eventStore,
+                SessionTextStore textStore,
+                IdGenerator idGenerator,
+                ClockProvider clockProvider,
+                SchedulerPort scheduler,
+                ContentClient contentClient,
+                MutableRandom mutableRandom) {
+            return new SessionRuntimeRegistry(
+                    sessionRepository, taskRepository, eventStore, textStore, idGenerator,
+                    clockProvider, scheduler, contentClient, () -> mutableRandom);
+        }
     }
 
     @BeforeEach
@@ -175,6 +209,7 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
         asrClient.reset();
         classifier.reset();
         scheduler.reset();
+        mutableRandom.set(0.0);
         TaskView view = taskApplicationService.createDraft(
                 teacher(), TestFixtures.freeCommandWithStudent());
         taskId = new TaskId(view.taskId());
@@ -415,6 +450,92 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
         // Classroom-only classification must not run for an interview candidate.
         Thread.sleep(200L);
         assertThat(classifier.calls()).isEmpty();
+    }
+
+    // ------------------------------------------------------------------
+    // Multi-turn dialogue (M3B)
+    // ------------------------------------------------------------------
+
+    /**
+     * Voice-driven dialogue rounds end-to-end: the initial answer wins the follow-up roll (shared
+     * random 0.0), a teacher ASR final after the boundary advances to round 2, and once the random
+     * is switched to 0.99 the next final ends the dialogue with {@code no_follow_up} and returns
+     * the classroom to {@code waiting_hands}. The session and both sockets stay alive throughout.
+     */
+    @Test
+    void teacherVoiceResponseDrivesFollowUpRoundsAndEndsWithoutFollowUp() throws Exception {
+        SessionId id = createStartedSession();
+        Connection control = connectControl(id);
+        control.nextOfType("session.snapshot");
+
+        SessionActor actor = runtimeRegistry.getOrCreate(id);
+        assertThat(actor.handle(new SessionCommand.AskClass("ask-dialogue")).ok()).isTrue();
+        SessionEvent handRaised = awaitEvent(id, "student.hand_raised");
+        // Persisted payloads round-trip through JSON, so ids come back as Strings.
+        UUID studentId = UUID.fromString(
+                String.valueOf(handRaised.payload().get("student_id")));
+        UUID handRaiseId = UUID.fromString(
+                String.valueOf(handRaised.payload().get("hand_raise_id")));
+        assertThat(actor.handle(
+                new SessionCommand.CallOn("call-dialogue", studentId, handRaiseId)).ok())
+                .isTrue();
+
+        SessionEvent firstFollowUp = awaitEvent(id, "student.follow_up");
+        assertThat(eventStore.after(id, 0, 200))
+                .anySatisfy(event -> {
+                    assertThat(event.type()).isEqualTo("classroom.state_changed");
+                    assertThat(String.valueOf(event.payload().get("to"))).isEqualTo("qa");
+                    assertThat(String.valueOf(event.payload().get("qa_phase")))
+                            .isEqualTo("dialogue");
+                    assertThat(String.valueOf(event.payload().get("trigger")))
+                            .isEqualTo("follow_up");
+                });
+
+        Connection perception = connect(id);
+        send(perception, AUDIO_START);
+        FakeAsrStreamClient.FakeAsrSession asr = awaitAsrSession();
+
+        // The ASR begin_ms is offset by the perception audio.start time; a boundary-relative
+        // value well after the follow-up therefore maps to a session time past the boundary.
+        long boundary = firstFollowUp.atMs();
+        asr.emitFinal("对，你具体说说。", boundary + 1_000L, boundary + 2_000L,
+                new BigDecimal("0.90"));
+
+        SessionEvent secondFollowUp = awaitEventAfter(
+                id, "student.follow_up", firstFollowUp.seq());
+        assertThat(secondFollowUp.payload().get("answer_id"))
+                .isEqualTo(firstFollowUp.payload().get("answer_id"));
+        assertThat(eventStore.after(id, secondFollowUp.seq(), 200))
+                .noneMatch(event -> "dialogue.ended".equals(event.type()));
+        assertThat(textStore.bySession(id, "teacher")).hasSize(1);
+
+        mutableRandom.set(0.99); // the next follow-up roll loses
+        long boundary2 = secondFollowUp.atMs();
+        asr.emitFinal("好，请坐。", boundary2 + 1_000L, boundary2 + 2_000L,
+                new BigDecimal("0.90"));
+
+        SessionEvent ended = awaitEventAfter(id, "dialogue.ended", secondFollowUp.seq());
+        assertThat(String.valueOf(ended.payload().get("reason"))).isEqualTo("no_follow_up");
+        SessionEvent waitingHands = awaitEventAfter(
+                id, "classroom.state_changed", ended.seq());
+        assertThat(String.valueOf(waitingHands.payload().get("to"))).isEqualTo("qa");
+        assertThat(String.valueOf(waitingHands.payload().get("qa_phase")))
+                .isEqualTo("waiting_hands");
+        assertThat(String.valueOf(waitingHands.payload().get("trigger")))
+                .isEqualTo("no_follow_up");
+        assertThat(eventStore.after(id, ended.seq(), 200))
+                .anySatisfy(event -> {
+                    assertThat(event.type()).isEqualTo("student.state_changed");
+                    assertThat(String.valueOf(event.payload().get("to"))).isEqualTo("focused");
+                    assertThat(String.valueOf(event.payload().get("reason")))
+                            .isEqualTo("dialogue_ended");
+                });
+
+        assertThat(sessionRepository.findById(id).orElseThrow().status())
+                .isEqualTo(SessionStatus.IN_PROGRESS);
+        assertThat(control.socket.isOpen()).isTrue();
+        assertThat(perception.socket.isOpen()).isTrue();
+        assertThat(asr.callbackErrors()).isEmpty();
     }
 
     // ------------------------------------------------------------------
@@ -737,6 +858,16 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
 
     private Connection connect(SessionId id) throws Exception {
         return connectWithTicket(id, issueTicket(id));
+    }
+
+    private Connection connectControl(SessionId id) throws Exception {
+        TestHandler handler = new TestHandler();
+        WebSocketSession socket = new StandardWebSocketClient()
+                .execute(handler, "ws://localhost:" + port + "/ws/v1/sessions/"
+                        + id.value() + "?ticket=" + issueTicket(id))
+                .get(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        openSockets.add(socket);
+        return new Connection(socket, handler);
     }
 
     private Connection connectWithTicket(SessionId id, String ticket) throws Exception {
