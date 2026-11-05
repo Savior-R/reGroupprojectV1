@@ -258,6 +258,34 @@ class SessionReconnectTest {
     }
 
     @Test
+    void normalEndedSessionIsNotFailed() {
+        ReconnectFixture fixture = fixture();
+        start(fixture);
+
+        CommandResult result = fixture.actor().handle(new SessionCommand.EndSession("end-1"));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.ENDED);
+        assertThat(eventsOfType(fixture, "session.failed")).isEmpty();
+        assertThat(eventsOfType(fixture, "session.ended")).hasSize(1);
+        assertThat(fixture.scheduler().pendingTasks()).isZero();
+    }
+
+    @Test
+    void pageRefreshWithoutResumeFailsAfterGrace() {
+        // equivalent to a refreshed page that never sends session.resume
+        ReconnectFixture fixture = fixture();
+        start(fixture);
+        fixture.actor().onWsDisconnected(NOW);
+        fixture.scheduler().advance(Duration.ofSeconds(30));
+
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.FAILED);
+        assertThat(eventsOfType(fixture, "session.failed")).hasSize(1);
+        assertThat(eventsOfType(fixture, "session.failed").get(0).payload().get("reason"))
+                .isEqualTo("grace_timeout");
+    }
+
+    @Test
     void resumeActiveReplaysEventsAfterLastSeqWithoutTimeTick() {
         ReconnectFixture fixture = fixture();
         start(fixture);

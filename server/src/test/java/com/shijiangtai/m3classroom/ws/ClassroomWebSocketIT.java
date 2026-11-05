@@ -250,6 +250,43 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void resumeWithLostRecordingFailsSession() throws Exception {
+        SessionId id = createSession();
+        Connection connection = connect(id);
+        connection.nextOfType("session.snapshot");
+        startSession(connection, "start-lost");
+
+        send(connection, "session.resume", "resume-lost",
+                Map.of("last_seq", 0, "recording_state", "lost"));
+
+        JsonNode failed = connection.nextOfType("session.failed");
+        assertServerEnvelope(failed, id);
+        assertThat(failed.get("payload").get("reason").asString())
+                .isEqualTo("recording_lost");
+        JsonNode error = connection.nextOfType("error");
+        assertThat(error.get("payload").get("code").asString())
+                .isEqualTo("SESSION_FAILED");
+        assertThat(sessionApplicationService.get(TestFixtures.student(), id).status())
+                .isEqualTo("failed");
+    }
+
+    @Test
+    void normalEndSessionDoesNotFail() throws Exception {
+        SessionId id = createSession();
+        Connection connection = connect(id);
+        connection.nextOfType("session.snapshot");
+        startSession(connection, "start-ok");
+
+        send(connection, "teacher.end_session", "end-ok", Map.of());
+
+        connection.nextOfType("session.ended");
+        connection.nextOfType("server.ack");
+        assertThat(connection.handler.countOfType("session.failed")).isZero();
+        assertThat(sessionApplicationService.get(TestFixtures.student(), id).status())
+                .isEqualTo("ended");
+    }
+
+    @Test
     void reconnectOutsideGraceCloses4002() throws Exception {
         SessionId id = createSession();
         Connection first = connect(id);
