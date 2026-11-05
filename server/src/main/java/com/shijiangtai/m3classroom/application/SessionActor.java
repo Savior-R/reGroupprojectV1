@@ -1029,7 +1029,7 @@ public final class SessionActor {
         boolean followUp = random.nextDouble() < DialogueState.followUpProbability(
                 student.config().questionRate().doubleValue());
         if (followUp) {
-            maybeStartDialogue(student, answerId, now);
+            events.addAll(maybeStartDialogue(student, answerId, now));
         } else {
             events.addAll(appendClassroomEvents(
                     classroom.answerFinished(student.id(), false, now), now));
@@ -1045,11 +1045,15 @@ public final class SessionActor {
      * transition, {@code dialogue.started}, then the first {@code student.follow_up}. The
      * initial round does not apply a second attention delta, because
      * {@link VirtualStudentDynamics#applyFollowUp} already did so above.
+     *
+     * @return every event appended by this method, in append order, for the command ack
      */
-    private void maybeStartDialogue(
+    private List<SessionEvent> maybeStartDialogue(
             VirtualStudentRuntime student, UUID answerId, Instant now) {
-        appendClassroomEvents(classroom.answerFinished(student.id(), true, now), now);
-        appendStudentEvents(students.applyFollowUp(student.id()), now);
+        List<SessionEvent> events = new ArrayList<>();
+        events.addAll(appendClassroomEvents(
+                classroom.answerFinished(student.id(), true, now), now));
+        events.addAll(appendStudentEvents(students.applyFollowUp(student.id()), now));
 
         dialogue = new DialogueState(ids.nextId(), student.id());
         dialogueAnswerId = answerId;
@@ -1057,9 +1061,10 @@ public final class SessionActor {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("dialogue_id", dialogue.dialogueId());
         payload.put("student_id", student.id());
-        append(DIALOGUE_STARTED, payload, now);
+        events.add(append(DIALOGUE_STARTED, payload, now));
 
-        emitFollowUp(student, now, false);
+        events.addAll(emitFollowUp(student, now, false));
+        return events;
     }
 
     /**

@@ -8,6 +8,7 @@ import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentBehavior;
 import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentDynamics;
 import com.shijiangtai.m3classroom.domain.interview.InterviewStateMachine;
 import com.shijiangtai.m3classroom.domain.recording.StreamType;
+import com.shijiangtai.m3classroom.domain.session.CommandResult;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionCommand;
 import com.shijiangtai.m3classroom.domain.session.SessionContext;
@@ -76,6 +77,28 @@ class SessionActorDialogueTest {
         assertThat(f.textStore().all())
                 .anySatisfy(text -> assertThat(text.kind()).isEqualTo("follow_up"));
         assertThat(f.scheduler().pendingTasks()).isZero();
+    }
+
+    @Test
+    void callOnAckIncludesDialogueEventsInSpecOrder() {
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+
+        CommandResult result = f.actor().handle(f.callOn());
+
+        assertThat(result.ok()).isTrue();
+        List<SessionEvent> ackEvents = result.events();
+        int answerIndex = f.indexOf(ackEvents, "student.answer");
+        assertThat(answerIndex).isNotNegative();
+        assertThat(ackEvents.subList(answerIndex, ackEvents.size()))
+                .extracting(SessionEvent::type)
+                .containsExactly(
+                        "student.answer",
+                        "student.state_changed",
+                        "classroom.state_changed",
+                        "student.state_changed",
+                        "dialogue.started",
+                        "student.follow_up");
     }
 
     @Test
@@ -260,6 +283,15 @@ class SessionActorDialogueTest {
                     .map(event -> (UUID) event.payload().get("answer_id"))
                     .findFirst()
                     .orElseThrow();
+        }
+
+        private int indexOf(List<SessionEvent> events, String type) {
+            for (int i = 0; i < events.size(); i++) {
+                if (events.get(i).type().equals(type)) {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         private SessionEvent lastEvent(String type) {
