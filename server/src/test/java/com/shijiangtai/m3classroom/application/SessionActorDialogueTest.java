@@ -136,9 +136,103 @@ class SessionActorDialogueTest {
         assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
     }
 
+    @Test
+    void teacherFinalAfterFollowUpContinuesToSecondRound() {
+        MutableRandom random = new MutableRandom(0.0);
+        Fixture f = fixture(random);
+        f.start();
+        f.actor().handle(f.callOn());
+        long boundary = f.lastFollowUpAtMs();
+
+        f.actor().recordSpeechFinal("teacher", null, "对，你能再具体说说吗？",
+                boundary + 1000, boundary + 2000, BigDecimal.valueOf(0.9));
+
+        assertThat(f.context().after(0)).extracting(SessionEvent::type)
+                .contains("dialogue.started", "student.follow_up");
+        assertThat(f.dialogueRound()).isEqualTo(2);
+    }
+
+    @Test
+    void finalStartedBeforeBoundaryDoesNotAdvanceDialogue() {
+        MutableRandom random = new MutableRandom(0.0);
+        Fixture f = fixture(random);
+        f.start();
+        f.actor().handle(f.callOn());
+        long boundary = f.lastFollowUpAtMs();
+        int before = f.countEvents("student.follow_up");
+
+        f.actor().recordSpeechFinal("teacher", null, "上一句话",
+                boundary - 1000, boundary - 500, BigDecimal.valueOf(0.9));
+
+        assertThat(f.countEvents("student.follow_up")).isEqualTo(before);
+    }
+
+    @Test
+    void teacherFinalWithoutFollowUpEndsDialogueAndReturnsToWaitingHands() {
+        MutableRandom random = new MutableRandom(0.0);
+        Fixture f = fixture(random);
+        f.start();
+        f.actor().handle(f.callOn());
+        long boundary = f.lastFollowUpAtMs();
+        random.set(0.99); // next follow-up roll loses
+
+        f.actor().recordSpeechFinal("teacher", null, "嗯，请坐。",
+                boundary + 1000, boundary + 2000, BigDecimal.valueOf(0.9));
+
+        assertThat(f.context().after(0)).extracting(SessionEvent::type)
+                .containsSubsequence("dialogue.ended", "student.state_changed",
+                        "classroom.state_changed");
+        SessionEvent ended = f.lastEvent("dialogue.ended");
+        assertThat(ended.payload().get("reason")).isEqualTo("no_follow_up");
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+    }
+
+    @Test
+    void classificationDuringDialogueIsIgnored() {
+        Fixture f = dialogueFixture();
+        int suggestedBefore = f.countEvents("classroom.question_suggested");
+        int askedBefore = f.countEvents("classroom.question_asked");
+
+        f.actor().onTeacherSpeechClassified(0.9);
+
+        assertThat(f.countEvents("classroom.question_suggested"))
+                .isEqualTo(suggestedBefore);
+        assertThat(f.countEvents("classroom.question_asked")).isEqualTo(askedBefore);
+    }
+
+    @Test
+    void thirdRoundTeacherFinalEndsWithMaxRounds() {
+        MutableRandom random = new MutableRandom(0.0);
+        Fixture f = fixture(random);
+        f.start();
+        f.actor().handle(f.callOn());
+        long boundary = f.lastFollowUpAtMs();
+        f.actor().recordSpeechFinal("teacher", null, "继续", boundary + 1000,
+                boundary + 2000, BigDecimal.valueOf(0.9)); // round 2 follow-up
+        long boundary2 = f.lastFollowUpAtMs();
+        f.actor().recordSpeechFinal("teacher", null, "再继续", boundary2 + 1000,
+                boundary2 + 2000, BigDecimal.valueOf(0.9)); // round 3 follow-up
+        long boundary3 = f.lastFollowUpAtMs();
+        f.actor().recordSpeechFinal("teacher", null, "最后", boundary3 + 1000,
+                boundary3 + 2000, BigDecimal.valueOf(0.9)); // max rounds
+
+        SessionEvent ended = f.lastEvent("dialogue.ended");
+        assertThat(ended.payload().get("reason")).isEqualTo("max_rounds");
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+    }
+
     // ---------------------------------------------------------------------
     // Fixture
     // ---------------------------------------------------------------------
+
+    private static Fixture dialogueFixture() {
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+        f.actor().handle(f.callOn());
+        return f;
+    }
 
     private static Fixture fixture(MutableRandom random) {
         return fixture(random, new FakeContentClient());
@@ -299,6 +393,21 @@ class SessionActorDialogueTest {
                     .filter(event -> event.type().equals(type))
                     .reduce((first, second) -> second)
                     .orElseThrow();
+        }
+
+        private int countEvents(String type) {
+            return (int) context.after(0).stream()
+                    .filter(event -> event.type().equals(type))
+                    .count();
+        }
+
+        private long lastFollowUpAtMs() {
+            return lastEvent("student.follow_up").atMs();
+        }
+
+        /** One {@code student.follow_up} is emitted per round, so the count equals the round. */
+        private int dialogueRound() {
+            return countEvents("student.follow_up");
         }
     }
 }

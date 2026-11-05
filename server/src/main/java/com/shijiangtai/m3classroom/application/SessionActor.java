@@ -744,12 +744,51 @@ public final class SessionActor {
             return Optional.empty();
         }
         UUID textId = ids.nextId();
-        long atMs = endMs != null ? Math.max(0L, endMs) : currentAtMs();
+        Instant now = clock.now();
+        long atMs = endMs != null ? Math.max(0L, endMs) : this.atMs(now);
         textStore.save(new SessionText(
                 textId, session.id(), speakerType, speakerRef, "asr",
                 "candidate".equals(speakerType) ? "answer" : "utterance",
                 text, startMs, endMs, atMs, confidence, null, null, "final"));
+        if ("teacher".equals(speakerType)) {
+            continueDialogueAfterTeacherFinal(text, startMs, endMs, now);
+        }
         return Optional.of(textId);
+    }
+
+    /**
+     * Advances the active dialogue once a teacher ASR final starts at or after the current
+     * follow-up boundary (05A §5.5). Finals that began before the boundary belong to the
+     * teacher's previous utterance and only get persisted. At the round limit or on a losing
+     * follow-up roll the dialogue ends and the classroom returns to {@code waiting_hands};
+     * otherwise the student follows up again in the next round.
+     */
+    private void continueDialogueAfterTeacherFinal(
+            String text, Long startMs, Long endMs, Instant now) {
+        if (dialogue == null) {
+            return;
+        }
+        long finalStart = startMs != null ? startMs
+                : endMs != null ? endMs : currentAtMs();
+        if (finalStart < dialogueAwaitingSinceMs) {
+            return;
+        }
+        VirtualStudentRuntime student = students.find(dialogue.studentId());
+        if (!dialogue.canFollowUp()) {
+            endActiveDialogue("max_rounds", now);
+            appendClassroomEvents(classroom.endDialogue(
+                    ClassroomStateMachine.TRIGGER_MAX_ROUNDS, now), now);
+            return;
+        }
+        if (!dialogue.shouldFollowUp(
+                student.config().questionRate().doubleValue(), random)) {
+            endActiveDialogue("no_follow_up", now);
+            appendClassroomEvents(classroom.endDialogue(
+                    ClassroomStateMachine.TRIGGER_NO_FOLLOW_UP, now), now);
+            return;
+        }
+        dialogue.nextRound();
+        emitFollowUp(student, now, true);
     }
 
     /**
@@ -760,6 +799,11 @@ public final class SessionActor {
      */
     public synchronized void onTeacherSpeechClassified(double confidence) {
         if (session.status() != SessionStatus.IN_PROGRESS || isInterviewMode()) {
+            return;
+        }
+        // A teacher final during QA (answering / dialogue / waiting hands) is the teacher's
+        // response to the ongoing interaction, not a new class-level question.
+        if (classroom.macroState() != ClassroomMacroState.LECTURING) {
             return;
         }
         Instant now = clock.now();
