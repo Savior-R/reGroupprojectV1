@@ -222,6 +222,11 @@ public final class SessionActor {
         dialogueAwaitingSinceMs = 0L;
         cancelAllTasks();
         notifyStatusChanged();
+        try {
+            forceFlush();
+        } catch (RuntimeException exception) {
+            LOG.warn("Failed to flush cancelled session {}", session.id().value(), exception);
+        }
     }
 
     public synchronized CommandResult handle(SessionCommand command) {
@@ -625,7 +630,11 @@ public final class SessionActor {
     private CommandResult handleEndSession() {
         requireInProgress("teacher.end_session");
         requireClassroomMode("teacher.end_session");
-        return CommandResult.ok(endClassroomSession(clock.now(), END_REASON_MANUAL));
+        List<SessionEvent> events = endClassroomSession(clock.now(), END_REASON_MANUAL);
+        if (session.status() == SessionStatus.FAILED) {
+            return CommandResult.error(ErrorCode.SESSION_FAILED, "会话持久化失败");
+        }
+        return CommandResult.ok(events);
     }
 
     /**
@@ -641,7 +650,12 @@ public final class SessionActor {
         events.addAll(emitHandLowers("session_ended", now));
         events.addAll(appendClassroomEvents(domainEvents, now));
         session.end(now);
-        events.add(append(SESSION_ENDED, sessionEndedPayload(reason), now));
+        try {
+            events.add(appendCritical(SESSION_ENDED, sessionEndedPayload(reason), now));
+        } catch (RuntimeException exception) {
+            persistenceFailed(now, exception);
+            return events;
+        }
         cancelAllTasks();
         notifyStatusChanged();
         return events;
@@ -662,14 +676,23 @@ public final class SessionActor {
         requireInProgress("interview.end");
         requireInterviewMode("interview.end");
         Instant now = clock.now();
-        return CommandResult.ok(endInterview(now, InterviewStateMachine.REASON_MANUAL));
+        List<SessionEvent> events = endInterview(now, InterviewStateMachine.REASON_MANUAL);
+        if (session.status() == SessionStatus.FAILED) {
+            return CommandResult.error(ErrorCode.SESSION_FAILED, "会话持久化失败");
+        }
+        return CommandResult.ok(events);
     }
 
     private List<SessionEvent> endInterview(Instant now, String reason) {
         List<SessionEvent> events = new ArrayList<>(
                 appendClassroomEvents(interview.end(now, reason), now));
         session.end(now);
-        events.add(append(SESSION_ENDED, sessionEndedPayload(reason), now));
+        try {
+            events.add(appendCritical(SESSION_ENDED, sessionEndedPayload(reason), now));
+        } catch (RuntimeException exception) {
+            persistenceFailed(now, exception);
+            return events;
+        }
         cancelAllTasks();
         notifyStatusChanged();
         return events;
@@ -730,6 +753,7 @@ public final class SessionActor {
         Instant now = clock.now();
         session.fail(reason, now);
         windowGeneration++;
+        RuntimeException flushFailure = null;
         try {
             endActiveDialogue("session_ended", now);
             emitHandLowers("session_failed", now);
@@ -738,12 +762,50 @@ public final class SessionActor {
             append(SESSION_FAILED, payload, now);
         } finally {
             // The aggregate is already failed: timers and the registry entry must be released
-            // even if a hand-lower or session.failed append throws (persistence error is
-            // propagated after cleanup).
-            forceFlush();
+            // even if the terminal flush (or a hand-lower/session.failed append) throws. A
+            // flush failure is rethrown after cleanup; a try-block exception takes precedence.
+            try {
+                forceFlush();
+            } catch (RuntimeException exception) {
+                flushFailure = exception;
+                LOG.error("Failed to flush session.failed for {}", session.id().value(),
+                        exception);
+            }
             cancelAllTasks();
             notifyStatusChanged();
         }
+        if (flushFailure != null) {
+            throw flushFailure;
+        }
+    }
+
+    /**
+     * Converts a failed terminal flush into a failed session: the aggregate moves to
+     * {@code failed} (from {@code ENDED} too), {@code session.failed} is appended and flushed
+     * best-effort, timers are cancelled and listeners are notified.
+     */
+    private void persistenceFailed(Instant now, RuntimeException cause) {
+        LOG.error("Session {} persistence flush failed; failing session",
+                session.id().value(), cause);
+        if (session.status() != SessionStatus.FAILED) {
+            session.fail(FailureReason.INTERNAL, now);
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("reason", FailureReason.INTERNAL.wireValue());
+        try {
+            append(SESSION_FAILED, payload, now);
+        } catch (RuntimeException appendFailure) {
+            LOG.error("Failed to append session.failed for {}", session.id().value(),
+                    appendFailure);
+        }
+        try {
+            forceFlush();
+        } catch (RuntimeException flushFailure) {
+            LOG.error("Failed to flush session.failed for {}", session.id().value(),
+                    flushFailure);
+        }
+        cancelAllTasks();
+        notifyStatusChanged();
     }
 
     /**
@@ -991,6 +1053,18 @@ public final class SessionActor {
     private SessionEvent append(String type, Map<String, Object> payload, Instant now) {
         SessionEvent event = context.append(SessionEventDraft.of(type, payload), atMs(now));
         persistence.appendEvent(event);
+        push(event);
+        return event;
+    }
+
+    /**
+     * Appends a terminal event and flushes it synchronously before pushing: a failed flush must
+     * never advertise a terminal event to clients whose durable state still lags behind.
+     */
+    private SessionEvent appendCritical(String type, Map<String, Object> payload, Instant now) {
+        SessionEvent event = context.append(SessionEventDraft.of(type, payload), atMs(now));
+        persistence.appendEvent(event);
+        persistence.flush(session.id());
         push(event);
         return event;
     }

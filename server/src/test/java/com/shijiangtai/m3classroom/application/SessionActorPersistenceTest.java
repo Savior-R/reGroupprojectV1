@@ -1,16 +1,20 @@
 package com.shijiangtai.m3classroom.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.shijiangtai.m3classroom.application.port.PersistenceFlushException;
 import com.shijiangtai.m3classroom.domain.classroom.ClassroomStateMachine;
 import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentDynamics;
 import com.shijiangtai.m3classroom.domain.interview.InterviewStateMachine;
 import com.shijiangtai.m3classroom.domain.recording.StreamType;
 import com.shijiangtai.m3classroom.domain.session.CommandResult;
+import com.shijiangtai.m3classroom.domain.session.FailureReason;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionCommand;
 import com.shijiangtai.m3classroom.domain.session.SessionContext;
 import com.shijiangtai.m3classroom.domain.session.SessionEvent;
+import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.m3classroom.domain.task.TaskSnapshot;
@@ -23,6 +27,7 @@ import com.shijiangtai.m3classroom.support.InMemorySessionTextStore;
 import com.shijiangtai.shared.application.IdGenerator;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.CourseId;
+import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.math.BigDecimal;
@@ -112,6 +117,60 @@ class SessionActorPersistenceTest {
         assertThat(fixture.eventStore().all())
                 .extracting(SessionEvent::type)
                 .contains("session.started");
+    }
+
+    @Test
+    void endSessionFlushesBeforePushingEndedAndReturnsOk() {
+        Fixture fixture = fixture();
+        start(fixture);
+        List<SessionEvent> pushed = new ArrayList<>();
+        fixture.actor().attachEventSink(pushed::add);
+
+        CommandResult result = fixture.actor().handle(
+                new SessionCommand.EndSession("end-1"));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(fixture.writer().flushCalls()).isGreaterThanOrEqualTo(1);
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.ENDED);
+        assertThat(fixture.eventStore().all()).anyMatch(e -> e.type().equals("session.ended"));
+        assertThat(pushed).anyMatch(e -> e.type().equals("session.ended"));
+    }
+
+    @Test
+    void endSessionFlushFailureMarksFailedAndDoesNotPushEnded() {
+        Fixture fixture = fixture();
+        start(fixture);
+        List<SessionEvent> pushed = new ArrayList<>();
+        fixture.actor().attachEventSink(pushed::add);
+        fixture.writer().failFlush = true;
+
+        CommandResult result = fixture.actor().handle(
+                new SessionCommand.EndSession("end-1"));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.SESSION_FAILED);
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.FAILED);
+        assertThat(eventsOfType(fixture, "session.failed")).hasSize(1);
+        assertThat(pushed).noneMatch(e -> e.type().equals("session.ended"));
+    }
+
+    @Test
+    void failFlushFailureStillCancelsTimersAndNotifiesRegistry() {
+        Fixture fixture = fixture();
+        start(fixture);
+        List<SessionStatus> notified = new ArrayList<>();
+        fixture.actor().attachStatusListener(notified::add);
+        // A pending grace timer makes the cancelAllTasks assertion meaningful; without the
+        // finally-block cleanup a throw from forceFlush would skip it.
+        fixture.actor().onWsDisconnected(NOW);
+        assertThat(fixture.scheduler().pendingTasks()).isEqualTo(1);
+        fixture.writer().failFlush = true;
+
+        assertThatThrownBy(() -> fixture.actor().fail(FailureReason.INTERNAL))
+                .isInstanceOf(PersistenceFlushException.class);
+        assertThat(fixture.session().status()).isEqualTo(SessionStatus.FAILED);
+        assertThat(fixture.scheduler().pendingTasks()).isZero();
+        assertThat(notified).contains(SessionStatus.FAILED);
     }
 
     // ---------------------------------------------------------------------
