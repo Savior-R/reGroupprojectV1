@@ -263,6 +263,28 @@ class SessionActorDialogueTest {
     }
 
     @Test
+    void staleDialogueIdIsRejectedWhileStudentAnswering() {
+        // 0.99 loses the follow-up roll, so the initial answer returns to waiting_hands and no
+        // dialogue becomes active.
+        Fixture f = fixture(new MutableRandom(0.99));
+        f.start();
+        assertThat(f.actor().handle(f.callOn()).ok()).isTrue();
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+
+        // Put the domain back into student_answering, where end_dialogue finishes the answer.
+        f.classroom().callOn(f.studentId(), NOW);
+        int before = f.context().after(0).size();
+
+        CommandResult result = f.actor().handle(
+                new SessionCommand.EndDialogue("end-stale", UUID.randomUUID()));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.SESSION_STATE_INVALID);
+        assertThat(f.context().after(0)).hasSize(before);
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.STUDENT_ANSWERING);
+    }
+
+    @Test
     void endQaWhileInDialogueEmitsDialogueEndedFirst() {
         Fixture f = dialogueFixture();
         assertThat(f.actor().handle(new SessionCommand.EndQa("qa-1")).ok()).isTrue();

@@ -529,7 +529,7 @@ class SessionActorTest {
         assertThat(fixture.classroom().qaPhase()).isEqualTo(QaPhase.STUDENT_ANSWERING);
 
         var result = fixture.actor().handle(
-                new SessionCommand.EndDialogue("end-1", UUID.randomUUID()));
+                new SessionCommand.EndDialogue("end-1", null));
 
         assertThat(result.ok()).isTrue();
         assertThat(fixture.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);

@@ -534,6 +534,7 @@ public final class SessionActor {
     private CommandResult handleEndDialogue(SessionCommand.EndDialogue command) {
         requireInProgress("teacher.end_dialogue");
         requireClassroomMode("teacher.end_dialogue");
+        requireMatchingDialogueId(command);
         Instant now = clock.now();
 
         List<SessionEvent> events;
@@ -541,8 +542,8 @@ public final class SessionActor {
         if (classroom.macroState() == ClassroomMacroState.QA
                 && classroom.qaPhase() == QaPhase.STUDENT_ANSWERING) {
             // P0: an explicit end_dialogue while the student is answering finishes the answer.
-            // No dialogue is active in this phase, so a supplied dialogue_id is ignored and the
-            // legacy finish-answer behavior is preserved.
+            // No dialogue is active in this phase, so any supplied dialogue_id was already
+            // rejected as stale by requireMatchingDialogueId.
             if (currentStudentId == null) {
                 throw stateInvalid("teacher.end_dialogue", "当前没有可结束的回答");
             }
@@ -551,7 +552,6 @@ public final class SessionActor {
             events = new ArrayList<>(appendClassroomEvents(domainEvents, now));
             answerFinished = true;
         } else {
-            requireMatchingDialogueId(command);
             if (classroom.macroState() == ClassroomMacroState.QA
                     && classroom.qaPhase() == QaPhase.DIALOGUE) {
                 events = new ArrayList<>(endActiveDialogue("teacher", now));
