@@ -1,6 +1,7 @@
 package com.shijiangtai.m3classroom.infrastructure.config;
 
 import com.shijiangtai.m3classroom.application.port.AfterCommitPort;
+import com.shijiangtai.m3classroom.application.port.AsrStreamClient;
 import com.shijiangtai.m3classroom.application.port.ContentClient;
 import com.shijiangtai.m3classroom.application.port.ContentRequest;
 import com.shijiangtai.m3classroom.application.port.ContentResponse;
@@ -126,6 +127,18 @@ public class M3Config {
     public TeacherSpeechClassifier teacherSpeechClassifier() {
         return (text, recentTexts, mode) -> {
             throw new DomainException(ErrorCode.SERVICE_UNAVAILABLE, "教师话语分类服务不可用");
+        };
+    }
+
+    /**
+     * Fallback streaming ASR until {@code m3.ai.base-url} enables the Python adapter. The
+     * perception socket catches the failure and closes without touching the session.
+     */
+    @Bean
+    @ConditionalOnMissingBean(AsrStreamClient.class)
+    public AsrStreamClient asrStreamClient() {
+        return request -> {
+            throw new DomainException(ErrorCode.SERVICE_UNAVAILABLE, "ASR 服务不可用");
         };
     }
 
