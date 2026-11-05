@@ -10,6 +10,7 @@ import com.shijiangtai.m3classroom.domain.classroom.AnswerQualityPolicy;
 import com.shijiangtai.m3classroom.domain.classroom.ClassroomEvent;
 import com.shijiangtai.m3classroom.domain.classroom.ClassroomMacroState;
 import com.shijiangtai.m3classroom.domain.classroom.ClassroomStateMachine;
+import com.shijiangtai.m3classroom.domain.classroom.DialogueState;
 import com.shijiangtai.m3classroom.domain.classroom.HandRaise;
 import com.shijiangtai.m3classroom.domain.classroom.HandRaisePolicy;
 import com.shijiangtai.m3classroom.domain.classroom.QaPhase;
@@ -69,10 +70,11 @@ import org.slf4j.LoggerFactory;
  * {@code student.hand_raised} event is emitted and carries the raised ids into
  * {@link ClassroomStateMachine#handWindowTimeout(Instant, List)}.
  *
- * <p>P0 simplifications: an answer finishes immediately with a single
- * {@link ClassroomStateMachine#answerFinished(UUID, boolean, Instant)} call and returns to
- * {@code waiting_hands}. Automatic three-round follow-up, {@code dialogue.started}/{@code
- * dialogue.ended} and {@code student.follow_up} are deferred to a later slice.
+ * <p>A finished answer rolls {@code question_rate * 0.5}: a losing roll keeps the P0 path
+ * ({@link ClassroomStateMachine#answerFinished(UUID, boolean, Instant)} with {@code false} and
+ * back to {@code waiting_hands}); a winning roll starts a dialogue ({@code dialogue.started} +
+ * {@code student.follow_up}) and leaves the classroom in {@code qa.dialogue}. Teacher-response
+ * driven continuation rounds and every dialogue termination path are handled by later slices.
  */
 public final class SessionActor {
 
@@ -93,6 +95,9 @@ public final class SessionActor {
     private static final String STUDENT_HAND_LOWERED = "student.hand_lowered";
     private static final String STUDENT_QUESTION = "student.question";
     private static final String STUDENT_ANSWER = "student.answer";
+    private static final String STUDENT_FOLLOW_UP = "student.follow_up";
+    private static final String DIALOGUE_STARTED = "dialogue.started";
+    private static final String DIALOGUE_ENDED = "dialogue.ended";
     private static final String TEACHER_CALLED_ON = "teacher.called_on";
     private static final String TEACHER_MARKED = "teacher.marked";
     private static final String TEACHER_MANAGEMENT_ACTION = "teacher.management_action";
@@ -143,6 +148,10 @@ public final class SessionActor {
     private SchedulerPort.Cancellable graceTask;
     private long windowGeneration;
     private UUID currentStudentId;
+
+    private DialogueState dialogue;
+    private UUID dialogueAnswerId;
+    private long dialogueAwaitingSinceMs;
 
     public SessionActor(
             Session session,
@@ -1011,15 +1020,101 @@ public final class SessionActor {
         SessionEvent event = append(STUDENT_ANSWER, payload, now);
         answerStudents.put(answerId, student.id());
 
-        // P0: one answer round, then back to waiting_hands; follow-up rounds are deferred.
-        // Behaviour order mirrors the protocol: fact, answer_started, answer-finished state,
-        // then the student returns to focused.
+        // Behaviour order mirrors the protocol: fact, answer_started, then either the legacy
+        // answer-finished path or the first follow-up round when the student decides to keep
+        // the dialogue going (05A §5.1).
         List<SessionEvent> events = new ArrayList<>();
         events.add(event);
         events.addAll(appendStudentEvents(students.applyAnswer(student.id()), now));
-        events.addAll(appendClassroomEvents(
-                classroom.answerFinished(student.id(), false, now), now));
-        events.addAll(appendStudentEvents(students.applyAnswerFinished(student.id()), now));
+        boolean followUp = random.nextDouble() < DialogueState.followUpProbability(
+                student.config().questionRate().doubleValue());
+        if (followUp) {
+            maybeStartDialogue(student, answerId, now);
+        } else {
+            events.addAll(appendClassroomEvents(
+                    classroom.answerFinished(student.id(), false, now), now));
+            events.addAll(appendStudentEvents(
+                    students.applyAnswerFinished(student.id()), now));
+        }
+        return events;
+    }
+
+    /**
+     * Starts a dialogue after the initial answer (05A §5.1). Event order is fixed:
+     * {@code classroom.state_changed} (follow-up), the student's {@code answering -> dialogue}
+     * transition, {@code dialogue.started}, then the first {@code student.follow_up}. The
+     * initial round does not apply a second attention delta, because
+     * {@link VirtualStudentDynamics#applyFollowUp} already did so above.
+     */
+    private void maybeStartDialogue(
+            VirtualStudentRuntime student, UUID answerId, Instant now) {
+        appendClassroomEvents(classroom.answerFinished(student.id(), true, now), now);
+        appendStudentEvents(students.applyFollowUp(student.id()), now);
+
+        dialogue = new DialogueState(ids.nextId(), student.id());
+        dialogueAnswerId = answerId;
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("dialogue_id", dialogue.dialogueId());
+        payload.put("student_id", student.id());
+        append(DIALOGUE_STARTED, payload, now);
+
+        emitFollowUp(student, now, false);
+    }
+
+    /**
+     * Generates and persists one follow-up question as a {@code session_texts} row
+     * ({@code kind=follow_up}) and appends {@code student.follow_up}. Subsequent rounds
+     * ({@code applyAttention=true}) add the +0.05 attention delta without another behaviour
+     * transition, because the student is already in {@code dialogue}.
+     */
+    private List<SessionEvent> emitFollowUp(
+            VirtualStudentRuntime student, Instant now, boolean applyAttention) {
+        ContentResponse response = content.questionOrFallback(contentRequest(student));
+        UUID textId = ids.nextId();
+        textStore.save(new SessionText(
+                textId, session.id(), "student", student.id(), "llm", "follow_up",
+                response.text(), null, null, atMs(now),
+                BigDecimal.valueOf(response.confidence()),
+                response.modelVersion(), response.promptVersion(), "final"));
+        if (applyAttention) {
+            students.applyFollowUp(student.id());
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("student_id", student.id());
+        payload.put("answer_id", dialogueAnswerId);
+        payload.put("text_id", textId);
+        SessionEvent event = append(STUDENT_FOLLOW_UP, payload, now);
+        dialogueAwaitingSinceMs = atMs(now);
+        return List.of(event);
+    }
+
+    /**
+     * Closes the active dialogue: {@code dialogue.ended} then the student's
+     * {@code dialogue -> focused} transition. The classroom state machine is intentionally left
+     * untouched; the caller appends its own terminal transition ({@code end_dialogue},
+     * {@code qa_ended}, restart, session end) so no intermediate {@code waiting_hands} event is
+     * emitted. Returns an empty list when no dialogue is active.
+     */
+    private List<SessionEvent> endActiveDialogue(String reason, Instant now) {
+        if (dialogue == null) {
+            return List.of();
+        }
+        DialogueState active = dialogue;
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("dialogue_id", active.dialogueId());
+        payload.put("student_id", active.studentId());
+        payload.put("reason", reason);
+
+        List<SessionEvent> events = new ArrayList<>();
+        events.add(append(DIALOGUE_ENDED, payload, now));
+        events.addAll(appendStudentEvents(
+                students.applyDialogueEnded(active.studentId()), now));
+
+        dialogue = null;
+        dialogueAnswerId = null;
+        dialogueAwaitingSinceMs = 0L;
         return events;
     }
 
