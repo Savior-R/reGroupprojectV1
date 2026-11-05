@@ -115,6 +115,7 @@ class AttemptCleanupTest {
 
         SessionView created = service.createSession(student(), taskId);
 
+        assertThat(created.attemptNo()).isEqualTo(6);
         assertThat(sessions.countByStudentAndTask(STUDENT, taskId)).isEqualTo(5);
         assertThat(sessions.findById(attempts.get(0))).isEmpty();
         assertThat(recordings.findBySession(attempts.get(0))).isEmpty();
@@ -151,10 +152,17 @@ class AttemptCleanupTest {
 
         SessionView created = service.createSession(student(), taskId);
 
+        assertThat(created.attemptNo()).isEqualTo(7);
         assertThat(sessions.findById(submitted)).isPresent();
         assertThat(recordings.findBySession(submitted)).isPresent();
         assertThat(sessions.findById(oldestCancelled)).isEmpty();
         assertThat(recordings.findBySession(oldestCancelled)).isEmpty();
+        assertThat(afterCommitActions).hasSize(1);
+
+        // Direct deleteAttempt calls must also skip a submitted attempt.
+        lifecycle.deleteAttempt(submitted);
+        assertThat(sessions.findById(submitted)).isPresent();
+        assertThat(recordings.findBySession(submitted)).isPresent();
         assertThat(afterCommitActions).hasSize(1);
 
         afterCommitActions.forEach(Runnable::run);
@@ -170,6 +178,32 @@ class AttemptCleanupTest {
         lifecycle.deleteAttempt(active);
         assertThat(sessions.findById(active)).isPresent();
         assertThat(afterCommitActions).hasSize(1);
+    }
+
+    @Test
+    void endedOrReviewingAttemptIsFallbackWhenNoCancelledOrFailedExists() {
+        SessionId oldestEnded = seedAttempt(1, SessionStatus.ENDED);
+        SessionId reviewing = seedAttempt(2, SessionStatus.REVIEWING);
+        seedAttempt(3, SessionStatus.ENDED);
+        seedAttempt(4, SessionStatus.REVIEWING);
+        seedAttempt(5, SessionStatus.ENDED);
+        String oldestKey = objectKey(oldestEnded);
+        recordingWithUploadedStream(oldestEnded, oldestKey);
+
+        SessionView created = service.createSession(student(), taskId);
+
+        assertThat(created.attemptNo()).isEqualTo(6);
+        assertThat(sessions.countByStudentAndTask(STUDENT, taskId)).isEqualTo(5);
+        assertThat(sessions.findById(oldestEnded)).isEmpty();
+        assertThat(sessions.findById(reviewing)).isPresent();
+        assertThat(afterCommitActions).hasSize(1);
+
+        afterCommitActions.forEach(Runnable::run);
+
+        assertThatThrownBy(() -> storage.stat(oldestKey))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
     }
 
     @Test

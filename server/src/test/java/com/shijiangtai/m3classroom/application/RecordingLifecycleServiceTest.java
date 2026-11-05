@@ -62,13 +62,16 @@ class RecordingLifecycleServiceTest {
         String uploadId = storage.createMultipart(objectKey, "video/webm").uploadId();
         recordingWithUploadingStream(sessionId, objectKey, uploadId);
 
+        // A repeated abort keeps the aggregate DELETED and re-registers the idempotent
+        // best-effort object deletes, so a retried cleanup cannot strand objects.
+        service.abortAll(sessionId);
         service.abortAll(sessionId);
 
         Recording recording = recordings.findBySession(sessionId).orElseThrow();
         assertThat(recording.status()).isEqualTo(RecordingStatus.DELETED);
         assertThat(recording.stream(StreamType.CAMERA).orElseThrow().status())
                 .isEqualTo(StreamStatus.DELETED);
-        assertThat(afterCommitActions).hasSize(1);
+        assertThat(afterCommitActions).hasSize(2);
         assertThatThrownBy(() -> storage.presignPart(
                 objectKey, uploadId, 1, Duration.ofMinutes(1)))
                 .isInstanceOfSatisfying(DomainException.class,

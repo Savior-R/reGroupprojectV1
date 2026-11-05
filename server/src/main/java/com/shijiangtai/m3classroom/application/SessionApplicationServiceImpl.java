@@ -22,7 +22,6 @@ import com.shijiangtai.m3classroom.domain.task.TaskStatus;
 import com.shijiangtai.shared.application.ClockProvider;
 import com.shijiangtai.shared.application.CurrentUser;
 import com.shijiangtai.shared.application.IdGenerator;
-import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
@@ -131,10 +130,12 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
                         student.accountId(), taskId).isPresent()) {
                     throw activeSessionExists(taskId);
                 }
-                deleteOldestTemporaryAttemptIfAtLimit(student.accountId(), taskId);
-                int attemptNo = Math.toIntExact(
-                        sessionRepository.countByStudentAndTask(
-                                student.accountId(), taskId) + 1);
+                List<Session> attempts = sessionRepository.findByStudentAndTask(
+                        student.accountId(), taskId);
+                // Number before cleanup: deleting the oldest attempt must not make the new
+                // attempt reuse a number that survives in another row.
+                int attemptNo = nextAttemptNo(attempts);
+                deleteOldestTemporaryAttemptIfAtLimit(attempts, taskId);
                 Session session = Session.createPreparing(
                         new SessionId(idGenerator.nextId()),
                         TASK_SESSION,
@@ -172,14 +173,20 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
         }
     }
 
+    /** Next attempt number across every attempt, including submitted ones and previous cycles. */
+    private static int nextAttemptNo(List<Session> attempts) {
+        return attempts.stream()
+                .mapToInt(Session::attemptNo)
+                .max()
+                .orElse(0) + 1;
+    }
+
     /**
-     * Enforces the temporary-attempt cap (05B §6). The list is ordered by attempt number, so the
-     * first match in each priority group is the oldest attempt. Submitted attempts are never
-     * candidates; an active attempt cannot reach this point because the active-session check runs
-     * first.
+     * Enforces the temporary-attempt cap (05B §6). The candidate with the lowest attempt number in
+     * each priority group is the oldest attempt. Submitted attempts are never candidates; an
+     * active attempt cannot reach this point because the active-session check runs first.
      */
-    private void deleteOldestTemporaryAttemptIfAtLimit(AccountId studentId, TaskId taskId) {
-        List<Session> attempts = sessionRepository.findByStudentAndTask(studentId, taskId);
+    private void deleteOldestTemporaryAttemptIfAtLimit(List<Session> attempts, TaskId taskId) {
         long temporary = attempts.stream()
                 .filter(attempt -> attempt.status() != SessionStatus.SUBMITTED)
                 .count();
