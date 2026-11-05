@@ -47,8 +47,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.random.RandomGenerator;
 import org.slf4j.Logger;
@@ -98,6 +100,7 @@ public final class SessionActor {
     private static final String STATE_CHANGED = "classroom.state_changed";
     private static final String HAND_WINDOW_TIMEOUT_EVENT = "classroom.hand_window_timeout";
     private static final String INTERVIEW_QUESTION_SHOWN = "interview.question_shown";
+    private static final String PERCEPTION_SCREEN_CHANGED = "perception.screen_changed";
     private static final String TIME_TICK = "session.time_tick";
     private static final String END_REASON_MANUAL = "manual";
     private static final String END_REASON_TIMEOUT = "timeout";
@@ -134,6 +137,7 @@ public final class SessionActor {
 
     private Consumer<SessionEvent> eventSink;
     private Consumer<SessionStatus> statusListener = status -> { };
+    private final List<Consumer<SessionStatus>> statusListeners = new CopyOnWriteArrayList<>();
     private SchedulerPort.Cancellable handRaiseTask;
     private SchedulerPort.Cancellable handWindowTask;
     private SchedulerPort.Cancellable graceTask;
@@ -359,7 +363,6 @@ public final class SessionActor {
                 ? classroom.askStudentQuestion(now)
                 : classroom.askClass(now);
 
-        long generation = ++windowGeneration;
         List<SessionEvent> events = new ArrayList<>(emitHandLowers("qa_ended", now));
         cancel(handRaiseTask);
         handRaiseTask = null;
@@ -367,19 +370,29 @@ public final class SessionActor {
         handWindowTask = null;
         events.addAll(appendClassroomEvents(classroomEvents, now));
 
-        String expectedIntent = studentQuestion
+        scheduleHandWindow(studentQuestion
                 ? ClassroomStateMachine.INTENT_STUDENT_QUESTION
-                : ClassroomStateMachine.INTENT_ANSWER;
+                : ClassroomStateMachine.INTENT_ANSWER);
+        return CommandResult.ok(events);
+    }
+
+    /**
+     * Invalidates the previous window generation and schedules the first hand raise (1–3 s) plus
+     * the 30 s hand-window timeout. Shared by manual asks and voice-triggered questions.
+     *
+     * <p>The timeout is scheduled even before the first hand is raised: a class with no eligible
+     * student must still leave {@code qa.waiting_hands} after 30 s. When a hand is raised the
+     * timer is moved to 30 s from that first raise (05A §5.4).
+     */
+    private long scheduleHandWindow(String expectedIntent) {
+        long generation = ++windowGeneration;
         long delayMs = HAND_RAISE_MIN_DELAY_MS
                 + random.nextLong(HAND_RAISE_MAX_EXTRA_DELAY_MS + 1L);
         handRaiseTask = scheduler.schedule(
                 () -> emitHandRaises(expectedIntent, generation), Duration.ofMillis(delayMs));
-        // The timeout is scheduled for every manual ask, not only after the first hand is raised:
-        // a class with no eligible student must still leave qa.waiting_hands after 30 s. When a
-        // hand is raised the timer is moved to 30 s from that first raise (05A §5.4).
         handWindowTask = scheduler.schedule(
                 () -> emitHandWindowTimeout(generation), HAND_WINDOW_TIMEOUT);
-        return CommandResult.ok(events);
+        return generation;
     }
 
     private synchronized void emitHandRaises(String expectedIntent, long generation) {
@@ -699,6 +712,91 @@ public final class SessionActor {
         cancelGrace();
     }
 
+    // ------------------------------------------------------------------
+    // Perception hooks (05A §6.2)
+    // ------------------------------------------------------------------
+
+    /**
+     * Persists one final ASR segment as a {@link SessionText}. Perception callbacks can race a
+     * session end; outside {@code in_progress} (or before the session started) the text is
+     * dropped so no speech is persisted after the terminal event.
+     */
+    public synchronized Optional<UUID> recordSpeechFinal(
+            String speakerType,
+            UUID speakerRef,
+            String text,
+            Long startMs,
+            Long endMs,
+            BigDecimal confidence) {
+        if (session.status() != SessionStatus.IN_PROGRESS
+                || session.startedAt() == null
+                || text == null
+                || text.isBlank()) {
+            return Optional.empty();
+        }
+        UUID textId = ids.nextId();
+        long atMs = endMs != null ? Math.max(0L, endMs) : currentAtMs();
+        textStore.save(new SessionText(
+                textId, session.id(), speakerType, speakerRef, "asr",
+                "candidate".equals(speakerType) ? "answer" : "utterance",
+                text, startMs, endMs, atMs, confidence, null, null, "final"));
+        return Optional.of(textId);
+    }
+
+    /**
+     * Applies an off-actor teacher-utterance classification. A high-confidence question starts a
+     * voice QA window with the same hand scheduling as a manual ask; every other classification
+     * only appends the suggested-question event. Terminal and interview sessions are ignored, so
+     * a late classification cannot mutate the session.
+     */
+    public synchronized void onTeacherSpeechClassified(double confidence) {
+        if (session.status() != SessionStatus.IN_PROGRESS || isInterviewMode()) {
+            return;
+        }
+        Instant now = clock.now();
+        List<ClassroomEvent> classroomEvents = classroom.onTeacherUtterance(confidence, now);
+        boolean voiceQuestion = classroomEvents.stream().anyMatch(event ->
+                QUESTION_ASKED.equals(event.type())
+                        && ClassroomStateMachine.SOURCE_VOICE.equals(
+                                event.payload().get("source")));
+        if (!voiceQuestion) {
+            appendClassroomEvents(classroomEvents, now);
+            return;
+        }
+        emitHandLowers("qa_ended", now);
+        cancel(handRaiseTask);
+        handRaiseTask = null;
+        cancel(handWindowTask);
+        handWindowTask = null;
+        appendClassroomEvents(classroomEvents, now);
+        scheduleHandWindow(ClassroomStateMachine.INTENT_ANSWER);
+    }
+
+    /** Emits a processed-screen perception event; late OCR results after the end are dropped. */
+    public synchronized void onScreenProcessed(UUID frameId, long frameAtMs, String frameType) {
+        if (session.status() != SessionStatus.IN_PROGRESS) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("frame_id", frameId);
+        payload.put("at_ms", frameAtMs);
+        payload.put("frame_type", frameType);
+        append(PERCEPTION_SCREEN_CHANGED, payload, clock.now());
+    }
+
+    /** Session clock shared with perception message timestamps. */
+    public synchronized long currentAtMs() {
+        return atMs(clock.now());
+    }
+
+    /** Interview answer id shared by all ASR segments of the current question, else null. */
+    public synchronized UUID currentAnswerId() {
+        if (!isInterviewMode() || session.status() != SessionStatus.IN_PROGRESS) {
+            return null;
+        }
+        return interview.snapshot(clock.now()).answerId();
+    }
+
     public synchronized List<SessionEvent> replayAfter(long seq) {
         return context.after(seq).stream()
                 .filter(event -> !NON_REPLAYABLE.contains(event.type()))
@@ -755,6 +853,17 @@ public final class SessionActor {
      */
     public void attachStatusListener(Consumer<SessionStatus> listener) {
         this.statusListener = Objects.requireNonNull(listener, "listener");
+    }
+
+    /**
+     * Registers an additional status listener without replacing the primary one; the returned
+     * action removes it again. Used by the perception WebSocket connection registry, which must
+     * not disturb the runtime registry's tick listener.
+     */
+    public Runnable addStatusListener(Consumer<SessionStatus> listener) {
+        Objects.requireNonNull(listener, "listener");
+        statusListeners.add(listener);
+        return () -> statusListeners.remove(listener);
     }
 
     public synchronized boolean isInProgress() {
@@ -1145,7 +1254,11 @@ public final class SessionActor {
     }
 
     private void notifyStatusChanged() {
-        statusListener.accept(session.status());
+        SessionStatus status = session.status();
+        statusListener.accept(status);
+        for (Consumer<SessionStatus> listener : statusListeners) {
+            listener.accept(status);
+        }
     }
 
     private void cancelAllTasks() {
