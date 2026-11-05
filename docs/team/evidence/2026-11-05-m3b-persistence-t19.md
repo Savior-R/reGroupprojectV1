@@ -181,8 +181,11 @@ M3B 口径 64 类 / 499 条），本切片新增 **4 个测试类 / 22 条用例
    仍为未完成，证据不将其计入。
 3. **`REQUIRES_NEW` 独立提交**：批次事务独立于外层 REST 命令事务。若外层事务
    因无关原因回滚，已 flush 的事件 / 文本仍保留。这是终态 flush 持久性的有意
-   取舍（actor 在 flush 返回后才推送终态事件），用于避免批次失败把命令事务
-   标记为 rollback-only。
+   取舍：只有 `session.ended` 是 flush-before-push；`interview.ended` 与
+   `session.failed` 在终态 flush 运行时可能已经推送。因此终态 flush 失败时
+   （如 `session.ended` flush 失败转 failed）会在这些事件之后追加并推送
+   `session.failed`，且不会重复推送 `session.ended`；这样可避免批次失败把命令
+   事务标记为 rollback-only。
 4. **教师文本上下文在 actor 重建时回填**：活跃 actor 的 LLM 上下文读内存；
    `SessionRuntimeRegistry.buildActor` 在重建（重连 / 终态对账）时从
    `m3.session_texts` 读取 `speaker_type=teacher` 的文本回填。Java 进程重启后
