@@ -37,8 +37,9 @@ import java.util.UUID;
  * <p>Event order mirrors 05A: a domain fact (for example {@code classroom.question_asked} or
  * {@code classroom.hand_window_timeout}) precedes the corresponding
  * {@code classroom.state_changed}. State-change triggers are {@code manual}, {@code voice},
- * {@code call_on}, {@code follow_up}, {@code answer_finished}, {@code end_dialogue},
- * {@code end_qa}, {@code hand_window_timeout}, and {@code end_session}.
+ * {@code call_on}, {@code follow_up}, {@code answer_finished}, {@code end_dialogue} (or
+ * {@code no_follow_up} / {@code max_rounds}), {@code end_qa}, {@code hand_window_timeout},
+ * and {@code end_session}.
  */
 public final class ClassroomStateMachine {
 
@@ -46,6 +47,9 @@ public final class ClassroomStateMachine {
     public static final String INTENT_STUDENT_QUESTION = "student_question";
     public static final String SOURCE_MANUAL = "manual";
     public static final String SOURCE_VOICE = "voice";
+    public static final String TRIGGER_END_DIALOGUE = "end_dialogue";
+    public static final String TRIGGER_NO_FOLLOW_UP = "no_follow_up";
+    public static final String TRIGGER_MAX_ROUNDS = "max_rounds";
 
     private static final String STATE_CHANGED = "classroom.state_changed";
     private static final String QUESTION_ASKED = "classroom.question_asked";
@@ -168,12 +172,25 @@ public final class ClassroomStateMachine {
 
     /** Ends the current dialogue and waits for the next hand raise. */
     public List<ClassroomEvent> endDialogue(Instant now) {
+        return endDialogue(TRIGGER_END_DIALOGUE, now);
+    }
+
+    /**
+     * Ends the current dialogue with the given trigger and waits for the next hand raise.
+     * The trigger must be non-blank; the machine must be in the {@code dialogue} phase.
+     */
+    public List<ClassroomEvent> endDialogue(String trigger, Instant now) {
+        Objects.requireNonNull(trigger, "trigger");
         Objects.requireNonNull(now, "now");
+        if (trigger.isBlank()) {
+            throw new DomainException(ErrorCode.VALIDATION_ERROR, "触发器不能为空",
+                    Map.of("field", "trigger"));
+        }
         requireQaPhase("endDialogue", QaPhase.DIALOGUE);
         this.qaPhase = QaPhase.WAITING_HANDS;
         this.handWindowStartedAtMs = now.toEpochMilli();
         return List.of(stateChanged(ClassroomMacroState.QA, ClassroomMacroState.QA,
-                QaPhase.WAITING_HANDS, "end_dialogue"));
+                QaPhase.WAITING_HANDS, trigger));
     }
 
     /** Ends the whole QA block and returns to lecturing. */

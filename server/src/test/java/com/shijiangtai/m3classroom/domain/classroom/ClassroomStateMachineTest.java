@@ -198,6 +198,31 @@ class ClassroomStateMachineTest {
     }
 
     @Test
+    void endDialogueUsesProvidedTrigger() {
+        ClassroomStateMachine machine = machineInDialogue();
+
+        List<ClassroomEvent> events = machine.endDialogue(
+                ClassroomStateMachine.TRIGGER_NO_FOLLOW_UP, NOW);
+
+        assertThat(events).singleElement().satisfies(event -> {
+            assertThat(event.type()).isEqualTo("classroom.state_changed");
+            assertThat(event.payload()).containsEntry("qa_phase", "waiting_hands")
+                    .containsEntry("trigger", "no_follow_up");
+        });
+        assertThat(machine.qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+    }
+
+    @Test
+    void endDialogueRejectsBlankTriggerAndWrongPhase() {
+        assertThatThrownBy(() -> machineInDialogue().endDialogue(" ", NOW))
+                .isInstanceOf(DomainException.class);
+        ClassroomStateMachine lecturing = new ClassroomStateMachine();
+        lecturing.start();
+        assertThatThrownBy(() -> lecturing.endDialogue(NOW))
+                .isInstanceOf(DomainException.class);
+    }
+
+    @Test
     void endQaReturnsToLecturing() {
         ClassroomStateMachine machine = started();
         machine.askClass(NOW);
@@ -442,6 +467,10 @@ class ClassroomStateMachineTest {
                 .containsEntry("qa_phase", "waiting_hands")
                 .containsEntry("trigger", "manual")
                 .hasSize(4);
+    }
+
+    private static ClassroomStateMachine machineInDialogue() {
+        return machineIn(QaPhase.DIALOGUE);
     }
 
     private static ClassroomStateMachine machineIn(QaPhase phase) {
