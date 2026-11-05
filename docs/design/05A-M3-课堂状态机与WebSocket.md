@@ -118,6 +118,19 @@ com.shijiangtai
 - OCR 文本按 hash 去重，相同内容不重复写上下文；
 - 截图失败 / OCR 失败不终止录制，只降低相关评测置信度。
 
+`frame_type` 分类规则（P0，`FrameTypeClassifier`）：
+
+| 优先级 | 条件 | `frame_type` |
+|---|---|---|
+| 1 | `confidence != null` 且 `< 0.60` | `low_confidence` |
+| 2 | 否则 `change_score != null` 且 `>= 0.125` | `slide_change` |
+| 3 | 其他情况，包含 `confidence = null` | `normal` |
+
+- 低置信优先于翻页：OCR 置信度不足时即使变化分高也标 `low_confidence`；
+- `confidence = null`（Python OCR 未返回置信度）按 `change_score` 判定；
+- 只有帧 `processed` 后才写 `perception.screen_changed`；OCR 失败 → 帧 `failed`，不写事件、不改变 session 状态；
+- `final` / `chart` 帧类型需要视觉模型（板书定稿 / 图表识别），**本轮不产出，保留枚举值，deferred**。
+
 #### 音频采样
 
 | 参数 | 默认值 |
@@ -126,12 +139,66 @@ com.shijiangtai
 | 分片 | 200ms |
 | partial | 约 500ms 一次，只推前端 |
 | final | 静音 500ms 或最长 10 秒 |
-| 声学特征 | 每 1 秒；音量、静音、语速 |
-| 声学事件 | 音量过低 / 过高、停顿 > 3 秒时写 `perception.acoustic` |
+| 声学特征 | 每 1 秒；音量、静音、语速；**本轮不实现，deferred 到 M4 音频特征** |
+| 声学事件 | 音量过低 / 过高、停顿 > 3 秒时写 `perception.acoustic`；**本轮不实现，deferred 到 M4** |
 
 - 通过感知 WS 发给 Java；Java 转发 Python 流式 ASR；
 - Python 返回 partial / final；final 写 `m3.session_texts`（`speaker_type=teacher`、`source=asr`）；
 - 感知 WS 断开只影响 ASR / 声学特征，录制继续，M4 标记 partial；控制 WS 断开进入 30 秒 grace，超时 / 页面刷新 / 录制器丢失才 session failed。
+
+#### 感知 WebSocket 协议（P0）
+
+```text
+WS /ws/v1/sessions/{session_id}/perception?ticket=...
+```
+
+- 仅 session 所属学生可连接；ticket 一次性、30 秒；`session_type` 为 `task` 或 `training`。
+- 不使用控制通道事件信封：感知 WS 消息没有 `v` / `event_id` / `seq` / `session_id` / `command_id`，**也不写 `m3.events`**。
+
+客户端 → 服务端：
+
+| 顺序 | 消息 | 说明 |
+|---|---|---|
+| 1 | `{"type":"audio.start","format":"pcm16","sample_rate":16000,"channels":1}` | 首条文本帧；Java 转发 ASR 时语言固定 `zh` |
+| 2 | 二进制 PCM 帧 | PCM16、16 kHz、单声道；可连续多帧 |
+| 3 | `{"type":"audio.stop"}` | 结束本段音频，触发 final 排空 |
+
+- `audio.start` 逐项精确校验：`format=pcm16`、`sample_rate=16000`、`channels=1`；缺失或不匹配 → `error VALIDATION_ERROR` 后关闭 4003；
+- 二进制音频早于 `audio.start`、重复 `audio.start`、`audio.stop` 之前未 `audio.start`，同样按协议错误关闭 4003；
+- `audio.start` 时记录 `audio_start_at_ms = actor.currentAtMs()`；后续 `at_ms = audio_start_at_ms + 分段 end_ms`，负数钳制为 0。
+
+服务端 → 客户端（纯 JSON，无信封）：
+
+| 消息 | 形状 | 说明 |
+|---|---|---|
+| `asr.partial` | `{"type":"asr.partial","text":"...","at_ms":1234}` | 约 500 ms 一次；只推前端，不落库 |
+| `asr.final` | `{"type":"asr.final","text":"...","text_id":"uuid","at_ms":1500}` | 最终文本已写入 `m3.session_texts`（`source=asr`、`status=final`） |
+| `error` | `{"type":"error","code":"VALIDATION_ERROR\|SERVICE_UNAVAILABLE","message":"..."}` | 无 `command_id`；协议错误后关闭 4003，AI 不可用只降级 |
+
+- `asr.final` 落库口径：课堂 `speaker_type=teacher`、`kind=utterance`；结构化面试 `speaker_type=candidate`、`kind=answer`、`speaker_ref=当前 answer_id`；
+- 课堂 `asr.final` 异步送教师话语分类：`label=question` 且置信度 ≥ 0.8 → `classroom.question_asked {source=voice}` 并进入举手窗口；低置信 → `classroom.question_suggested`；分类失败只记 WARN；
+- 结构化面试不做教师话语分类。
+
+关闭码：
+
+| 关闭码 | 触发 |
+|---|---|
+| 4001 | ticket / 认证失败，或 session 不属于当前学生 |
+| 4002 | session 已失败 / 终态 / 不可用；session 在连接期间结束也以 4002 关闭 |
+| 4003 | `preparing` 或非 `in_progress` 状态；协议非法（参数不符 / 顺序错误 / 未知消息） |
+| 1000 | `audio.stop` 且 final 已排空；ASR 从未打开；被同 session 新感知连接替换 |
+
+`audio.stop` 与 session 结束的顺序（P0）：
+
+1. 客户端先发 `audio.stop`，再通过控制通道 `teacher.end_session`（或 REST end）：**先停音频、再结束 session**；
+2. Java 收到 `audio.stop` 后调用 ASR `finish()`，最多等待 **2 秒**让最后一个 final 到达：到达则先推 `asr.final` 并落库，再关闭 1000；2 秒内未到达也关闭 1000；
+3. session 已终态后才到达的 final 直接丢弃：不写 `m3.session_texts`、不推 `asr.final`、不报错。
+
+AI 降级（未配置 `m3.ai.base-url` 或 Python 不可用）：
+
+- ASR `open` 失败 → 推 `error SERVICE_UNAVAILABLE`，音频帧丢弃，收到 `audio.stop` 后正常关闭 1000；
+- 流中 ASR 错误 / 意外断开 → 推 `error SERVICE_UNAVAILABLE`，感知 WS 保持打开，直到 `audio.stop` 关闭 1000；
+- 以上降级都不改变 session 状态，session 保持 `in_progress`，录制继续。
 
 ## 4. Session 状态机
 
@@ -399,8 +466,8 @@ p_discipline = discipline_probability * (1 - attention) * state_factor
 | `session.failed` | `{reason, error_code?}` | 30 秒 grace 超时 / 录制器丢失 / 技术失败 |
 | `session.resumed` | `{last_seq, server_time_ms}` | 重连成功；随后补发缺失事件 |
 | `recording.ready_ack` | `{required_streams, ok}` | 客户端录制器就绪确认 |
-| `perception.screen_changed` | `{frame_id, at_ms, frame_type}` | 屏幕 OCR / 变化 |
-| `perception.acoustic` | `{at_ms, event, value}` | 音量 / 停顿 / 语速异常 |
+| `perception.screen_changed` | `{frame_id, at_ms, frame_type}` | 屏幕 OCR / 变化；仅 `processed` 帧写入 |
+| `perception.acoustic` | `{at_ms, event, value}` | **deferred**：M4 音频特征（音量 / 停顿 / 语速）；本轮不实现、不写事件 |
 | `student.hand_raised` | `{student_id, hand_raise_id}` | 举手 |
 | `student.hand_lowered` | `{student_id, hand_raise_id, reason}` | 放下 |
 | `teacher.called_on` | `{student_id, hand_raise_id?}` | 点名 |
@@ -425,6 +492,8 @@ p_discipline = discipline_probability * (1 - attention) * state_factor
 - `session.snapshot` 额外包含 `last_seq`、面试当前题 / `answer_id` / 剩余时间、虚拟学生当前状态、录制状态。
 - 30 秒 grace：控制 WS 断线不立即写 `session.failed`；重连 `session.resume` 后从 `last_seq` 补发事件；`time_tick` / `ping` 不回放。
 - `session.failed.reason`：`grace_timeout` / `recording_lost` / `track_ended` / `ws_error` / `internal`；`session.ended.reason`：`manual` / `timeout` / `recording_stopped`。
+- **感知 WS 消息不是事件**：`asr.partial` / `asr.final` / `error` 走感知通道，不带 `v` / `event_id` / `seq` / `session_id` 信封，不写 `m3.events`；消息形状、`audio.start` 校验、2 秒 drain 与关闭码见 §3.3。
+- `perception.acoustic` deferred 到 M4 音频特征；`final` / `chart` 帧类型 deferred 到视觉模型；本轮分类器只产出 `normal` / `slide_change` / `low_confidence`。
 
 ## 7. Python 内容生成
 

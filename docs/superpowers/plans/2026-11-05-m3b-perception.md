@@ -208,7 +208,7 @@ void highConfidenceClassifiedQuestionStartsVoiceQaAndSchedulesHands() {
             .filter(e -> e.type().equals("classroom.question_asked")).findFirst().orElseThrow();
     assertThat(asked.payload().get("source")).isEqualTo("voice");
     assertThat(asked.payload().get("intent")).isEqualTo("answer");
-    assertThat(fixture.scheduler().pendingCount()).isEqualTo(2); // hand raise + window timeout
+    assertThat(fixture.scheduler().pendingTasks()).isEqualTo(2); // hand raise + window timeout
 }
 
 @Test
