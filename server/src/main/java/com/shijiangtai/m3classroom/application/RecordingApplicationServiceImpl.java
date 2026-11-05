@@ -10,6 +10,7 @@ import com.shijiangtai.m3classroom.application.view.RecordingStreamView;
 import com.shijiangtai.m3classroom.domain.recording.Recording;
 import com.shijiangtai.m3classroom.domain.recording.RecordingObjectKeyBuilder;
 import com.shijiangtai.m3classroom.domain.recording.RecordingRepository;
+import com.shijiangtai.m3classroom.domain.recording.RecordingStatus;
 import com.shijiangtai.m3classroom.domain.recording.RecordingStream;
 import com.shijiangtai.m3classroom.domain.recording.RequiredStreams;
 import com.shijiangtai.m3classroom.domain.recording.StreamStatus;
@@ -106,6 +107,7 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
                     Map.of("stream_type", type.wireValue(),
                             "status", existing.status().wireValue()));
         }
+        requireStartableRecording(recording);
 
         Task task = taskRepository.findById(session.taskId())
                 .orElseThrow(() -> new DomainException(ErrorCode.RESOURCE_NOT_FOUND,
@@ -120,12 +122,19 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
         String mime = mimeFor(type);
         RecordingObjectStorage.MultipartUpload upload =
                 storage.createMultipart(objectKey, mime);
-        long offsetMs = session.streamOffsets().getOrDefault(type, 0L);
-        recording.startStream(
-                idGenerator.nextId(), session.mode(), type,
-                upload.uploadId(), upload.objectKey(), upload.partSize(),
-                offsetMs, mime, clockProvider.now());
-        recordingRepository.save(recording);
+        try {
+            long offsetMs = session.streamOffsets().getOrDefault(type, 0L);
+            recording.startStream(
+                    idGenerator.nextId(), session.mode(), type,
+                    upload.uploadId(), upload.objectKey(), upload.partSize(),
+                    offsetMs, mime, clockProvider.now());
+            recordingRepository.save(recording);
+        } catch (RuntimeException exception) {
+            // The aggregate rejected the transition or the row could not be saved. Do not leave
+            // an unreferenced multipart upload behind.
+            abortCreatedMultipart(upload);
+            throw exception;
+        }
         return new MultipartUploadView(
                 upload.uploadId(), upload.objectKey(), upload.partSize());
     }
@@ -140,14 +149,20 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
         Session session = findSession(sessionId);
         accessPolicy.requireUpload(student, session);
         requirePartNumber(partNumber);
-        RecordingStream stream = requireUploadingStream(requireRecording(sessionId), type);
+        RecordingStream stream = requireStream(requireRecording(sessionId), type);
+        requireUploading(stream);
         String url = storage.presignPart(
                 stream.objectKey(), stream.uploadId(), partNumber, PART_URL_TTL);
         return new PartUrlView(url, partNumber, PART_URL_TTL.toSeconds());
     }
 
+    /**
+     * The multipart is consumed before the size/stat/save checks. Those checks transition the
+     * stream to failed and then throw, so the failure transition must commit together with the
+     * thrown {@link DomainException} (same pattern as the session end path).
+     */
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public RecordingStreamView complete(
             CurrentUser student, SessionId sessionId, StreamType type,
             CompletePartCommand command) {
@@ -158,25 +173,43 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
         Session session = findSession(sessionId);
         accessPolicy.requireUpload(student, session);
         Recording recording = requireRecording(sessionId);
-        RecordingStream stream = requireUploadingStream(recording, type);
+        RecordingStream stream = requireStream(recording, type);
+        if (stream.status() == StreamStatus.UPLOADED) {
+            // A retried complete after a lost response is a no-op returning the stored metadata.
+            return toView(stream);
+        }
+        requireUploading(stream);
         requireValidParts(command.parts());
         requireValidSize(command);
 
         storage.completeMultipart(
                 stream.objectKey(), stream.uploadId(), command.parts());
-        ObjectStat stat = storage.stat(stream.objectKey());
+        Instant now = clockProvider.now();
+        ObjectStat stat;
+        try {
+            stat = storage.stat(stream.objectKey());
+        } catch (RuntimeException exception) {
+            // The multipart is already consumed; fail the stream so a fresh start is possible.
+            markStreamFailed(sessionId, type, now);
+            throw exception;
+        }
         if (stat.size() < command.size()) {
+            markStreamFailed(sessionId, type, now);
             throw new DomainException(ErrorCode.VALIDATION_ERROR, "上传对象大小不一致",
                     Map.of("object_key", stream.objectKey(),
                             "expected_size", command.size(),
                             "actual_size", stat.size()));
         }
 
-        Instant now = clockProvider.now();
-        recording.markStreamUploaded(
-                type, session.mode(), command.parts().size(),
-                command.size(), command.durationMs(), command.mime(), now);
-        recordingRepository.save(recording);
+        try {
+            recording.markStreamUploaded(
+                    type, session.mode(), command.parts().size(),
+                    command.size(), command.durationMs(), command.mime(), now);
+            recordingRepository.save(recording);
+        } catch (RuntimeException exception) {
+            markStreamFailed(sessionId, type, now);
+            throw exception;
+        }
         return toView(recording.stream(type).orElseThrow());
     }
 
@@ -235,16 +268,53 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
                         "录制不存在", Map.of("session_id", sessionId.value())));
     }
 
-    private static RecordingStream requireUploadingStream(Recording recording, StreamType type) {
-        RecordingStream stream = recording.stream(type)
+    private static RecordingStream requireStream(Recording recording, StreamType type) {
+        return recording.stream(type)
                 .orElseThrow(() -> new DomainException(ErrorCode.VALIDATION_ERROR,
                         "录制流不存在", Map.of("stream_type", type.wireValue())));
+    }
+
+    private static void requireUploading(RecordingStream stream) {
         if (stream.status() != StreamStatus.UPLOADING || stream.uploadId() == null) {
             throw new DomainException(ErrorCode.VALIDATION_ERROR, "录制流状态不允许该操作",
-                    Map.of("stream_type", type.wireValue(),
+                    Map.of("stream_type", stream.type().wireValue(),
                             "status", stream.status().wireValue()));
         }
-        return stream;
+    }
+
+    private static void requireStartableRecording(Recording recording) {
+        if (recording.status() != RecordingStatus.RECORDING
+                && recording.status() != RecordingStatus.UPLOADING) {
+            throw new DomainException(ErrorCode.VALIDATION_ERROR, "录制状态不允许开始新的上传",
+                    Map.of("status", recording.status().wireValue()));
+        }
+    }
+
+    private void abortCreatedMultipart(RecordingObjectStorage.MultipartUpload upload) {
+        try {
+            storage.abortMultipart(upload.objectKey(), upload.uploadId());
+        } catch (RuntimeException exception) {
+            log.warn("Aborting orphan recording multipart failed: objectKey={}",
+                    upload.objectKey(), exception);
+        }
+    }
+
+    private void markStreamFailed(SessionId sessionId, StreamType type, Instant now) {
+        Recording current = recordingRepository.findBySession(sessionId).orElse(null);
+        if (current == null) {
+            return;
+        }
+        RecordingStream stream = current.stream(type).orElse(null);
+        if (stream == null || stream.status() != StreamStatus.UPLOADING) {
+            return;
+        }
+        current.abortStream(type, now);
+        try {
+            recordingRepository.save(current);
+        } catch (RuntimeException exception) {
+            log.warn("Marking failed recording stream could not be saved: session={}, stream={}",
+                    sessionId.value(), type.wireValue(), exception);
+        }
     }
 
     private static void requireRecordableStatus(Session session) {

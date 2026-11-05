@@ -15,6 +15,7 @@ import com.shijiangtai.m3classroom.domain.recording.RecordingStream;
 import com.shijiangtai.m3classroom.domain.recording.StreamStatus;
 import com.shijiangtai.m3classroom.domain.recording.StreamType;
 import com.shijiangtai.m3classroom.domain.session.Session;
+import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.m3classroom.infrastructure.storage.InMemoryRecordingObjectStorage;
@@ -86,7 +87,7 @@ class RecordingLifecycleServiceTest {
     void deleteOtherAttemptsSchedulesObjectDeletesAndRemovesOtherSessions() {
         TaskId taskId = new TaskId(UUID.randomUUID());
         SessionId keep = newSession(taskId, 1);
-        SessionId other = newSession(taskId, 2);
+        SessionId other = newSession(taskId, 2, SessionStatus.CANCELLED);
         String otherKey = "recordings/school/task/" + taskId.value() + "/" + other.value()
                 + "/camera.webm";
         String uploadId = storage.createMultipart(otherKey, "video/webm").uploadId();
@@ -121,16 +122,91 @@ class RecordingLifecycleServiceTest {
         assertThat(afterCommitActions).isEmpty();
     }
 
+    @Test
+    void deleteOtherAttemptsSkipsSubmittedAndActiveAttempts() {
+        TaskId taskId = new TaskId(UUID.randomUUID());
+        SessionId keep = newSession(taskId, 1, SessionStatus.SUBMITTED);
+        SessionId submitted = newSession(taskId, 2, SessionStatus.SUBMITTED);
+        SessionId active = newSession(taskId, 3, SessionStatus.IN_PROGRESS);
+        SessionId cancelled = newSession(taskId, 4, SessionStatus.CANCELLED);
+        String submittedKey = keyFor(taskId, submitted);
+        String activeKey = keyFor(taskId, active);
+        String cancelledKey = keyFor(taskId, cancelled);
+        recordingWithUploadingStream(
+                submitted, submittedKey, storage.createMultipart(
+                        submittedKey, "video/webm").uploadId());
+        recordingWithUploadingStream(
+                active, activeKey, storage.createMultipart(
+                        activeKey, "video/webm").uploadId());
+        recordingWithUploadingStream(
+                cancelled, cancelledKey, storage.createMultipart(
+                        cancelledKey, "video/webm").uploadId());
+
+        service.deleteOtherAttempts(student().accountId(), taskId, keep);
+
+        assertThat(sessions.findById(keep)).isPresent();
+        assertThat(sessions.findById(submitted)).isPresent();
+        assertThat(sessions.findById(active)).isPresent();
+        assertThat(sessions.findById(cancelled)).isEmpty();
+        assertThat(recordings.findBySession(submitted)).isPresent();
+        assertThat(recordings.findBySession(active)).isPresent();
+        assertThat(recordings.findBySession(cancelled)).isEmpty();
+        assertThat(afterCommitActions).hasSize(1);
+    }
+
+    @Test
+    void deleteOtherAttemptsAbortsUploadingMultipart() {
+        TaskId taskId = new TaskId(UUID.randomUUID());
+        SessionId keep = newSession(taskId, 1);
+        SessionId other = newSession(taskId, 2, SessionStatus.CANCELLED);
+        String objectKey = keyFor(taskId, other);
+        String uploadId = storage.createMultipart(objectKey, "video/webm").uploadId();
+        recordingWithUploadingStream(other, objectKey, uploadId);
+
+        service.deleteOtherAttempts(student().accountId(), taskId, keep);
+
+        assertThatThrownBy(() -> storage.presignPart(
+                objectKey, uploadId, 1, Duration.ofMinutes(1)))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+    }
+
     private SessionId newSession() {
-        return newSession(new TaskId(UUID.randomUUID()), 1);
+        return newSession(new TaskId(UUID.randomUUID()), 1, SessionStatus.PREPARING);
     }
 
     private SessionId newSession(TaskId taskId, int attemptNo) {
+        return newSession(taskId, attemptNo, SessionStatus.PREPARING);
+    }
+
+    private SessionId newSession(TaskId taskId, int attemptNo, SessionStatus status) {
         Session session = Session.createPreparing(
                 new SessionId(UUID.randomUUID()), SessionType.TASK, taskId,
                 COURSE, STUDENT, TaskMode.FREE, attemptNo, NOW);
+        switch (status) {
+            case PREPARING -> {
+            }
+            case IN_PROGRESS -> session.start(NOW);
+            case CANCELLED -> session.cancel(NOW);
+            case ENDED -> {
+                session.start(NOW);
+                session.end(NOW);
+            }
+            case SUBMITTED -> {
+                session.start(NOW);
+                session.end(NOW);
+                session.submit(NOW);
+            }
+            default -> throw new IllegalArgumentException("unsupported test status: " + status);
+        }
         sessions.save(session);
         return session.id();
+    }
+
+    private static String keyFor(TaskId taskId, SessionId sessionId) {
+        return "recordings/school/task/" + taskId.value() + "/" + sessionId.value()
+                + "/camera.webm";
     }
 
     private void recordingWithUploadingStream(

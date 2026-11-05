@@ -9,6 +9,7 @@ import com.shijiangtai.m3classroom.domain.recording.RecordingStream;
 import com.shijiangtai.m3classroom.domain.recording.StreamStatus;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
+import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.shared.application.ClockProvider;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.SessionId;
@@ -89,12 +90,16 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
         Objects.requireNonNull(keep, "keep");
         List<Runnable> objectDeletes = new ArrayList<>();
         for (Session session : sessionRepository.findByStudentAndTask(student, task)) {
-            if (session.id().equals(keep)) {
+            if (session.id().equals(keep) || !isDeletable(session.status())) {
                 continue;
             }
             Recording recording = recordingRepository.findBySession(session.id()).orElse(null);
             if (recording != null) {
                 for (RecordingStream stream : recording.streams()) {
+                    if (stream.status() == StreamStatus.UPLOADING
+                            && stream.uploadId() != null) {
+                        abortUpload(stream);
+                    }
                     if (stream.objectKey() != null) {
                         String objectKey = stream.objectKey();
                         objectDeletes.add(() -> deleteObject(objectKey));
@@ -106,6 +111,26 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
         }
         if (!objectDeletes.isEmpty()) {
             afterCommitPort.afterCommit(() -> objectDeletes.forEach(Runnable::run));
+        }
+    }
+
+    /**
+     * Only closed, non-submitted attempts may be removed. A submitted attempt is referenced by a
+     * submission/replay, and an active attempt is still being recorded.
+     */
+    private static boolean isDeletable(SessionStatus status) {
+        return status == SessionStatus.CANCELLED
+                || status == SessionStatus.FAILED
+                || status == SessionStatus.ENDED
+                || status == SessionStatus.REVIEWING;
+    }
+
+    private void abortUpload(RecordingStream stream) {
+        try {
+            storage.abortMultipart(stream.objectKey(), stream.uploadId());
+        } catch (RuntimeException exception) {
+            log.warn("Aborting superseded recording multipart failed: objectKey={}",
+                    stream.objectKey(), exception);
         }
     }
 

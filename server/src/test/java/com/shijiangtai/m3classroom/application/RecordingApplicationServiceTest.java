@@ -204,7 +204,34 @@ class RecordingApplicationServiceTest {
                             .containsEntry("actual_size", 10L);
                 });
         assertThat(recording(sessionId).stream(StreamType.CAMERA).orElseThrow().status())
-                .isEqualTo(StreamStatus.UPLOADING);
+                .isEqualTo(StreamStatus.FAILED);
+        assertThat(recording(sessionId).status()).isEqualTo(RecordingStatus.FAILED);
+    }
+
+    @Test
+    void completeIsRetrySafeForAlreadyUploadedStream() {
+        SessionId sessionId = createSession(taskId, TaskMode.FREE, SessionStatus.PREPARING);
+        MultipartUploadView upload = service.start(student(), sessionId, StreamType.CAMERA);
+        storage.recordObjectSize(upload.objectKey(), 1024);
+        CompletePartCommand command = new CompletePartCommand(
+                List.of(new PartEtag(1, "etag-1")), 5_000, 1024, "video/webm");
+        RecordingStreamView first = service.complete(
+                student(), sessionId, StreamType.CAMERA, command);
+
+        RecordingStreamView retried = service.complete(
+                student(), sessionId, StreamType.CAMERA, command);
+
+        assertThat(retried).isEqualTo(first);
+    }
+
+    @Test
+    void startRejectsFailedRecording() {
+        SessionId sessionId = createSession(taskId, TaskMode.FREE, SessionStatus.PREPARING);
+        service.start(student(), sessionId, StreamType.CAMERA);
+        service.abort(student(), sessionId, StreamType.CAMERA);
+
+        assertCode(() -> service.start(student(), sessionId, StreamType.SCREEN),
+                ErrorCode.VALIDATION_ERROR);
     }
 
     @Test

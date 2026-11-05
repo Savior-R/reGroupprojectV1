@@ -146,6 +146,43 @@ class RecordingControllerIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void completeSizeMismatchMarksStreamFailedAndPersists() throws Exception {
+        String sessionId = createSession();
+        MvcResult camera = start(sessionId, "camera");
+        storage.recordObjectSize(read(camera, "$.object_key"), 10);
+
+        mockMvc.perform(asStudent(post("/api/v1/sessions/{sessionId}/recordings/{streamType}"
+                        + "/multipart/complete", sessionId, "camera"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"parts":[{"part_number":1,"etag":"etag-1"}],
+                                 "duration_ms":5000,"size":20,"mime":"video/webm"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        mockMvc.perform(asStudent(get("/api/v1/sessions/{sessionId}/recordings", sessionId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].stream_type").value("camera"))
+                .andExpect(jsonPath("$[0].status").value("failed"));
+    }
+
+    @Test
+    void completeRejectsNullPart() throws Exception {
+        String sessionId = createSession();
+        start(sessionId, "camera");
+
+        mockMvc.perform(asStudent(post("/api/v1/sessions/{sessionId}/recordings/{streamType}"
+                        + "/multipart/complete", sessionId, "camera"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"parts":[null],"duration_ms":1000,"size":10,"mime":"video/webm"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void otherStudentAndAdminAreForbidden() throws Exception {
         String sessionId = createSession();
         start(sessionId, "camera");

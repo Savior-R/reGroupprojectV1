@@ -7,7 +7,6 @@ import com.shijiangtai.m3classroom.application.port.ContentRequest;
 import com.shijiangtai.m3classroom.application.port.ContentResponse;
 import com.shijiangtai.m3classroom.application.port.MaterialTextExtractor;
 import com.shijiangtai.m3classroom.application.port.OcrClient;
-import com.shijiangtai.m3classroom.application.port.RecordingLifecyclePort;
 import com.shijiangtai.m3classroom.application.port.SchedulerPort;
 import com.shijiangtai.m3classroom.application.port.TeacherSpeechClassifier;
 import com.shijiangtai.m3classroom.domain.task.TaskPublishPolicy;
@@ -24,11 +23,8 @@ import com.shijiangtai.m3classroom.infrastructure.time.UuidIdGenerator;
 import com.shijiangtai.shared.application.ClockProvider;
 import com.shijiangtai.shared.application.EventPublisher;
 import com.shijiangtai.shared.application.IdGenerator;
-import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
-import com.shijiangtai.shared.domain.SessionId;
-import com.shijiangtai.shared.domain.TaskId;
 import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.ApplicationEventPublisher;
@@ -139,23 +135,6 @@ public class M3Config {
     public AsrStreamClient asrStreamClient() {
         return request -> {
             throw new DomainException(ErrorCode.SERVICE_UNAVAILABLE, "ASR 服务不可用");
-        };
-    }
-
-    /** Plan 1 has no recording adapter yet; Plan 2 replaces this no-op with the real one. */
-    @Bean
-    @ConditionalOnMissingBean(RecordingLifecyclePort.class)
-    public RecordingLifecyclePort recordingLifecyclePort() {
-        return new RecordingLifecyclePort() {
-            @Override
-            public void abortAll(SessionId sessionId) {
-                // no-op until the recording module is wired in Plan 2
-            }
-
-            @Override
-            public void deleteOtherAttempts(AccountId student, TaskId task, SessionId keep) {
-                // no-op until the recording module is wired in Plan 2
-            }
         };
     }
 }
