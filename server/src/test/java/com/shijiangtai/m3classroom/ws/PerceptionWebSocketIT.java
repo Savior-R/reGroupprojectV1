@@ -634,6 +634,42 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void finalDuringDrainStillTriggersVoiceQaAfterNormalClose() throws Exception {
+        classifier.respondWith("question", "0.90");
+        CountDownLatch releaseClassify = new CountDownLatch(1);
+        classifier.blockOnClassify(releaseClassify);
+        SessionId id = createStartedSession();
+        Connection connection = connect(id);
+        send(connection, AUDIO_START);
+        FakeAsrStreamClient.FakeAsrSession asr = awaitAsrSession();
+
+        send(connection, AUDIO_STOP);
+        awaitAsrFinished(asr);
+
+        try {
+            // The final arrives during the 2 s drain, after audio.stop was processed.
+            asr.emitFinal("最后一句是问题吗？", 0L, 1000L, new BigDecimal("0.92"));
+            JsonNode finalMessage = connection.nextOfType("asr.final");
+            assertThat(finalMessage.get("text").asString()).isEqualTo("最后一句是问题吗？");
+
+            // Classification is in flight while the normal ASR done closes the socket 1000.
+            awaitClassifierCalls(1);
+            asr.emitClosed();
+            assertThat(connection.awaitClose().getCode()).isEqualTo(CLOSE_NORMAL);
+        } finally {
+            classifier.releaseClassify();
+        }
+
+        // The queued classification must still reach the actor after the normal close.
+        SessionEvent asked = awaitEvent(id, "classroom.question_asked");
+        assertThat(String.valueOf(asked.payload().get("source"))).isEqualTo("voice");
+        SessionEvent stateChanged = awaitEventAfter(id, "classroom.state_changed", asked.seq());
+        assertThat(stateChanged.seq()).isGreaterThan(asked.seq());
+        assertThat(sessionRepository.findById(id).orElseThrow().status())
+                .isEqualTo(SessionStatus.IN_PROGRESS);
+    }
+
+    @Test
     void lateFinalAfterEndIsNotPersisted() throws Exception {
         SessionId id = createStartedSession();
         Connection connection = connect(id);

@@ -430,7 +430,9 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
                 // Replacement freeze runs under this same actor monitor (registration holds it),
                 // so the frozen check and the persist are atomic: an in-flight callback can no
                 // longer pass the check, block on the monitor, and persist after the freeze.
-                if (closed.get()) {
+                // Only replacement/terminal (frozen) blocks a final; a normal drain close must
+                // still persist the last final and let its classification run.
+                if (frozen.get()) {
                     return;
                 }
                 textId = actor.recordSpeechFinal(
@@ -440,8 +442,10 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
                 // Late final after the session became terminal: drop it without a response.
                 return;
             }
-            if (closed.get()) {
-                // Frozen while the final was being persisted: do not answer or classify.
+            if (frozen.get()) {
+                // Replaced/terminal while the final was being persisted: do not answer or
+                // classify. A normal 1000 drain close does not set frozen, so queued
+                // classifications keep running (spec §4/§7).
                 return;
             }
 
@@ -467,21 +471,23 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
         }
 
         private void submitClassification(String text) {
-            if (closed.get()) {
+            if (frozen.get()) {
                 return;
             }
             String mode = actor.session().mode().wireValue();
             try {
                 classifierExecutor.execute(() -> {
-                    if (closed.get()) {
+                    if (frozen.get()) {
                         return;
                     }
                     try {
                         ClassifyResult result =
                                 speechClassifier.classify(text, List.of(), mode);
                         // A freeze may have replaced this connection while classify ran: queued
-                        // or in-flight results must never mutate the live session.
-                        if (closed.get()) {
+                        // or in-flight results must never mutate the live session. A normal
+                        // 1000 drain close does not set frozen, so the last final's
+                        // classification still reaches the actor (spec §4/§7).
+                        if (frozen.get()) {
                             return;
                         }
                         if (result != null
@@ -490,7 +496,7 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
                             synchronized (actor) {
                                 // Same actor-monitor rule as handleFinal: the freeze check and the
                                 // mutation are atomic with respect to connection replacement.
-                                if (closed.get()) {
+                                if (frozen.get()) {
                                     return;
                                 }
                                 actor.onTeacherSpeechClassified(
