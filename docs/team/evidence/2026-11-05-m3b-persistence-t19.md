@@ -24,11 +24,14 @@
 - 新增生产实现 `JpaContextPersistenceWriter`：每 session 一个有序队列，共享线程池
   消费；1 秒 / 100 条 / 64 KB 先到先 flush；队列上限 10 000 条；普通失败重试并
   回队首；终态同步 flush。
-- `session.ended`、`interview.ended`、`session.failed` 在 actor 线程同步强制
-  flush；`session.ended` / `interview.ended` 仅在 flush 成功后才推送，flush
-  失败 → `session.status=failed`、追加 `session.failed`、命令返回
-  `SESSION_FAILED`、禁止提交（`session.failed` 的推送在 best-effort flush 前，
-  见 §6）。
+- 终态路径都会在 actor 线程同步 drain 队列（覆盖 `session.ended`、
+  `interview.ended`、`session.failed`）；**只有 `session.ended` 是
+  flush-before-push**（`appendCritical`）。
+  `interview.ended` 走普通 `append`，先推送，随后由 `session.ended` 的终态 flush
+  一并落库；`session.failed` 先推送，再由 `fail()` 的终态 forceFlush 落库
+  （`persistenceFailed` 路径为 best-effort）。`session.ended` 的 flush 失败 →
+  `session.status=failed`、追加 `session.failed`、命令返回 `SESSION_FAILED`、
+  禁止提交。
 - 新增 `SessionBatchStore`：一批 events + texts 在同一事务写入（先 texts 后
   events），使用 `REQUIRES_NEW` 独立提交。
 - `SessionContext` 增加内存文本流；活跃 actor 的教师文本上下文改读内存（最近
@@ -48,11 +51,15 @@
 - Java 重启恢复、跨实例分布式队列、消息中间件、指标 / 告警、M4 partial、前端
   UI、E2E / NFR。
 
-文件归属：生产 / 测试路径属于 M3 Owner 的 M3B 后端范围
-（`m3classroom/application/**`、`m3classroom/domain/session/**`、
-`m3classroom/infrastructure/persistence/jpa/**`）。未修改 build 文件、YAML、
-`docs/design/02` / `10` / `12`、前端或 M3C 代码。`docs/team/02-进度看板.md`
-只改 M3B 行并新增一条 §5 记录。API / DTO / 错误码 / WS 事件 / 表结构无契约变更。
+文件归属：生产 / 测试路径属于 M3 Owner 的 M3B 后端范围。生产：
+`m3classroom/application/**`、`m3classroom/domain/session/**`、
+`m3classroom/infrastructure/persistence/jpa/**`；测试：`m3classroom/application/**`、
+`m3classroom/infrastructure/persistence/jpa/**`、`m3classroom/persistence/**`
+（`ContextPersistenceWriterIT`）、`m3classroom/ws/**`（`ClassroomWebSocketIT`）、
+`m3classroom/support/**`（`BufferingContextPersistenceWriter`）。完整清单见 §7。
+未修改 build 文件、YAML、`docs/design/02` / `10` / `12`、前端或 M3C 代码。
+`docs/team/02-进度看板.md` 只改 M3B 行并新增一条 §5 记录。API / DTO / 错误码 /
+WS 事件 / 表结构无契约变更。
 
 同一工作区包含暂停中的 M3C 未跟踪测试（`server/src/test/java/com/shijiangtai/
 m3classroom/domain/recording/` 下 3 个类 / 13 条用例），它们会进入全量测试计数，
@@ -64,7 +71,7 @@ m3classroom/domain/recording/` 下 3 个类 / 13 条用例），它们会进入�
 |---|---|
 | 写入端口（Task 1） | `application/port/ContextPersistenceWriter`；`DirectContextPersistenceWriter` 直写 `SessionEventStore` / `SessionTextStore`；`PersistenceFlushException` 携带 `SessionId` |
 | Actor 写路径（Task 1） | `SessionActor.append` / 文本保存 / `forceFlush` 全部走 writer；`SessionContext` 增加插入有序 `texts` 列表与 `texts(speakerType)`；`recentTeacherTexts` 读内存最近 20 条 |
-| 终态 flush（Task 2） | `appendCritical`：入队 → `persistence.flush` → 成功后才 `push`；`endClassroomSession` / `endInterview` 用 `appendCritical`，失败走 `persistenceFailed`；命令返回 `SESSION_FAILED`；`fail` / `cancel` 清理后 best-effort flush |
+| 终态 flush（Task 2） | `appendCritical`：入队 → `persistence.flush` → 成功后才 `push`；`endClassroomSession` / `endInterview` 的 `session.ended` 用 `appendCritical`，失败走 `persistenceFailed`；命令返回 `SESSION_FAILED`；`interview.ended` 与 `session.failed` 走普通 `append`，由同一轮终态 flush drain；`fail` / `cancel` 清理后 best-effort flush |
 | 异步 writer（Task 3） | `JpaContextPersistenceWriter`：每 session `ArrayDeque` + flush 锁 + 字节估算；1 秒定时、100 条、64 KB 触发；`flushAsync` 每 session 最多一个在途任务；10 000 条有界；失败重试 3 次（50 / 100 / 200 ms）后抛 `PersistenceFlushException`，原批按序回队首 |
 | 批次事务（Task 3） | `JpaSessionBatchStore.write` 单事务：先 `saveAll` texts 后批量 events；`SessionEventStore.appendAll` 单次 JDBC batch；`SessionTextStore.saveAll` 用 `repository.saveAll` |
 | 事务隔离（Task 3 fix） | `JpaSessionBatchStore.write` 使用 `@Transactional(propagation = REQUIRES_NEW)`；终态 flush 在终态行保存前完成，批次失败只回滚自身，不污染 REST 命令事务 |
@@ -125,8 +132,10 @@ M3B 口径 64 类 / 499 条），本切片新增 **4 个测试类 / 22 条用例
 
 警告 / 噪声：编译期有 2 条既有 deprecation 提示
 （`api/dto/TaskRequestMapper.java`、`api/TaskMaterialControllerIT.java`），JVM 有
-1 条 CDS `Sharing is only supported for boot loader classes` 提示；测试日志中无
-`WARN` / `ERROR` 级别输出。均为非阻塞噪声，不影响结果。
+1 条 CDS `Sharing is only supported for boot loader classes` 提示。测试 XML 中
+还存在负向用例产生的预期 `WARN` / `ERROR` 日志（例如 flush 失败重试、事务回滚、
+鉴权 / 校验失败），它们对应断言覆盖的失败路径，不是套件失败；汇总仍为
+0 failures / 0 errors / 0 skipped。上述提示与负向日志均为非阻塞噪声，不影响结果。
 
 ## 5. M3-T16 / M3-T19 映射
 
