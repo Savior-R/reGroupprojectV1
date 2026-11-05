@@ -1,6 +1,5 @@
 package com.shijiangtai.m3classroom.application;
 
-import com.shijiangtai.m3classroom.application.port.AfterCommitPort;
 import com.shijiangtai.m3classroom.application.port.RecordingLifecyclePort;
 import com.shijiangtai.m3classroom.application.port.SessionEventStore;
 import com.shijiangtai.m3classroom.application.view.SubmissionView;
@@ -37,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,7 +46,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>The order is fixed: flush the live actor, validate the required streams, then write the
  * submission, the submitted session, the submitted assignment and the {@code submission.created}
  * event in one transaction. A flush or event-store failure rolls the whole transaction back, so no
- * submission is left behind. Recording cleanup of superseded attempts runs only after commit.
+ * submission is left behind. Cleanup of superseded attempts deliberately runs in the caller
+ * ({@link SessionApplicationServiceImpl#submit}) after this transaction has fully completed;
+ * registering it here as an after-commit callback would join the already-completed transaction.
  */
 @Service
 public class SubmissionServiceImpl implements SubmissionService {
@@ -63,7 +65,6 @@ public class SubmissionServiceImpl implements SubmissionService {
     private final SessionEventStore eventStore;
     private final EventPublisher eventPublisher;
     private final RecordingLifecyclePort recordingLifecyclePort;
-    private final AfterCommitPort afterCommitPort;
     private final IdGenerator idGenerator;
     private final ClockProvider clockProvider;
 
@@ -78,7 +79,6 @@ public class SubmissionServiceImpl implements SubmissionService {
             SessionEventStore eventStore,
             EventPublisher eventPublisher,
             RecordingLifecyclePort recordingLifecyclePort,
-            AfterCommitPort afterCommitPort,
             IdGenerator idGenerator,
             ClockProvider clockProvider) {
         this.sessionRepository = Objects.requireNonNull(sessionRepository, "sessionRepository");
@@ -95,7 +95,6 @@ public class SubmissionServiceImpl implements SubmissionService {
         this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher");
         this.recordingLifecyclePort = Objects.requireNonNull(
                 recordingLifecyclePort, "recordingLifecyclePort");
-        this.afterCommitPort = Objects.requireNonNull(afterCommitPort, "afterCommitPort");
         this.idGenerator = Objects.requireNonNull(idGenerator, "idGenerator");
         this.clockProvider = Objects.requireNonNull(clockProvider, "clockProvider");
     }
@@ -136,7 +135,13 @@ public class SubmissionServiceImpl implements SubmissionService {
         Submission submission = Submission.create(
                 idGenerator.nextId(), task.id(), student.accountId(), sessionId,
                 assignment.classIdSnapshot(), now);
-        submissionRepository.save(submission);
+        try {
+            submissionRepository.save(submission);
+        } catch (DataIntegrityViolationException exception) {
+            // A concurrent submit won one of the two unique constraints.
+            throw new DomainException(ErrorCode.SESSION_STATE_INVALID, "任务已提交",
+                    Map.of("task_id", task.id().value().toString()));
+        }
 
         session.submit(now);
         sessionRepository.save(session);
@@ -159,8 +164,6 @@ public class SubmissionServiceImpl implements SubmissionService {
                         ? null : assignment.classIdSnapshot().value(),
                 now));
 
-        afterCommitPort.afterCommit(() -> deleteOtherAttempts(
-                student.accountId(), task.id(), sessionId));
         return toView(submission);
     }
 
@@ -199,9 +202,7 @@ public class SubmissionServiceImpl implements SubmissionService {
                 seq,
                 SUBMISSION_CREATED,
                 atMs,
-                Map.of("submission_id", submission.id().toString(),
-                        "task_id", submission.taskId().value().toString(),
-                        "session_id", session.id().value().toString()),
+                Map.of("submission_id", submission.id().toString()),
                 now));
     }
 

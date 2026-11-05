@@ -30,6 +30,7 @@ import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.m3classroom.domain.submission.Submission;
 import com.shijiangtai.m3classroom.domain.submission.SubmissionCreatedEvent;
+import com.shijiangtai.m3classroom.domain.submission.SubmissionRepository;
 import com.shijiangtai.m3classroom.domain.task.AssignmentStatus;
 import com.shijiangtai.m3classroom.domain.task.Task;
 import com.shijiangtai.m3classroom.domain.task.TaskAssignment;
@@ -42,6 +43,7 @@ import com.shijiangtai.m3classroom.support.InMemorySubmissionRepository;
 import com.shijiangtai.m3classroom.support.InMemoryTaskAssignmentRepository;
 import com.shijiangtai.m3classroom.support.InMemoryTaskRepository;
 import com.shijiangtai.m3classroom.support.RecordingEventPublisher;
+import com.shijiangtai.shared.application.CurrentUser;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
@@ -56,6 +58,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 
 class SubmissionServiceTest {
 
@@ -85,18 +88,21 @@ class SubmissionServiceTest {
         lifecycle = new RecordingLifecycleRecorder();
         registry = mock(SessionRuntimeRegistry.class);
         when(registry.find(any())).thenReturn(Optional.empty());
-        service = new SubmissionServiceImpl(
+        service = newService(submissions);
+    }
+
+    private SubmissionService newService(SubmissionRepository submissionRepository) {
+        return new SubmissionServiceImpl(
                 sessions,
-                new SessionAccessPolicy(coursePort(), submissions),
+                new SessionAccessPolicy(coursePort(), submissionRepository),
                 registry,
                 recordings,
                 tasks,
                 assignments,
-                submissions,
+                submissionRepository,
                 events,
                 publisher,
                 lifecycle,
-                Runnable::run,
                 UUID::randomUUID,
                 () -> NOW);
     }
@@ -143,7 +149,7 @@ class SubmissionServiceTest {
         Session session = newSession(taskId, SessionStatus.ENDED);
         uploadAll(session.id());
 
-        SubmissionView view = service.submit(student(), session.id());
+        SubmissionView view = submitAndCleanup(student(), session.id());
 
         assertThat(view.submissionId()).isNotNull();
         assertThat(view.taskId()).isEqualTo(taskId.value());
@@ -171,10 +177,8 @@ class SubmissionServiceTest {
             assertThat(event.type()).isEqualTo("submission.created");
             assertThat(event.seq()).isEqualTo(1);
             assertThat(event.atMs()).isEqualTo(60_000L);
-            assertThat(event.payload())
-                    .containsEntry("submission_id", view.submissionId().toString())
-                    .containsEntry("task_id", taskId.value().toString())
-                    .containsEntry("session_id", session.id().value().toString());
+            assertThat(event.payload()).containsExactly(Map.entry(
+                    "submission_id", view.submissionId().toString()));
         });
 
         assertThat(publisher.events()).singleElement().satisfies(published -> {
@@ -192,11 +196,27 @@ class SubmissionServiceTest {
     }
 
     @Test
+    void submitAcceptsReviewingSession() {
+        TaskId taskId = createPublishedTask();
+        Session session = newSession(taskId, SessionStatus.REVIEWING);
+        uploadAll(session.id());
+
+        SubmissionView view = submitAndCleanup(student(), session.id());
+
+        assertThat(view.status()).isEqualTo("submitted");
+        assertThat(sessions.findById(session.id()).orElseThrow().status())
+                .isEqualTo(SessionStatus.SUBMITTED);
+        assertThat(submissions.findBySession(session.id())).isPresent();
+        assertThat(events.after(session.id(), 0, 100)).hasSize(1);
+        assertThat(lifecycle.cleanups()).hasSize(1);
+    }
+
+    @Test
     void submitTwiceFails() {
         TaskId taskId = createPublishedTask();
         Session session = newSession(taskId, SessionStatus.ENDED);
         uploadAll(session.id());
-        service.submit(student(), session.id());
+        submitAndCleanup(student(), session.id());
 
         assertCode(() -> service.submit(student(), session.id()),
                 ErrorCode.SESSION_STATE_INVALID);
@@ -229,11 +249,45 @@ class SubmissionServiceTest {
         Session keep = newSession(taskId, SessionStatus.ENDED);
         uploadAll(keep.id());
 
-        service.submit(student(), keep.id());
+        // The facade performs this call only after submit's transaction has committed.
+        submitAndCleanup(student(), keep.id());
 
         assertThat(lifecycle.cleanups()).containsExactly(
                 new CleanupCall(STUDENT, taskId, keep.id()));
         assertThat(recordings.findBySession(keep.id())).isPresent();
+    }
+
+    @Test
+    void duplicateConstraintViolationMapsToSessionStateInvalid() {
+        TaskId taskId = createPublishedTask();
+        Session session = newSession(taskId, SessionStatus.ENDED);
+        uploadAll(session.id());
+        SubmissionRepository failing = new SubmissionRepository() {
+            @Override
+            public Submission save(Submission submission) {
+                throw new DataIntegrityViolationException("duplicate submission");
+            }
+
+            @Override
+            public Optional<Submission> findByTaskAndStudent(
+                    TaskId task, AccountId studentAccountId) {
+                return submissions.findByTaskAndStudent(task, studentAccountId);
+            }
+
+            @Override
+            public Optional<Submission> findBySession(SessionId sessionId) {
+                return submissions.findBySession(sessionId);
+            }
+
+            @Override
+            public boolean existsBySession(SessionId sessionId) {
+                return submissions.existsBySession(sessionId);
+            }
+        };
+
+        assertCode(() -> newService(failing).submit(student(), session.id()),
+                ErrorCode.SESSION_STATE_INVALID);
+        assertThat(submissions.size()).isZero();
     }
 
     @Test
@@ -266,6 +320,12 @@ class SubmissionServiceTest {
 
         assertCode(() -> service.submit(student2(), session.id()), ErrorCode.FORBIDDEN);
         assertThat(submissions.size()).isZero();
+    }
+
+    private SubmissionView submitAndCleanup(CurrentUser user, SessionId sessionId) {
+        SubmissionView view = service.submit(user, sessionId);
+        service.deleteOtherAttempts(user.accountId(), new TaskId(view.taskId()), sessionId);
+        return view;
     }
 
     private TaskId createPublishedTask() {

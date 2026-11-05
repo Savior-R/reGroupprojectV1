@@ -248,9 +248,18 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
         recordingLifecyclePort.abortAll(sessionId);
     }
 
+    /**
+     * Deliberately not transactional: the submit must commit before superseded attempts are
+     * removed. Registering the cleanup from inside {@code submit}'s transaction would run it in
+     * the commit callback while the transaction is still reported as active, so the deletes would
+     * join a completed transaction and never commit.
+     */
     @Override
     public SubmissionView submit(CurrentUser student, SessionId sessionId) {
-        return submissionService.submit(student, sessionId);
+        SubmissionView submission = submissionService.submit(student, sessionId);
+        submissionService.deleteOtherAttempts(
+                student.accountId(), new TaskId(submission.taskId()), sessionId);
+        return submission;
     }
 
     private Session findSession(SessionId sessionId) {

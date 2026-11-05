@@ -40,6 +40,7 @@ import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -134,10 +135,8 @@ class SubmissionControllerIT extends PostgresIntegrationTest {
         assertThat(stored)
                 .filteredOn(event -> event.type().equals("submission.created"))
                 .singleElement()
-                .satisfies(event -> assertThat(event.payload())
-                        .containsEntry("submission_id", submission.id().toString())
-                        .containsEntry("task_id", taskId.value().toString())
-                        .containsEntry("session_id", sessionId));
+                .satisfies(event -> assertThat(event.payload()).containsExactly(
+                        Map.entry("submission_id", submission.id().toString())));
         Integer eventRows = jdbc.queryForObject("""
                 SELECT count(*) FROM m3_classroom.events
                 WHERE session_id = ? AND type = 'submission.created'

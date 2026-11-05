@@ -17,13 +17,16 @@ import static com.shijiangtai.m3classroom.TestFixtures.student2;
 import static com.shijiangtai.m3classroom.TestFixtures.teacher;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.shijiangtai.m3classroom.application.port.ContentClient;
 import com.shijiangtai.m3classroom.application.port.ContentRequest;
 import com.shijiangtai.m3classroom.application.port.ContentResponse;
 import com.shijiangtai.m3classroom.application.port.RecordingLifecyclePort;
 import com.shijiangtai.m3classroom.application.view.SessionView;
+import com.shijiangtai.m3classroom.application.view.SubmissionView;
 import com.shijiangtai.m3classroom.domain.recording.StreamType;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionCommand;
@@ -67,6 +70,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 class SessionApplicationServiceTest {
 
@@ -80,6 +84,7 @@ class SessionApplicationServiceTest {
     private FakeScheduler scheduler;
     private RecordingLifecycleRecorder recording;
     private SessionRuntimeRegistry registry;
+    private SubmissionService submissionService;
     private SessionApplicationService service;
     private TaskId taskId;
 
@@ -109,10 +114,11 @@ class SessionApplicationServiceTest {
         registry = new SessionRuntimeRegistry(
                 sessions, tasks, events, texts, UUID::randomUUID, () -> NOW, scheduler,
                 unavailableContent);
+        submissionService = mock(SubmissionService.class);
         service = new SessionApplicationServiceImpl(
                 tasks, assignments, courses, new TaskAccessPolicy(courses),
                 new SessionAccessPolicy(courses, submissions), sessions, events,
-                mock(SubmissionService.class), registry, recording,
+                submissionService, registry, recording,
                 new SessionStartGuard(sessions, tasks, courses, () -> NOW),
                 UUID::randomUUID, () -> NOW);
         taskId = createPublishedTask();
@@ -377,6 +383,21 @@ class SessionApplicationServiceTest {
         SessionView view = service.get(teacher(), new SessionId(created.sessionId()));
 
         assertThat(view.status()).isEqualTo("submitted");
+    }
+
+    @Test
+    void submitDelegatesThenCleansOtherAttemptsAfterCommit() {
+        SessionId sessionId = new SessionId(UUID.randomUUID());
+        SubmissionView view = new SubmissionView(
+                UUID.randomUUID(), taskId.value(), sessionId.value(), STUDENT.value(),
+                "submitted", NOW.toString());
+        when(submissionService.submit(student(), sessionId)).thenReturn(view);
+
+        assertThat(service.submit(student(), sessionId)).isEqualTo(view);
+
+        InOrder order = inOrder(submissionService);
+        order.verify(submissionService).submit(student(), sessionId);
+        order.verify(submissionService).deleteOtherAttempts(STUDENT, taskId, sessionId);
     }
 
     @Test

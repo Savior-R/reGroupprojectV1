@@ -12,7 +12,8 @@ public interface SubmissionService {
     /**
      * Flushes the live actor, validates the required streams, then writes the submission, the
      * submitted session, the submitted assignment and the {@code submission.created} event in one
-     * transaction. Other attempts are cleaned up after commit.
+     * transaction. Cleanup of superseded attempts is deliberately a separate call that the caller
+     * makes only after this method returns and the transaction has committed.
      */
     SubmissionView submit(CurrentUser student, SessionId sessionId);
 
