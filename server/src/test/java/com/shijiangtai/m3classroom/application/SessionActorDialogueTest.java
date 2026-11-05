@@ -282,6 +282,55 @@ class SessionActorDialogueTest {
                 .isEqualTo(VirtualStudentBehavior.FOCUSED);
     }
 
+    /**
+     * {@code teacher.end_dialogue.dialogue_id} is optional in the contract, so a null id still
+     * ends the active dialogue instead of being treated as a stale id.
+     */
+    @Test
+    void nullDialogueIdEndsActiveDialogue() {
+        Fixture f = dialogueFixture();
+        int endedBefore = f.countEvents("dialogue.ended");
+
+        CommandResult result = f.actor().handle(
+                new SessionCommand.EndDialogue("end-null", null));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(f.countEvents("dialogue.ended")).isEqualTo(endedBefore + 1);
+        SessionEvent ended = f.lastEvent("dialogue.ended");
+        assertThat(ended.payload().get("reason")).isEqualTo("teacher");
+        assertThat(ended.payload().get("dialogue_id")).isEqualTo(f.activeDialogueId());
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+        SessionEvent transition = f.lastEvent("classroom.state_changed");
+        assertThat(transition.payload().get("trigger")).isEqualTo("end_dialogue");
+        assertThat(transition.payload().get("qa_phase")).isEqualTo("waiting_hands");
+    }
+
+    @Test
+    void duplicateEndDialogueIsRejectedWithoutSecondEndedEvent() {
+        Fixture f = dialogueFixture();
+        UUID dialogueId = f.activeDialogueId();
+        assertThat(f.actor().handle(
+                new SessionCommand.EndDialogue("end-dup-1", dialogueId)).ok()).isTrue();
+        int endedAfterFirst = f.countEvents("dialogue.ended");
+        int stateChangesAfterFirst = f.countEvents("classroom.state_changed");
+        int eventsAfterFirst = f.context().after(0).size();
+
+        CommandResult second = f.actor().handle(
+                new SessionCommand.EndDialogue("end-dup-2", dialogueId));
+
+        assertThat(second.ok()).isFalse();
+        assertThat(second.errorCode()).isEqualTo(ErrorCode.SESSION_STATE_INVALID);
+        assertThat(second.events()).isEmpty();
+        assertThat(f.countEvents("dialogue.ended")).isEqualTo(endedAfterFirst).isEqualTo(1);
+        assertThat(f.countEvents("classroom.state_changed")).isEqualTo(stateChangesAfterFirst);
+        assertThat(f.context().after(0)).hasSize(eventsAfterFirst);
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+    }
+
     @Test
     void endDialogueWithStaleIdIsRejectedWithoutMutation() {
         Fixture f = dialogueFixture();
@@ -349,6 +398,45 @@ class SessionActorDialogueTest {
     }
 
     @Test
+    void askStudentQuestionDuringDialogue() {
+        Fixture f = dialogueFixture();
+
+        CommandResult result = f.actor().handle(
+                new SessionCommand.AskStudentQuestion("ask-during-dialogue"));
+
+        assertThat(result.ok()).isTrue();
+        List<SessionEvent> events = result.events();
+        int endedIndex = f.indexOf(events, "dialogue.ended");
+        int questionIndex = f.indexOf(events, "classroom.question_asked");
+        assertThat(endedIndex).isNotNegative();
+        assertThat(questionIndex).isGreaterThan(endedIndex);
+        assertThat(events.get(endedIndex).payload().get("reason"))
+                .isEqualTo("qa_restarted");
+        assertThat(events.get(questionIndex).payload().get("intent"))
+                .isEqualTo(ClassroomStateMachine.INTENT_STUDENT_QUESTION);
+
+        List<SessionEvent> transitions = events.stream()
+                .filter(event -> event.type().equals("classroom.state_changed"))
+                .toList();
+        assertThat(transitions).hasSize(1);
+        SessionEvent transition = transitions.get(0);
+        assertThat(transition.payload().get("from")).isEqualTo("qa");
+        assertThat(transition.payload().get("to")).isEqualTo("qa");
+        assertThat(transition.payload().get("qa_phase")).isEqualTo("waiting_hands");
+        assertThat(transition.payload().get("trigger")).isEqualTo("manual");
+        // The new hand window is entered only after the question event: no extra
+        // waiting_hands transition is emitted before it.
+        assertThat(events.subList(0, questionIndex))
+                .filteredOn(event -> event.type().equals("classroom.state_changed"))
+                .isEmpty();
+
+        assertThat(f.countEvents("dialogue.ended")).isEqualTo(1);
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+    }
+
+    @Test
     void endSessionWhileInDialogueEmitsDialogueEndedBeforeSessionEnded() {
         Fixture f = dialogueFixture();
         assertThat(f.actor().handle(new SessionCommand.EndSession("end-3")).ok()).isTrue();
@@ -358,6 +446,45 @@ class SessionActorDialogueTest {
                         "session.ended");
         assertThat(f.lastEvent("dialogue.ended").payload().get("reason"))
                 .isEqualTo("session_ended");
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+    }
+
+    @Test
+    void tickTimeoutDuringDialogue() {
+        Fixture f = dialogueFixture();
+        int eventsBeforeTick = f.context().after(0).size();
+
+        f.actor().onTick(NOW.plusSeconds(1200)); // duration.max_seconds
+
+        List<SessionEvent> events = f.context().after(0);
+        List<SessionEvent> tickEvents = events.subList(eventsBeforeTick, events.size());
+        int endedIndex = f.indexOf(tickEvents, "dialogue.ended");
+        int sessionIndex = f.indexOf(tickEvents, "session.ended");
+        assertThat(endedIndex).isNotNegative();
+        assertThat(sessionIndex).isGreaterThan(endedIndex);
+        assertThat(tickEvents.get(endedIndex).payload().get("reason"))
+                .isEqualTo("session_ended");
+
+        SessionEvent focused = tickEvents.stream()
+                .filter(event -> event.type().equals("student.state_changed"))
+                .filter(event -> f.studentId().equals(event.payload().get("student_id")))
+                .filter(event -> "focused".equals(event.payload().get("to")))
+                .reduce((first, second) -> second)
+                .orElseThrow();
+        assertThat(focused.payload().get("reason")).isEqualTo("dialogue_ended");
+        int focusedIndex = tickEvents.indexOf(focused);
+        assertThat(focusedIndex).isGreaterThan(endedIndex);
+        assertThat(focusedIndex).isLessThan(sessionIndex);
+
+        List<SessionEvent> sessionEnded = tickEvents.stream()
+                .filter(event -> event.type().equals("session.ended"))
+                .toList();
+        assertThat(sessionEnded).hasSize(1);
+        assertThat(sessionEnded.get(0).payload().get("reason")).isEqualTo("timeout");
+        assertThat(f.countEvents("dialogue.ended")).isEqualTo(1);
+        assertThat(f.countEvents("session.ended")).isEqualTo(1);
+        assertThat(f.classroom().qaPhase()).isNull();
         assertThat(f.dynamics().find(f.studentId()).behavior())
                 .isEqualTo(VirtualStudentBehavior.FOCUSED);
     }
