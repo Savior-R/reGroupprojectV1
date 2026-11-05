@@ -5,8 +5,10 @@ import com.shijiangtai.m3classroom.application.port.ContentClient;
 import com.shijiangtai.m3classroom.application.port.ContentRequest;
 import com.shijiangtai.m3classroom.application.port.ContentResponse;
 import com.shijiangtai.m3classroom.application.port.MaterialTextExtractor;
+import com.shijiangtai.m3classroom.application.port.OcrClient;
 import com.shijiangtai.m3classroom.application.port.RecordingLifecyclePort;
 import com.shijiangtai.m3classroom.application.port.SchedulerPort;
+import com.shijiangtai.m3classroom.application.port.TeacherSpeechClassifier;
 import com.shijiangtai.m3classroom.domain.task.TaskPublishPolicy;
 import com.shijiangtai.m3classroom.domain.task.TaskSnapshotFactory;
 import com.shijiangtai.m3classroom.infrastructure.events.SpringAfterCommitHook;
@@ -100,6 +102,30 @@ public class M3Config {
             private DomainException unavailable() {
                 return new DomainException(ErrorCode.SERVICE_UNAVAILABLE, "内容服务不可用");
             }
+        };
+    }
+
+    /**
+     * Fallback OCR until {@code m3.ai.base-url} enables the Python adapter. The screen pipeline
+     * catches the failure and marks the frame {@code failed}; the session is unaffected.
+     */
+    @Bean
+    @ConditionalOnMissingBean(OcrClient.class)
+    public OcrClient ocrClient() {
+        return jpeg -> {
+            throw new DomainException(ErrorCode.SERVICE_UNAVAILABLE, "OCR 服务不可用");
+        };
+    }
+
+    /**
+     * Fallback classifier until {@code m3.ai.base-url} enables the Python adapter. The perception
+     * pipeline logs the failure and drops the classification.
+     */
+    @Bean
+    @ConditionalOnMissingBean(TeacherSpeechClassifier.class)
+    public TeacherSpeechClassifier teacherSpeechClassifier() {
+        return (text, recentTexts, mode) -> {
+            throw new DomainException(ErrorCode.SERVICE_UNAVAILABLE, "教师话语分类服务不可用");
         };
     }
 
