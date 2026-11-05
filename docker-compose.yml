@@ -84,6 +84,7 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       M3_MINIO_ENDPOINT: http://minio:9000
       M3_MINIO_PUBLIC_ENDPOINT: http://localhost:9000
+      M3_MINIO_REGION: ${M3_MINIO_REGION:-us-east-1}
       M3_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       M3_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       M3_MINIO_BUCKET: shijiangtai

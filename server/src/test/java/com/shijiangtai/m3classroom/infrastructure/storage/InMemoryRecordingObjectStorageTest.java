@@ -61,10 +61,34 @@ class InMemoryRecordingObjectStorageTest {
                 .isInstanceOfSatisfying(DomainException.class,
                         exception -> assertThat(exception.code())
                                 .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+        assertThatThrownBy(() -> storage.abortMultipart(OBJECT_KEY, upload.uploadId()))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
     }
 
     @Test
-    void presignedUrlsContainNoCredentials() {
+    void abortWithUnknownOrMismatchedUploadFails() {
+        MultipartUpload upload = storage.createMultipart(OBJECT_KEY, CONTENT_TYPE);
+
+        assertThatThrownBy(() -> storage.abortMultipart(OBJECT_KEY, "unknown-upload"))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+        assertThatThrownBy(() -> storage.abortMultipart("recordings/other.webm", upload.uploadId()))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+
+        assertThat(storage.presignPart(OBJECT_KEY, upload.uploadId(), 1, TTL))
+                .contains("partNumber=1");
+    }
+
+    @Test
+    void presignedUrlsUseMemoryHostAndExpectedQueryShape() {
+        // Shape-only assertion: the in-memory adapter does not sign URLs and never embeds
+        // credentials. Real MinIO presigned URLs necessarily carry the access key id in
+        // X-Amz-Credential, so this contract is not asserted for the MinIO adapter.
         MultipartUpload upload = storage.createMultipart(OBJECT_KEY, CONTENT_TYPE);
 
         String partUrl = storage.presignPart(OBJECT_KEY, upload.uploadId(), 2, TTL);

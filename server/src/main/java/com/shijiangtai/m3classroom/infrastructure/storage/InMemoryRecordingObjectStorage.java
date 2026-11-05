@@ -57,10 +57,8 @@ public class InMemoryRecordingObjectStorage implements RecordingObjectStorage {
 
     @Override
     public void abortMultipart(String objectKey, String uploadId) {
-        Upload upload = uploads.get(objectKey);
-        if (upload != null && upload.uploadId.equals(uploadId)) {
-            uploads.remove(objectKey);
-        }
+        requireUpload(objectKey, uploadId);
+        uploads.remove(objectKey);
     }
 
     @Override

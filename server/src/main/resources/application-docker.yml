@@ -16,6 +16,7 @@ m3:
   minio:
     endpoint: ${M3_MINIO_ENDPOINT:http://minio:9000}
     public-endpoint: ${M3_MINIO_PUBLIC_ENDPOINT:http://localhost:9000}
+    region: ${M3_MINIO_REGION:us-east-1}
     access-key: ${M3_MINIO_ACCESS_KEY:minioadmin}
     secret-key: ${M3_MINIO_SECRET_KEY:minioadmin}
     bucket: ${M3_MINIO_BUCKET:shijiangtai}

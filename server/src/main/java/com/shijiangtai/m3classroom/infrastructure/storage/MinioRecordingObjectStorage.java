@@ -38,6 +38,8 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnProperty(name = "m3.storage", havingValue = "minio")
 public class MinioRecordingObjectStorage implements RecordingObjectStorage {
+    private static final String DEFAULT_REGION = "us-east-1";
+
     private final MinioProperties properties;
     private final MinioAsyncClient internalClient;
     private final MinioClient presignClient;
@@ -45,12 +47,15 @@ public class MinioRecordingObjectStorage implements RecordingObjectStorage {
 
     public MinioRecordingObjectStorage(MinioProperties properties) {
         this.properties = Objects.requireNonNull(properties, "properties");
+        String region = region(properties);
         this.internalClient = MinioAsyncClient.builder()
                 .endpoint(properties.endpoint())
+                .region(region)
                 .credentials(properties.accessKey(), properties.secretKey())
                 .build();
         this.presignClient = MinioClient.builder()
                 .endpoint(presignEndpoint(properties))
+                .region(region)
                 .credentials(properties.accessKey(), properties.secretKey())
                 .build();
     }
@@ -179,6 +184,11 @@ public class MinioRecordingObjectStorage implements RecordingObjectStorage {
         return publicEndpoint == null || publicEndpoint.isBlank()
                 ? properties.endpoint()
                 : publicEndpoint;
+    }
+
+    private static String region(MinioProperties properties) {
+        String region = properties.region();
+        return region == null || region.isBlank() ? DEFAULT_REGION : region;
     }
 
     private <T> T await(CompletableFuture<T> future) {
