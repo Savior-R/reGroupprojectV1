@@ -50,12 +50,17 @@
 | 4 ASR WebSocket 适配 | `17053dd` | `PythonAsrStreamClientIT`（2） | `compileTestJava` 17 个 `cannot find symbol`，BUILD FAILED | 2/2；`ArchitectureTest` 通过 |
 | 5 帧持久化 | `3d837af` | `SessionFramePersistenceIT`（4，修复后） | `SessionFrameStore` 不存在，BUILD FAILED | 4/4；`ArchitectureTest` 通过 |
 | 6 截图服务 + 接口 | `54fae32` / 修复 `c3e1116` | `PerceptionApplicationServiceTest`（8）、`PerceptionScreenIT`（5） | 服务 RED：`PerceptionApplicationService` 不存在（8 errors）；控制器 RED：5 条预期 202/400/403/409 实际 500 | 8/8 + 5/5；修复后 `SessionFramePersistenceIT` 4/4 |
-| 7 感知 WS | `3cf3111` / 修复 `a4b78ee` | `PerceptionProtocolParserTest`（8）、`PerceptionWebSocketIT`（20） | 解析器 RED：10 errors；IT RED：15/15 因 `/perception` 路由不存在而失败 | 8/8 + 20/20；全量 clean suite 65 classes / 485 tests |
+| 7 感知 WS | `3cf3111` / 修复 `a4b78ee` | `PerceptionProtocolParserTest`（8）、`PerceptionWebSocketIT`（20） | 解析器 RED：10 errors；IT RED：15/15 因 `/perception` 路由不存在而失败 | 8/8 + 20/20；当轮全量 clean suite 65 classes / 485 tests |
+| 最终审查修复（3 Important） | 本次提交 | `PerceptionConnectionRegistryTest`（2）、`PerceptionWebSocketIT`（+2 = 22） | 替换回归用例在去掉同步 freeze 时 RED：旧连接 final 落入 `session_texts`；终态关闭单测在同步 close 时 RED：listener 阻塞 ≥5 s | 2/2 + 22/22；全量 66 classes / 489 tests |
 
 补充 RED / GREEN：
 
 - Task 6 修复（`c3e1116`）：临时回退两处生产修复后，`actorFailureAfterOcrSuccessKeepsFrameProcessed` 与 `markFailedAfterProcessedKeepsProcessedFrame` 两条用例失败；恢复后 17/17 通过（服务 8 + 接口 5 + 持久化 4）。
-- Task 7 修复（`a4b78ee`）：新增 5 条 IT（drain 超时、流中 ASR error、意外 close、PCM 原样转发、面试 final 映射），IT 从 15 条增至 20 条；全量 clean suite 仍为 65 classes / 485 tests。
+- Task 7 修复（`a4b78ee`）：新增 5 条 IT（drain 超时、流中 ASR error、意外 close、PCM 原样转发、面试 final 映射），IT 从 15 条增至 20 条；当轮全量 clean suite 为 65 classes / 485 tests。
+- 最终审查修复（本轮，3 Important）：
+  - 连接替换：去掉 `PerceptionConnectionRegistry.replace()` 的同步 `freeze()` 后，`replacedConnectionCannotPersistLateFinalOrTriggerQa` RED（旧连接 final 仍写入 `session_texts`）；恢复后 GREEN。
+  - 终态关闭：把 `closeOnExecutor` 临时改为同步 `freeze()+close()` 后，`PerceptionConnectionRegistryTest.terminalStatusSchedulesBlockingCloseOffTheListenerThread` RED（listener 被阻塞 ≥5 s）；恢复后 GREEN（<500 ms，close 在 `perception-terminal-close` 执行器上先 freeze 再 4002）。
+  - 分类失败：`FakeTeacherSpeechClassifier.failWith` 原先未被任何用例调用；新增 `classifierFailureKeepsSocketAndSessionAndEmitsNoClassroomEvents` 覆盖 `classify` 抛异常路径。
 
 ## 4. 测试计数
 
@@ -65,20 +70,22 @@
 docker compose --profile test run --rm test gradle clean test --no-daemon --console=plain
 ```
 
-结果：`BUILD SUCCESSFUL in 1m 7s`；XML 汇总 **65 个测试类 / 485 条用例，0 failure / 0 error / 0 skipped**。
+结果：`BUILD SUCCESSFUL in 1m 2s`；XML 汇总 **66 个测试类 / 489 条用例，0 failure / 0 error / 0 skipped**。
 
 口径拆分：
 
-- M3B 提交范围：**62 个测试类 / 472 条用例**（相对上一基线 53 类 / 410 条新增 **9 个类 / 62 条用例**）。
-- 同一工作区包含暂停中的 M3C 未跟踪测试 3 个类 / 13 条用例（`domain/recording`），合计 65 类 / 485 条；M3C 文件不进入本次提交。
-- 新增 9 个测试类：`FrameTypeClassifierTest` 4、`SessionActorPerceptionTest` 7、`PythonPerceptionHttpClientTest` 4、`PythonAsrStreamClientIT` 2、`SessionFramePersistenceIT` 4、`PerceptionApplicationServiceTest` 8、`PerceptionScreenIT` 5、`PerceptionProtocolParserTest` 8、`PerceptionWebSocketIT` 20。
+- M3B 提交范围：**63 个测试类 / 476 条用例**（相对上一基线 53 类 / 410 条新增 **10 个类 / 66 条用例**）。
+- 同一工作区包含暂停中的 M3C 未跟踪测试 3 个类 / 13 条用例（`domain/recording`），合计 66 类 / 489 条；M3C 文件不进入本次提交。
+- 新增 10 个测试类：`FrameTypeClassifierTest` 4、`SessionActorPerceptionTest` 7、`PythonPerceptionHttpClientTest` 4、`PythonAsrStreamClientIT` 2、`SessionFramePersistenceIT` 4、`PerceptionApplicationServiceTest` 8、`PerceptionScreenIT` 5、`PerceptionProtocolParserTest` 8、`PerceptionConnectionRegistryTest` 2、`PerceptionWebSocketIT` 22。
 
 关键覆盖：
 
 - 分类边界：`null confidence` 走 `change_score`；低置信优先；`0.60` / `0.125` 边界。
 - ASR final：课堂 teacher/utterance、面试 candidate/answer + `speaker_ref=当前 answer_id`；空文本 / 终态后 late final 丢弃。
-- 语音问答：`question` 高置信 → `classroom.question_asked {source=voice}` + 举手窗口；低置信 → `classroom.question_suggested`；分类失败 WARN-only。
+- 语音问答：`question` 高置信 → `classroom.question_asked {source=voice}` + 举手窗口；低置信 → `classroom.question_suggested`；分类器抛异常时仅 WARN（`classifierFailureKeepsSocketAndSessionAndEmitsNoClassroomEvents`）：感知 socket 保持打开、session 仍 `in_progress`、不追加 `question_asked` / `question_suggested` / `state_changed`，随后 `audio.stop` 以 1000 关闭。
 - 感知 WS：partial/final 推送、PCM 原样转发、`audio.stop` 2 秒 drain、drain 超时 1000、连接替换、session end 4002、非法 ticket 4001、`preparing` / 协议非法 4003、终态 4002。
+- 连接替换：注册第二连接时同步冻结旧连接（关闭旧 ASR、取消 drain、停止分类执行器，不再接受 final/PCM），旧 socket 1000；替换后旧 ASR final 不落 `session_texts`，也不产生重复问答事件（`replacedConnectionCannotPersistLateFinalOrTriggerQa`）。
+- 终态关闭：状态监听器只调度关闭任务，`socket.close` 在 `perception-terminal-close` daemon 执行器上先 freeze 再 4002，不占用 actor 线程 / 监视器（`PerceptionConnectionRegistryTest.terminalStatusSchedulesBlockingCloseOffTheListenerThread`，listener <500 ms）。
 - 截图：202 + pending、异步 processed + `perception.screen_changed`、OCR 失败 failed 且无事件、非 owner 403、非 `in_progress` 409、空 / 非 JPEG / >5 MB / 负 `at_ms` 400。
 - AI 降级：ASR open 失败 / 流中 error / 意外 close 均只发 `error SERVICE_UNAVAILABLE`，session 保持 `IN_PROGRESS`，`audio.stop` 后 1000。
 
@@ -191,6 +198,7 @@ RESULT {"error":"SERVICE_UNAVAILABLE","close":1000,"why":"closed"}
 - `server/src/test/java/com/shijiangtai/m3classroom/application/PerceptionApplicationServiceTest.java`
 - `server/src/test/java/com/shijiangtai/m3classroom/api/PerceptionScreenIT.java`
 - `server/src/test/java/com/shijiangtai/m3classroom/infrastructure/ws/PerceptionProtocolParserTest.java`
+- `server/src/test/java/com/shijiangtai/m3classroom/infrastructure/ws/PerceptionConnectionRegistryTest.java`
 - `server/src/test/java/com/shijiangtai/m3classroom/ws/PerceptionWebSocketIT.java`
 - `server/src/test/java/com/shijiangtai/m3classroom/support/FakeOcrClient.java`
 - `server/src/test/java/com/shijiangtai/m3classroom/support/InMemorySessionFrameStore.java`

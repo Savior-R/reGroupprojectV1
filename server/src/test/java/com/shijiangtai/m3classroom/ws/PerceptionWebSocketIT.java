@@ -15,6 +15,7 @@ import com.shijiangtai.m3classroom.application.TaskMaterialService;
 import com.shijiangtai.m3classroom.application.TaskPublishService;
 import com.shijiangtai.m3classroom.application.command.CreateTaskCommand;
 import com.shijiangtai.m3classroom.application.port.AsrChunk;
+import com.shijiangtai.m3classroom.application.port.SchedulerPort;
 import com.shijiangtai.m3classroom.application.port.SessionEventStore;
 import com.shijiangtai.m3classroom.application.port.SessionTextStore;
 import com.shijiangtai.m3classroom.application.view.SessionView;
@@ -28,6 +29,7 @@ import com.shijiangtai.m3classroom.domain.session.SessionText;
 import com.shijiangtai.m3classroom.domain.task.QuestionConfig;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.m3classroom.infrastructure.config.DevDataConfig;
+import com.shijiangtai.m3classroom.infrastructure.time.SystemScheduler;
 import com.shijiangtai.m3classroom.persistence.PostgresIntegrationTest;
 import com.shijiangtai.m3classroom.support.FakeAsrStreamClient;
 import com.shijiangtai.m3classroom.support.FakeTeacherSpeechClassifier;
@@ -43,16 +45,19 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -134,8 +139,11 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
     @Autowired
     private FakeTeacherSpeechClassifier classifier;
 
+    @Autowired
+    private BlockingScheduler scheduler;
+
     private final HttpClient http = HttpClient.newHttpClient();
-    private final List<WebSocketSession> openSockets = new ArrayList<>();
+    private final List<WebSocketSession> openSockets = new CopyOnWriteArrayList<>();
 
     private TaskId taskId;
     private SessionId sessionId;
@@ -154,12 +162,19 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
         FakeTeacherSpeechClassifier fakeTeacherSpeechClassifier() {
             return new FakeTeacherSpeechClassifier();
         }
+
+        @Bean(destroyMethod = "close")
+        @Primary
+        BlockingScheduler blockingScheduler() {
+            return new BlockingScheduler();
+        }
     }
 
     @BeforeEach
     void setUp() {
         asrClient.reset();
         classifier.reset();
+        scheduler.reset();
         TaskView view = taskApplicationService.createDraft(
                 teacher(), TestFixtures.freeCommandWithStudent());
         taskId = new TaskId(view.taskId());
@@ -508,6 +523,88 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void replacedConnectionCannotPersistLateFinalOrTriggerQa() throws Exception {
+        classifier.respondWith("question", "0.90");
+        SessionId id = createStartedSession();
+        Connection first = connect(id);
+        send(first, AUDIO_START);
+        FakeAsrStreamClient.FakeAsrSession firstAsr = awaitAsrSession();
+
+        // Give the first handler a drain timer; replacement cancels it as part of the freeze.
+        send(first, AUDIO_STOP);
+        assertThat(scheduler.awaitDrainScheduled(TIMEOUT))
+                .as("drain timeout was scheduled")
+                .isTrue();
+
+        // Block the drain-timer cancel. The fixed handler freezes (closed=true) before cancelling,
+        // whereas the pre-fix handler only reaches this cancel from cleanup after the container's
+        // afterConnectionClosed, when its stale ASR is still able to persist text.
+        CancelGate gate = new CancelGate();
+        scheduler.blockNextCancel(gate);
+        CompletableFuture<Connection> secondConnect = CompletableFuture.supplyAsync(() -> {
+            try {
+                return connect(id);
+            } catch (Exception exception) {
+                throw new CompletionException(exception);
+            }
+        });
+        assertThat(gate.entered.await(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS))
+                .as("replacement cancelled the drain timer")
+                .isTrue();
+
+        AtomicReference<Thread> emitThread = new AtomicReference<>();
+        CompletableFuture<Void> emit = CompletableFuture.runAsync(() -> {
+            emitThread.set(Thread.currentThread());
+            firstAsr.emitFinal("替换后不应落库", 0L, 1000L, new BigDecimal("0.95"));
+        });
+        awaitEmitSettled(emit, emitThread);
+        gate.release.countDown();
+
+        emit.get(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        Connection second = secondConnect.get(TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+        assertThat(first.awaitClose().getCode()).isEqualTo(CLOSE_NORMAL);
+        assertThat(second.socket.isOpen()).isTrue();
+
+        assertThat(textStore.bySession(id, "teacher")).isEmpty();
+        assertThat(classifier.calls()).isEmpty();
+        assertThat(eventStore.after(id, 0, 200))
+                .noneMatch(event -> Set.of(
+                        "classroom.question_asked",
+                        "classroom.question_suggested",
+                        "classroom.state_changed").contains(event.type()));
+    }
+
+    @Test
+    void classifierFailureKeepsSocketAndSessionAndEmitsNoClassroomEvents() throws Exception {
+        classifier.failWith(new RuntimeException("分类服务不可用"));
+        SessionId id = createStartedSession();
+        Connection connection = connect(id);
+        send(connection, AUDIO_START);
+        FakeAsrStreamClient.FakeAsrSession asr = awaitAsrSession();
+
+        asr.emitFinal("这句话会触发分类失败吗？", 0L, 1000L, new BigDecimal("0.90"));
+        connection.nextOfType("asr.final");
+        awaitClassifierCalls(1);
+
+        assertThat(connection.socket.isOpen()).isTrue();
+        assertThat(sessionRepository.findById(id).orElseThrow().status())
+                .isEqualTo(SessionStatus.IN_PROGRESS);
+        assertThat(eventStore.after(id, 0, 200))
+                .noneMatch(event -> Set.of(
+                        "classroom.question_asked",
+                        "classroom.question_suggested",
+                        "classroom.state_changed").contains(event.type()));
+
+        send(connection, AUDIO_STOP);
+        awaitAsrFinished(asr);
+        asr.emitClosed();
+
+        assertThat(connection.awaitClose().getCode()).isEqualTo(CLOSE_NORMAL);
+        assertThat(sessionRepository.findById(id).orElseThrow().status())
+                .isEqualTo(SessionStatus.IN_PROGRESS);
+    }
+
+    @Test
     void sessionEndClosesPerception4002() throws Exception {
         SessionId id = createStartedSession();
         Connection connection = connect(id);
@@ -658,6 +755,54 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
                 "ASR session was not opened; openCount=" + asrClient.openCount());
     }
 
+    private void awaitClassifierCalls(int expectedCount) throws InterruptedException {
+        long deadline = System.nanoTime() + TIMEOUT.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (classifier.calls().size() >= expectedCount) {
+                return;
+            }
+            Thread.sleep(10L);
+        }
+        throw new AssertionError("classifier was not called; calls=" + classifier.calls().size());
+    }
+
+    private void awaitAsrFinished(FakeAsrStreamClient.FakeAsrSession asr)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TIMEOUT.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (asr.finished()) {
+                return;
+            }
+            Thread.sleep(10L);
+        }
+        throw new AssertionError("ASR finish() was not called");
+    }
+
+    /**
+     * Waits until the final callback either finished (fixed handler drops it immediately) or is
+     * blocked on the actor monitor held by the replacement registration (pre-fix handler already
+     * passed its closed check). Releasing the cancel gate earlier would let the actor monitor go
+     * before the stale callback reaches the persistence decision.
+     */
+    private void awaitEmitSettled(CompletableFuture<Void> emit, AtomicReference<Thread> emitThread)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TIMEOUT.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (emit.isDone()) {
+                return;
+            }
+            Thread thread = emitThread.get();
+            if (thread != null && thread.getState() == Thread.State.BLOCKED) {
+                Thread.sleep(50L);
+                if (thread.getState() == Thread.State.BLOCKED) {
+                    return;
+                }
+            }
+            Thread.sleep(10L);
+        }
+        throw new AssertionError("final ASR callback did not settle");
+    }
+
     private void awaitSentFrames(FakeAsrStreamClient.FakeAsrSession asr, int expectedCount)
             throws InterruptedException {
         long deadline = System.nanoTime() + TIMEOUT.toNanos();
@@ -760,6 +905,69 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
 
         private static String type(JsonNode message) {
             return message.get("type").asString();
+        }
+    }
+
+    /**
+     * Real scheduler with a one-shot, test-controlled gate on {@link Cancellable#cancel()}. It
+     * lets the replacement IT hold the old connection exactly between the synchronous freeze and
+     * the cleanup that the container's {@code afterConnectionClosed} used to perform.
+     */
+    static final class BlockingScheduler implements SchedulerPort, AutoCloseable {
+
+        private static final Duration DRAIN_TIMEOUT = Duration.ofSeconds(2);
+
+        private final SystemScheduler delegate = new SystemScheduler();
+        private final AtomicReference<CancelGate> nextGate = new AtomicReference<>();
+        private volatile CountDownLatch drainScheduled = new CountDownLatch(1);
+
+        void reset() {
+            nextGate.set(null);
+            drainScheduled = new CountDownLatch(1);
+        }
+
+        void blockNextCancel(CancelGate gate) {
+            nextGate.set(gate);
+        }
+
+        boolean awaitDrainScheduled(Duration timeout) throws InterruptedException {
+            return drainScheduled.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        }
+
+        @Override
+        public Cancellable schedule(Runnable task, Duration delay) {
+            Cancellable cancellable = delegate.schedule(task, delay);
+            if (DRAIN_TIMEOUT.equals(delay)) {
+                drainScheduled.countDown();
+            }
+            return () -> {
+                CancelGate gate = nextGate.getAndSet(null);
+                if (gate != null) {
+                    gate.entered.countDown();
+                    gate.awaitRelease();
+                }
+                cancellable.cancel();
+            };
+        }
+
+        @Override
+        public void close() {
+            delegate.close();
+        }
+    }
+
+    /** One-shot gate released by the test once the stale final callback has settled. */
+    static final class CancelGate {
+
+        private final CountDownLatch entered = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+
+        private void awaitRelease() {
+            try {
+                release.await(10, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }

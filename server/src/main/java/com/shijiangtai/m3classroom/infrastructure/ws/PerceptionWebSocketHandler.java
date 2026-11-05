@@ -184,7 +184,7 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
                     return;
                 }
                 connection.bind(sessionId, actor);
-                connectionRegistry.register(sessionId, socket, actor);
+                connectionRegistry.register(sessionId, socket, actor, connection::freeze);
             }
         } catch (RuntimeException exception) {
             LOG.warn("Failed to register perception connection for session {}: {}",
@@ -262,6 +262,8 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
 
         private final WebSocketSession socket;
         private final AtomicBoolean closed = new AtomicBoolean();
+        private final AtomicBoolean frozen = new AtomicBoolean();
+        private final AtomicBoolean socketCloseStarted = new AtomicBoolean();
         private final AtomicBoolean cleaned = new AtomicBoolean();
         private final AtomicBoolean audioStarted = new AtomicBoolean();
         private final AtomicBoolean audioStopped = new AtomicBoolean();
@@ -342,8 +344,8 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
                 return;
             }
             AsrSession current = asr;
-            if (current == null) {
-                // Open failed earlier: audio is deliberately discarded until audio.stop.
+            if (current == null || closed.get()) {
+                // Open failed earlier or the connection was frozen: discard until audio.stop.
                 return;
             }
             byte[] pcm = new byte[payload.remaining()];
@@ -405,6 +407,9 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
         }
 
         private void handleFinal(AsrChunk chunk) {
+            if (closed.get()) {
+                return;
+            }
             String text = chunk.text();
             if (text == null || text.isBlank()) {
                 return;
@@ -420,10 +425,23 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
                     ? Math.max(0L, audioStartAtMs + chunk.endMs())
                     : Math.max(0L, actor.currentAtMs());
 
-            Optional<UUID> textId = actor.recordSpeechFinal(
-                    speakerType, speakerRef, text, startMs, endMs, chunk.confidence());
+            Optional<UUID> textId;
+            synchronized (actor) {
+                // Replacement freeze runs under this same actor monitor (registration holds it),
+                // so the frozen check and the persist are atomic: an in-flight callback can no
+                // longer pass the check, block on the monitor, and persist after the freeze.
+                if (closed.get()) {
+                    return;
+                }
+                textId = actor.recordSpeechFinal(
+                        speakerType, speakerRef, text, startMs, endMs, chunk.confidence());
+            }
             if (textId.isEmpty()) {
                 // Late final after the session became terminal: drop it without a response.
+                return;
+            }
+            if (closed.get()) {
+                // Frozen while the final was being persisted: do not answer or classify.
                 return;
             }
 
@@ -449,17 +467,35 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
         }
 
         private void submitClassification(String text) {
+            if (closed.get()) {
+                return;
+            }
             String mode = actor.session().mode().wireValue();
             try {
                 classifierExecutor.execute(() -> {
+                    if (closed.get()) {
+                        return;
+                    }
                     try {
                         ClassifyResult result =
                                 speechClassifier.classify(text, List.of(), mode);
+                        // A freeze may have replaced this connection while classify ran: queued
+                        // or in-flight results must never mutate the live session.
+                        if (closed.get()) {
+                            return;
+                        }
                         if (result != null
                                 && QUESTION_LABEL.equalsIgnoreCase(result.label())
                                 && result.confidence() != null) {
-                            actor.onTeacherSpeechClassified(
-                                    result.confidence().doubleValue());
+                            synchronized (actor) {
+                                // Same actor-monitor rule as handleFinal: the freeze check and the
+                                // mutation are atomic with respect to connection replacement.
+                                if (closed.get()) {
+                                    return;
+                                }
+                                actor.onTeacherSpeechClassified(
+                                        result.confidence().doubleValue());
+                            }
                         }
                     } catch (RuntimeException exception) {
                         LOG.warn("Teacher speech classification failed for session {}: {}",
@@ -512,6 +548,9 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
         }
 
         private void send(Map<String, Object> payload) {
+            if (closed.get()) {
+                return;
+            }
             String json;
             try {
                 json = objectMapper.writeValueAsString(payload);
@@ -535,11 +574,44 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
             }
         }
 
-        private void close(int code, String reason) {
-            if (!closed.compareAndSet(false, true)) {
+        /**
+         * Freezes this connection: no further audio/finals are accepted or persisted, the ASR
+         * session is released, the drain timer is cancelled and queued classifications can no
+         * longer reach the actor.
+         *
+         * <p>The registry calls this synchronously when a new connection replaces this one, and
+         * from its close executor when the session reaches a terminal status, so correctness does
+         * not depend on the container's later {@code afterConnectionClosed}.
+         */
+        private void freeze() {
+            closed.set(true);
+            if (!frozen.compareAndSet(false, true)) {
                 return;
             }
             cancelDrain();
+            AsrSession current;
+            synchronized (asrLock) {
+                current = asr;
+                asr = null;
+            }
+            if (current != null) {
+                closeQuietly(current);
+            }
+            classifierExecutor.shutdownNow();
+            LOG.debug("Perception connection frozen for session {}", sessionId);
+        }
+
+        private void close(int code, String reason) {
+            if (frozen.get()) {
+                // The registry owns the close for replacement/terminal statuses; its close code
+                // must win over a racing drain timeout or ASR close callback.
+                return;
+            }
+            closed.set(true);
+            cancelDrain();
+            if (!socketCloseStarted.compareAndSet(false, true)) {
+                return;
+            }
             try {
                 synchronized (socket) {
                     if (socket.isOpen()) {
