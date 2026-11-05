@@ -11,11 +11,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** In-memory {@link SessionFrameStore} fake; threads may write while tests poll. */
 public class InMemorySessionFrameStore implements SessionFrameStore {
 
     private final Map<UUID, SessionFrame> frames = new ConcurrentHashMap<>();
+    private final AtomicInteger markFailedCalls = new AtomicInteger();
 
     @Override
     public void save(SessionFrame frame) {
@@ -52,22 +54,30 @@ public class InMemorySessionFrameStore implements SessionFrameStore {
 
     @Override
     public void markFailed(UUID frameId, String errorMessage) {
-        frames.computeIfPresent(frameId, (id, frame) -> new SessionFrame(
-                id,
-                frame.sessionId(),
-                frame.timestampMs(),
-                frame.text(),
-                frame.boundingBoxes(),
-                frame.confidence(),
-                frame.changeScore(),
-                frame.frameType(),
-                frame.objectKey(),
-                frame.contentHash(),
-                FrameStatus.FAILED,
-                errorMessage));
+        markFailedCalls.incrementAndGet();
+        // Mirrors the production adapter: only a pending frame can fail.
+        frames.computeIfPresent(frameId, (id, frame) -> frame.status() == FrameStatus.PENDING
+                ? new SessionFrame(
+                        id,
+                        frame.sessionId(),
+                        frame.timestampMs(),
+                        frame.text(),
+                        frame.boundingBoxes(),
+                        frame.confidence(),
+                        frame.changeScore(),
+                        frame.frameType(),
+                        frame.objectKey(),
+                        frame.contentHash(),
+                        FrameStatus.FAILED,
+                        errorMessage)
+                : frame);
     }
 
     public int size() {
         return frames.size();
+    }
+
+    public int markFailedCalls() {
+        return markFailedCalls.get();
     }
 }

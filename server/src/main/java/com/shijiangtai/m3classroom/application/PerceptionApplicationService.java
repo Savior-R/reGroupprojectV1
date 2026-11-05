@@ -212,19 +212,38 @@ public class PerceptionApplicationService {
             long atMs,
             BigDecimal changeScore,
             String objectKey) {
+        OcrResult result;
+        FrameType frameType;
         try {
-            OcrResult result = ocrClient.recognize(jpeg);
-            List<OcrBox> boxes = result.boxes() == null ? List.of() : result.boxes();
-            FrameType frameType = frameTypeClassifier.classify(
-                    result.confidence(), changeScore);
-            frameStore.markProcessed(
-                    frameId, result.text(), boxes, result.confidence(), frameType, objectKey);
-            runtimeRegistry.find(sessionId).ifPresent(actor ->
-                    actor.onScreenProcessed(frameId, atMs, frameType.wireValue()));
+            result = ocrClient.recognize(jpeg);
+            frameType = frameTypeClassifier.classify(result.confidence(), changeScore);
         } catch (RuntimeException exception) {
             LOG.warn("OCR failed for session {} frame {}: {}",
                     sessionId.value(), frameId, exception.getMessage(), exception);
             markFailedQuietly(frameId, exception.getMessage());
+            return;
+        }
+
+        try {
+            List<OcrBox> boxes = result.boxes() == null ? List.of() : result.boxes();
+            frameStore.markProcessed(
+                    frameId, result.text(), boxes, result.confidence(), frameType, objectKey);
+        } catch (RuntimeException exception) {
+            LOG.warn("Failed to persist OCR result for session {} frame {}: {}",
+                    sessionId.value(), frameId, exception.getMessage(), exception);
+            markFailedQuietly(frameId, exception.getMessage());
+            return;
+        }
+
+        // Event emission is downstream of the persisted frame: a failure here must not mark a
+        // processed frame as failed, otherwise a stored perception event and a failed frame
+        // row could coexist.
+        try {
+            runtimeRegistry.find(sessionId).ifPresent(actor ->
+                    actor.onScreenProcessed(frameId, atMs, frameType.wireValue()));
+        } catch (RuntimeException exception) {
+            LOG.warn("Failed to emit screen event for session {} frame {}: {}",
+                    sessionId.value(), frameId, exception.getMessage(), exception);
         }
     }
 

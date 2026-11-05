@@ -57,6 +57,23 @@ class SessionFramePersistenceIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void markFailedAfterProcessedKeepsProcessedFrame() {
+        SessionId id = savePreparingSession();
+        UUID frameId = UUID.randomUUID();
+        store.save(SessionFrame.pending(frameId, id, 1200, new BigDecimal("0.20"), "key", "hash"));
+        store.markProcessed(frameId, "识别文本", List.of(), new BigDecimal("0.90"),
+                FrameType.NORMAL, "key");
+
+        store.markFailed(frameId, "late event failure");
+
+        SessionFrame frame = store.find(frameId).orElseThrow();
+        assertThat(frame.status()).isEqualTo(FrameStatus.PROCESSED);
+        assertThat(frame.text()).isEqualTo("识别文本");
+        assertThat(frame.confidence()).isEqualByComparingTo("0.90");
+        assertThat(frame.errorMessage()).isNull();
+    }
+
+    @Test
     void markFailedStoresTruncatedError() {
         SessionId id = savePreparingSession();
         UUID frameId = UUID.randomUUID();

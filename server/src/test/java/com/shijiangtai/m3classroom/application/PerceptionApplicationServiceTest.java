@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -118,6 +119,26 @@ class PerceptionApplicationServiceTest {
         assertThat(processed.confidence()).isEqualByComparingTo(HIGH_CONFIDENCE);
         assertThat(processed.frameType()).isEqualTo(FrameType.SLIDE_CHANGE);
         verify(actor).onScreenProcessed(view.frameId(), AT_MS, "slide_change");
+    }
+
+    @Test
+    void actorFailureAfterOcrSuccessKeepsFrameProcessed() throws Exception {
+        ocr.succeedWith(new OcrResult(
+                "板书标题", List.of(), HIGH_CONFIDENCE, "fake-ocr"));
+        doThrow(new RuntimeException("事件写入失败")).when(actor)
+                .onScreenProcessed(any(), anyLong(), anyString());
+
+        PerceptionFrameView view = service.ingestScreen(
+                TestFixtures.student(), sessionId, jpeg(), "image/jpeg", AT_MS, CHANGE_SCORE);
+        awaitAsync();
+
+        SessionFrame processed = frames.find(view.frameId()).orElseThrow();
+        assertThat(processed.status()).isEqualTo(FrameStatus.PROCESSED);
+        assertThat(processed.text()).isEqualTo("板书标题");
+        assertThat(processed.confidence()).isEqualByComparingTo(HIGH_CONFIDENCE);
+        assertThat(processed.frameType()).isEqualTo(FrameType.SLIDE_CHANGE);
+        assertThat(processed.errorMessage()).isNull();
+        assertThat(frames.markFailedCalls()).isZero();
     }
 
     @Test

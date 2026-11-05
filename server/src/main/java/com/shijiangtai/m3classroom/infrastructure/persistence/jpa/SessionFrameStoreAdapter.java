@@ -90,6 +90,11 @@ public class SessionFrameStoreAdapter implements SessionFrameStore {
     @Transactional
     public void markFailed(UUID frameId, String errorMessage) {
         repository.findById(frameId).ifPresent(entity -> {
+            // Only a pending frame can fail; OCR success must never be undone by a late
+            // downstream failure (frame processing and event emission are separate steps).
+            if (!FrameStatus.PENDING.wireValue().equals(entity.getStatus())) {
+                return;
+            }
             entity.setStatus(FrameStatus.FAILED.wireValue());
             entity.setErrorMessage(truncate(errorMessage));
             entity.setUpdatedAt(Instant.now());

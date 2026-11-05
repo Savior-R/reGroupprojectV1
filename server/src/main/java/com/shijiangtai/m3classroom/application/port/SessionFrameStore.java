@@ -23,5 +23,6 @@ public interface SessionFrameStore {
             FrameType frameType,
             String objectKey);
 
+    /** Marks a still-pending frame failed; a processed frame is never downgraded. */
     void markFailed(UUID frameId, String errorMessage);
 }
