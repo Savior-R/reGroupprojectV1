@@ -261,9 +261,29 @@ public final class VirtualStudentDynamics {
         return transition(student, VirtualStudentBehavior.FOCUSED, "answer_finished");
     }
 
-    /** {@code student.follow_up}: following-up student gains attention. */
-    public void applyFollowUp(UUID studentId) {
-        applyNoisyAttention(find(studentId), FOLLOW_UP_ATTENTION);
+    /**
+     * {@code student.follow_up}: the following-up student gains noisy attention and enters
+     * {@code dialogue}. A follow-up while already in {@code dialogue} only applies the attention
+     * delta.
+     *
+     * @return the persisted {@code student.state_changed} transition, or an empty list when the
+     *     student was already {@code dialogue}
+     */
+    public List<ClassroomEvent> applyFollowUp(UUID studentId) {
+        VirtualStudentRuntime student = find(studentId);
+        applyNoisyAttention(student, FOLLOW_UP_ATTENTION);
+        return transition(student, VirtualStudentBehavior.DIALOGUE, "follow_up");
+    }
+
+    /**
+     * Ends the current dialogue: the student returns to {@code focused}.
+     *
+     * @return the persisted {@code student.state_changed} transition, or an empty list when the
+     *     student was already {@code focused}
+     */
+    public List<ClassroomEvent> applyDialogueEnded(UUID studentId) {
+        return transition(
+                find(studentId), VirtualStudentBehavior.FOCUSED, "dialogue_ended");
     }
 
     /**

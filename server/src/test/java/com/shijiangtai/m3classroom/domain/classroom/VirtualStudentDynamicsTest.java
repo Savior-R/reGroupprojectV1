@@ -269,6 +269,43 @@ class VirtualStudentDynamicsTest {
     }
 
     @Test
+    void followUpTransitionsToDialogueAndAddsAttention() {
+        VirtualStudentDynamics dynamics = dynamics(config(1, "0.50", "0.0"));
+        UUID id = studentId(1);
+        dynamics.applyAnswer(id);
+        double before = dynamics.find(id).attention();
+
+        List<ClassroomEvent> events = dynamics.applyFollowUp(id);
+
+        assertThat(dynamics.find(id).behavior())
+                .isEqualTo(VirtualStudentBehavior.DIALOGUE);
+        assertThat(dynamics.find(id).attention()).isGreaterThan(before);
+        assertThat(events).singleElement().satisfies(event -> {
+            assertThat(event.type()).isEqualTo("student.state_changed");
+            assertThat(event.payload()).containsEntry("to", "dialogue")
+                    .containsEntry("reason", "follow_up");
+        });
+    }
+
+    @Test
+    void secondFollowUpOnlyAddsAttentionAndDialogueEndReturnsToFocused() {
+        VirtualStudentDynamics dynamics = dynamics(config(1, "0.50", "0.0"));
+        UUID id = studentId(1);
+        dynamics.applyAnswer(id);
+        dynamics.applyFollowUp(id);
+        double before = dynamics.find(id).attention();
+
+        assertThat(dynamics.applyFollowUp(id)).isEmpty();
+        assertThat(dynamics.find(id).attention()).isGreaterThan(before);
+
+        List<ClassroomEvent> ended = dynamics.applyDialogueEnded(id);
+        assertThat(dynamics.find(id).behavior()).isEqualTo(VirtualStudentBehavior.FOCUSED);
+        assertThat(ended).singleElement().satisfies(event ->
+                assertThat(event.payload()).containsEntry("to", "focused")
+                        .containsEntry("reason", "dialogue_ended"));
+    }
+
+    @Test
     void stateAndDisciplineEventsApplyDeltasToStudentAndNeighbours() {
         VirtualStudentDynamics dynamics = dynamics(
                 config(1, "0.50", "0.0"),
