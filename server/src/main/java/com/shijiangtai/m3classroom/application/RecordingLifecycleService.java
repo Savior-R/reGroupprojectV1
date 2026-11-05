@@ -54,6 +54,11 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
         this.clockProvider = Objects.requireNonNull(clockProvider, "clockProvider");
     }
 
+    /**
+     * Session cancellation keeps the session row but invalidates its temporary recording: every
+     * in-flight multipart upload is aborted, all streams and the recording become {@code deleted},
+     * and the corresponding objects are removed after the transaction commits.
+     */
     @Override
     @Transactional
     public void abortAll(SessionId sessionId) {
@@ -62,23 +67,31 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
         if (recording == null) {
             return;
         }
-        boolean changed = false;
+        List<Runnable> objectDeletes = new ArrayList<>();
         for (RecordingStream stream : recording.streams()) {
-            if (stream.status() != StreamStatus.UPLOADING || stream.uploadId() == null) {
-                continue;
-            }
-            try {
-                storage.abortMultipart(stream.objectKey(), stream.uploadId());
-            } catch (RuntimeException exception) {
-                log.warn("Aborting recording multipart failed: session={}, stream={}",
-                        sessionId.value(), stream.type().wireValue(), exception);
-            }
-            recording.abortStream(stream.type(), clockProvider.now());
-            changed = true;
+            abortUploadingStream(stream);
+            scheduleObjectDelete(stream, objectDeletes);
         }
-        if (changed) {
-            recordingRepository.save(recording);
+        recording.markDeleted(clockProvider.now());
+        recordingRepository.save(recording);
+        scheduleAfterCommit(objectDeletes);
+    }
+
+    /**
+     * Removes one superseded attempt. Only closed, non-submitted attempts are deletable; a
+     * submitted attempt is referenced by its submission/replay and an active attempt is still
+     * being recorded.
+     */
+    @Override
+    @Transactional
+    public void deleteAttempt(SessionId sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId");
+        Session session = sessionRepository.findById(sessionId).orElse(null);
+        if (session == null || !isDeletable(session.status())) {
+            return;
         }
+        List<Runnable> objectDeletes = removeAttemptRows(sessionId);
+        scheduleAfterCommit(objectDeletes);
     }
 
     @Override
@@ -92,22 +105,42 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
             if (session.id().equals(keep) || !isDeletable(session.status())) {
                 continue;
             }
-            Recording recording = recordingRepository.findBySession(session.id()).orElse(null);
-            if (recording != null) {
-                for (RecordingStream stream : recording.streams()) {
-                    if (stream.status() == StreamStatus.UPLOADING
-                            && stream.uploadId() != null) {
-                        abortUpload(stream);
-                    }
-                    if (stream.objectKey() != null) {
-                        String objectKey = stream.objectKey();
-                        objectDeletes.add(() -> deleteObject(objectKey));
-                    }
-                }
-                recordingRepository.deleteBySession(session.id());
-            }
-            sessionRepository.deleteById(session.id());
+            objectDeletes.addAll(removeAttemptRows(session.id()));
         }
+        scheduleAfterCommit(objectDeletes);
+    }
+
+    /** Deletes recording/stream rows (streams cascade) and the session row itself. */
+    private List<Runnable> removeAttemptRows(SessionId sessionId) {
+        List<Runnable> objectDeletes = new ArrayList<>();
+        Recording recording = recordingRepository.findBySession(sessionId).orElse(null);
+        if (recording != null) {
+            for (RecordingStream stream : recording.streams()) {
+                abortUploadingStream(stream);
+                scheduleObjectDelete(stream, objectDeletes);
+            }
+            recordingRepository.deleteBySession(sessionId);
+        }
+        sessionRepository.deleteById(sessionId);
+        return objectDeletes;
+    }
+
+    private void abortUploadingStream(RecordingStream stream) {
+        if (stream.status() == StreamStatus.UPLOADING && stream.uploadId() != null) {
+            abortUpload(stream);
+        }
+    }
+
+    private void scheduleObjectDelete(
+            RecordingStream stream, List<Runnable> objectDeletes) {
+        if (stream.objectKey() == null) {
+            return;
+        }
+        String objectKey = stream.objectKey();
+        objectDeletes.add(() -> deleteObject(objectKey));
+    }
+
+    private void scheduleAfterCommit(List<Runnable> objectDeletes) {
         if (!objectDeletes.isEmpty()) {
             afterCommitPort.afterCommit(() -> objectDeletes.forEach(Runnable::run));
         }
@@ -128,7 +161,7 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
         try {
             storage.abortMultipart(stream.objectKey(), stream.uploadId());
         } catch (RuntimeException exception) {
-            log.warn("Aborting superseded recording multipart failed: objectKey={}",
+            log.warn("Aborting recording multipart failed: objectKey={}",
                     stream.objectKey(), exception);
         }
     }

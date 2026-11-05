@@ -272,6 +272,11 @@ class SubmissionTransactionIT extends PostgresIntegrationTest {
                 }
 
                 @Override
+                public void deleteAttempt(SessionId sessionId) {
+                    delegate.deleteAttempt(sessionId);
+                }
+
+                @Override
                 public void deleteOtherAttempts(
                         AccountId student, TaskId task, SessionId keep) {
                     probe.record(TransactionSynchronizationManager.isSynchronizationActive());

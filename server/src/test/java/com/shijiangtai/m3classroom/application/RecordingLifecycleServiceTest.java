@@ -56,21 +56,27 @@ class RecordingLifecycleServiceTest {
     }
 
     @Test
-    void abortAllAbortsUploadingMultipartAndMarksStreamFailed() {
+    void abortAllAbortsUploadingMultipartAndMarksRecordingDeleted() {
         SessionId sessionId = newSession();
         String objectKey = "recordings/school/task/session/camera.webm";
         String uploadId = storage.createMultipart(objectKey, "video/webm").uploadId();
         recordingWithUploadingStream(sessionId, objectKey, uploadId);
 
         service.abortAll(sessionId);
-        service.abortAll(sessionId);
 
         Recording recording = recordings.findBySession(sessionId).orElseThrow();
-        assertThat(recording.status()).isEqualTo(RecordingStatus.FAILED);
+        assertThat(recording.status()).isEqualTo(RecordingStatus.DELETED);
         assertThat(recording.stream(StreamType.CAMERA).orElseThrow().status())
-                .isEqualTo(StreamStatus.FAILED);
+                .isEqualTo(StreamStatus.DELETED);
+        assertThat(afterCommitActions).hasSize(1);
         assertThatThrownBy(() -> storage.presignPart(
                 objectKey, uploadId, 1, Duration.ofMinutes(1)))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+
+        afterCommitActions.forEach(Runnable::run);
+        assertThatThrownBy(() -> storage.stat(objectKey))
                 .isInstanceOfSatisfying(DomainException.class,
                         exception -> assertThat(exception.code())
                                 .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));

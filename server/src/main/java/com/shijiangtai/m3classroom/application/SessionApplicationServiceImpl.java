@@ -22,11 +22,14 @@ import com.shijiangtai.m3classroom.domain.task.TaskStatus;
 import com.shijiangtai.shared.application.ClockProvider;
 import com.shijiangtai.shared.application.CurrentUser;
 import com.shijiangtai.shared.application.IdGenerator;
+import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -45,6 +48,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class SessionApplicationServiceImpl implements SessionApplicationService {
 
     private static final SessionType TASK_SESSION = SessionType.TASK;
+    /** 05B §6: at most five temporary (non-submitted) attempts per student and task. */
+    private static final int MAX_TEMPORARY_ATTEMPTS = 5;
 
     private final TaskRepository taskRepository;
     private final TaskAssignmentRepository assignmentRepository;
@@ -126,6 +131,7 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
                         student.accountId(), taskId).isPresent()) {
                     throw activeSessionExists(taskId);
                 }
+                deleteOldestTemporaryAttemptIfAtLimit(student.accountId(), taskId);
                 int attemptNo = Math.toIntExact(
                         sessionRepository.countByStudentAndTask(
                                 student.accountId(), taskId) + 1);
@@ -164,6 +170,40 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
             throw new DomainException(ErrorCode.TASK_CONFIG_INVALID, "任务快照不存在",
                     Map.of("task_id", taskId.value().toString()));
         }
+    }
+
+    /**
+     * Enforces the temporary-attempt cap (05B §6). The list is ordered by attempt number, so the
+     * first match in each priority group is the oldest attempt. Submitted attempts are never
+     * candidates; an active attempt cannot reach this point because the active-session check runs
+     * first.
+     */
+    private void deleteOldestTemporaryAttemptIfAtLimit(AccountId studentId, TaskId taskId) {
+        List<Session> attempts = sessionRepository.findByStudentAndTask(studentId, taskId);
+        long temporary = attempts.stream()
+                .filter(attempt -> attempt.status() != SessionStatus.SUBMITTED)
+                .count();
+        if (temporary < MAX_TEMPORARY_ATTEMPTS) {
+            return;
+        }
+        Session oldest = oldestDeletable(
+                attempts, SessionStatus.CANCELLED, SessionStatus.FAILED);
+        if (oldest == null) {
+            oldest = oldestDeletable(
+                    attempts, SessionStatus.ENDED, SessionStatus.REVIEWING);
+        }
+        if (oldest == null) {
+            throw activeSessionExists(taskId);
+        }
+        recordingLifecyclePort.deleteAttempt(oldest.id());
+    }
+
+    private static Session oldestDeletable(
+            List<Session> attempts, SessionStatus first, SessionStatus second) {
+        return attempts.stream()
+                .filter(attempt -> attempt.status() == first || attempt.status() == second)
+                .min(Comparator.comparingInt(Session::attemptNo))
+                .orElse(null);
     }
 
     private static DomainException activeSessionExists(TaskId taskId) {

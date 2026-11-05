@@ -414,6 +414,10 @@ class SubmissionServiceTest {
         }
 
         @Override
+        public void deleteAttempt(SessionId sessionId) {
+        }
+
+        @Override
         public void deleteOtherAttempts(AccountId student, TaskId task, SessionId keep) {
             cleanups.add(new CleanupCall(student, task, keep));
         }

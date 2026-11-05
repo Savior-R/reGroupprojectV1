@@ -165,6 +165,19 @@ public final class Recording {
         this.updatedAt = now;
     }
 
+    /**
+     * Marks the whole recording and every stream as deleted. Used by session cancellation, where
+     * the temporary rows are kept but the aggregate and its objects are no longer readable.
+     */
+    public void markDeleted(Instant now) {
+        Objects.requireNonNull(now, "now");
+        for (RecordingStream stream : streams()) {
+            streams.put(stream.type(), stream.withStatus(StreamStatus.DELETED));
+        }
+        this.status = RecordingStatus.DELETED;
+        this.updatedAt = now;
+    }
+
     public UUID id() {
         return id;
     }

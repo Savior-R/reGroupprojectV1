@@ -12,8 +12,14 @@ import com.shijiangtai.shared.domain.TaskId;
  */
 public interface RecordingLifecyclePort {
 
-    /** Aborts every in-flight recording upload of the session (best effort). */
+    /** Aborts every in-flight upload and removes the temporary recording of the session. */
     void abortAll(SessionId sessionId);
+
+    /**
+     * Deletes one superseded attempt (session + recordings/streams + objects). Submitted and
+     * active attempts are left untouched.
+     */
+    void deleteAttempt(SessionId sessionId);
 
     /** Deletes recordings/texts of earlier attempts, keeping the given session intact. */
     void deleteOtherAttempts(AccountId student, TaskId task, SessionId keep);

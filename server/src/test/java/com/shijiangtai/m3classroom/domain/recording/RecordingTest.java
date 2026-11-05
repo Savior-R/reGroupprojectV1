@@ -128,6 +128,21 @@ class RecordingTest {
     }
 
     @Test
+    void markDeletedMarksRecordingAndEveryStreamDeleted() {
+        Recording recording = recording();
+        start(recording, TaskMode.FREE, StreamType.CAMERA);
+        start(recording, TaskMode.FREE, StreamType.SCREEN);
+        start(recording, TaskMode.FREE, StreamType.AUDIO);
+        upload(recording, TaskMode.FREE, StreamType.CAMERA);
+
+        recording.markDeleted(NOW);
+
+        assertThat(recording.status()).isEqualTo(RecordingStatus.DELETED);
+        assertThat(recording.streams()).extracting(RecordingStream::status)
+                .containsOnly(StreamStatus.DELETED);
+    }
+
+    @Test
     void rehydrateKeepsCanonicalStreamOrder() {
         RecordingStream audio = stream(StreamType.AUDIO, StreamStatus.UPLOADED);
         RecordingStream camera = stream(StreamType.CAMERA, StreamStatus.UPLOADING);

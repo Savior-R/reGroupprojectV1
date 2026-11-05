@@ -7,6 +7,7 @@ import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -49,6 +50,7 @@ public final class InMemorySessionRepository implements SessionRepository {
     public List<Session> findByStudentAndTask(AccountId studentAccountId, TaskId taskId) {
         return sessions.values().stream()
                 .filter(session -> belongsTo(session, studentAccountId, taskId))
+                .sorted(Comparator.comparingInt(Session::attemptNo))
                 .map(InMemorySessionRepository::copy)
                 .toList();
     }

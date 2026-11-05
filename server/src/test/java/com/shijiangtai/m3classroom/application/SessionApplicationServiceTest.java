@@ -461,6 +461,11 @@ class SessionApplicationServiceTest {
         }
 
         @Override
+        public void deleteAttempt(SessionId sessionId) {
+            // no-op
+        }
+
+        @Override
         public void deleteOtherAttempts(AccountId student, TaskId task, SessionId keep) {
             // no-op
         }
