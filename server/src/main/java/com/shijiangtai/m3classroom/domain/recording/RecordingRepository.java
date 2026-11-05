@@ -11,4 +11,7 @@ public interface RecordingRepository {
     Optional<Recording> findBySession(SessionId sessionId);
 
     Optional<Recording> findById(UUID id);
+
+    /** Deletes the recording row of a superseded attempt; streams cascade. */
+    void deleteBySession(SessionId sessionId);
 }

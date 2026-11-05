@@ -102,6 +102,13 @@ public class RecordingRepositoryAdapter implements RecordingRepository {
         return recordingRepository.findById(id).map(this::toDomain);
     }
 
+    @Override
+    @Transactional
+    public void deleteBySession(SessionId sessionId) {
+        recordingRepository.findBySessionId(sessionId.value())
+                .ifPresent(recordingRepository::delete);
+    }
+
     private Recording toDomain(RecordingEntity entity) {
         return Recording.rehydrate(
                 entity.getId(),

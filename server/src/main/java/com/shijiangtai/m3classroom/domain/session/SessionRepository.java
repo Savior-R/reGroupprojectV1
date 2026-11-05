@@ -27,4 +27,7 @@ public interface SessionRepository {
     List<Session> findByStatusIn(Collection<SessionStatus> statuses);
 
     long countByStudentAndTask(AccountId studentAccountId, TaskId taskId);
+
+    /** Deletes a superseded attempt; recordings and derived rows cascade. */
+    void deleteById(SessionId id);
 }

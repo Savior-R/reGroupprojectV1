@@ -68,6 +68,11 @@ public final class InMemorySessionRepository implements SessionRepository {
                 .count();
     }
 
+    @Override
+    public void deleteById(SessionId id) {
+        sessions.remove(id);
+    }
+
     public void clear() {
         sessions.clear();
     }

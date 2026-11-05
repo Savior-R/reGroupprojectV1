@@ -76,6 +76,11 @@ public class SessionRepositoryAdapter implements SessionRepository {
                 studentAccountId.value(), taskId.value());
     }
 
+    @Override
+    public void deleteById(SessionId id) {
+        repository.deleteById(id.value());
+    }
+
     private SessionEntity toEntity(Session session) {
         SessionEntity entity = new SessionEntity();
         entity.setId(session.id().value());

@@ -214,5 +214,10 @@ class ClassroomWebSocketHandlerTest {
         public long countByStudentAndTask(AccountId studentAccountId, TaskId taskId) {
             return delegate.countByStudentAndTask(studentAccountId, taskId);
         }
+
+        @Override
+        public void deleteById(SessionId id) {
+            delegate.deleteById(id);
+        }
     }
 }
