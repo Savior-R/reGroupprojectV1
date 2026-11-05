@@ -38,6 +38,10 @@
   20 条）；`SessionView.last_seq` 对活跃 actor 返回内存 `lastSeq()`。
 - M3-T19 验收：`session.resume {recording_state=lost}`、页面刷新 / grace 超时、
   正常 `teacher.end_session` 不 failed。
+- REST `end` 终态 flush 失败验收（最终审查修复）：`SessionEndPersistenceFailureIT`
+  验证 `session.ended` 关键 flush 失败时命令抛 `SESSION_FAILED`、registry 派生的
+  `failed` 行在 `DomainException` 传播时仍提交、actor 被移出 registry、writer 记录到
+  终态 flush 尝试。
 - 多轮对话终止路径缺口补测：null / 重复 `dialogue_id`、`ask_student_question`
   与 tick 超时终止对话。
 - 05A / implementation 04 文档、证据文件、进度看板。
@@ -72,7 +76,7 @@ m3classroom/domain/recording/` 下 3 个类 / 13 条用例），它们会进入�
 | 写入端口（Task 1） | `application/port/ContextPersistenceWriter`；`DirectContextPersistenceWriter` 直写 `SessionEventStore` / `SessionTextStore`；`PersistenceFlushException` 携带 `SessionId` |
 | Actor 写路径（Task 1） | `SessionActor.append` / 文本保存 / `forceFlush` 全部走 writer；`SessionContext` 增加插入有序 `texts` 列表与 `texts(speakerType)`；`recentTeacherTexts` 读内存最近 20 条 |
 | 终态 flush（Task 2） | `appendCritical`：入队 → `persistence.flush` → 成功后才 `push`；`endClassroomSession` / `endInterview` 的 `session.ended` 用 `appendCritical`，失败走 `persistenceFailed`；命令返回 `SESSION_FAILED`；`interview.ended` 与 `session.failed` 走普通 `append`，由同一轮终态 flush drain；`fail` / `cancel` 清理后 best-effort flush |
-| 异步 writer（Task 3） | `JpaContextPersistenceWriter`：每 session `ArrayDeque` + flush 锁 + 字节估算；1 秒定时、100 条、64 KB 触发；`flushAsync` 每 session 最多一个在途任务；10 000 条有界；失败重试 3 次（50 / 100 / 200 ms）后抛 `PersistenceFlushException`，原批按序回队首 |
+| 异步 writer（Task 3） | `JpaContextPersistenceWriter`：每 session `ArrayDeque` + flush 锁 + UTF-8 字节估算；1 秒定时、100 条、64 KB 触发；`flushAsync` 每 session 最多一个在途任务；10 000 条有界；失败重试 3 次（50 / 100 / 200 ms）后抛 `PersistenceFlushException`，原批按序回队首 |
 | 批次事务（Task 3） | `JpaSessionBatchStore.write` 单事务：先 `saveAll` texts 后批量 events；`SessionEventStore.appendAll` 单次 JDBC batch；`SessionTextStore.saveAll` 用 `repository.saveAll` |
 | 事务隔离（Task 3 fix） | `JpaSessionBatchStore.write` 使用 `@Transactional(propagation = REQUIRES_NEW)`；终态 flush 在终态行保存前完成，批次失败只回滚自身，不污染 REST 命令事务 |
 | Registry 接线（Task 3） | 生产构造器注入 `ContextPersistenceWriter`；`buildActor` 用 `textStore.bySession(id, "teacher")` 回填教师文本；`remove` / `removeIfPersistedTerminal` / 成功终态分支 `closeWriter` best-effort 关闭队列 |
@@ -93,6 +97,7 @@ Task 4 / Task 5 属于验收 / 覆盖补测，行为已存在，因此没有生�
 | 3 修复：`REQUIRES_NEW` / 合并 flush | `0591f6c` | `JpaSessionBatchStoreTransactionIT`（1） | 临时把 batch store 改回默认 `REQUIRED`，回归用例在外层事务保存 marker 时因连接事务已中止而失败（`JpaSystemException → GenericJDBCException → PSQLException`）；恢复 `REQUIRES_NEW` 后通过 | 定向 52 tests + `ArchitectureTest` 3 = 55；更广回归 79 tests，0/0/0 |
 | 4 M3-T19 验收 | `e88cc61` | `SessionReconnectTest`（21）、`ClassroomWebSocketIT`（16） | 无生产 RED：录制丢失 / grace / 正常结束行为已存在，本次补验收断言 | 21/21、16/16；`ArchitectureTest` 3/3 |
 | 5 多轮对话终止缺口 | `fa4895b` / `ffa3c4b` | `SessionActorDialogueTest`（21） | 无生产 RED：既有实现已满足终止 / 校验行为，属覆盖缺口 | 21/21 |
+| 最终审查修复：REST 结束失败验收与准确性 | `3561653` | `SessionEndPersistenceFailureIT`（2）、`JpaContextPersistenceWriterTest`（+2，共 7） | 新 IT 在临时移除 `@Transactional(noRollbackFor = DomainException.class)` 后失败：`expected: FAILED but was: IN_PROGRESS`；临时移除 registry 终态行 save 同样失败（actor 已移除但 DB 行仍 `in_progress`）。UTF-8 64 KB 用例在按字符计数时保持缓冲，不触发写入。 | 定向 `SessionEndPersistenceFailureIT` 2/2 + `JpaContextPersistenceWriterTest` 7/7；全量 72 类 / 538 条，0/0/0 |
 
 Task 5 控制器裁决（覆盖切片设计 §7.3 的原始描述）：`teacher.end_dialogue` 的
 `dialogue_id` 是可选字段；活动对话中传 null 必须成功结束对话（
@@ -108,24 +113,25 @@ docker compose --profile test run --rm test \
   gradle clean test --no-daemon --console=plain
 ```
 
-结果：`BUILD SUCCESSFUL in 1m 8s`，`EXIT=0`。
+结果：`BUILD SUCCESSFUL in 1m 17s`，`EXIT=0`。
 
 Gradle XML（`server/build/test-results/test/TEST-*.xml`）汇总：
 
 | 口径 | 测试类 | tests | failures | errors | skipped |
 |---|---:|---:|---:|---:|---:|
-| 同一工作区全量 | **71** | **534** | **0** | **0** | **0** |
-| M3B 提交范围 | 68 | 521 | 0 | 0 | 0 |
+| 同一工作区全量 | **72** | **538** | **0** | **0** | **0** |
+| M3B 提交范围 | 69 | 525 | 0 | 0 | 0 |
 | M3C 未跟踪测试（不提交） | 3 | 13 | 0 | 0 | 0 |
 
 M3C 未跟踪测试明细：`RecordingTest` 8、`RecordingObjectKeyBuilderTest` 2、
 `RequiredStreamsTest` 3。相对上一基线（多轮对话切片：全量 67 类 / 512 条，
-M3B 口径 64 类 / 499 条），本切片新增 **4 个测试类 / 22 条用例**：
+M3B 口径 64 类 / 499 条），本切片新增 **5 个测试类 / 26 条用例**：
 
 - `SessionActorPersistenceTest` 6（Task 1 3 + Task 2 3）
-- `JpaContextPersistenceWriterTest` 5
+- `JpaContextPersistenceWriterTest` 7（最终审查修复新增 UTF-8 64 KB 与 10 000 条上限各 1 条）
 - `JpaSessionBatchStoreTransactionIT` 1
 - `ContextPersistenceWriterIT` 2
+- `SessionEndPersistenceFailureIT` 2（最终审查修复新增 REST 结束失败 + 活跃 `last_seq`）
 - `SessionReconnectTest` +2（19 → 21）
 - `ClassroomWebSocketIT` +2（14 → 16）
 - `SessionActorDialogueTest` +4（17 → 21）
@@ -146,16 +152,16 @@ M3B 口径 64 类 / 499 条），本切片新增 **4 个测试类 / 22 条用例
 | 每 session 有序队列 | `JpaContextPersistenceWriter.SessionQueue`；actor 串行入队；`JpaContextPersistenceWriterTest.flushWritesBufferedEventsAndTexts` |
 | 1 秒触发 | `@PostConstruct` 固定延迟调度；`ContextPersistenceWriterIT.scheduledFlushPersistsWithoutManualCall`（不手动 flush，5 秒内可读） |
 | 100 条触发 | `enqueue` 阈值分支；`JpaContextPersistenceWriterTest.hundredItemsTriggerAsyncFlush` |
-| 64 KB 触发 | 与 100 条共用 `thresholdReached` 分支；由代码检查覆盖，无专门用例（见 §6） |
+| 64 KB 触发 | 与 100 条共用 `thresholdReached` 分支；按 UTF-8 字节估算；`JpaContextPersistenceWriterTest.chineseTextSizeIsMeasuredInUtf8BytesFor64KbTrigger`（22 000 个汉字 = 66 000 字节） |
 | 终态强制 flush | `SessionActor.appendCritical`；`SessionActorPersistenceTest.endSessionFlushesBeforePushingEndedAndReturnsOk`、`endSessionFlushFailureMarksFailedAndDoesNotPushEnded`、`failFlushFailureStillCancelsTimersAndNotifiesRegistry` |
 | flush 重试 / 回队首 | 3 次重试 + 原序回队；`flushFailureRetriesThenThrowsAndKeepsPending`、`asyncFailureKeepsBatchForNextFlush` |
-| flush 失败 → failed / `SESSION_FAILED` | `persistenceFailed`；`endSessionFlushFailureMarksFailedAndDoesNotPushEnded` |
+| flush 失败 → failed / `SESSION_FAILED` | `persistenceFailed`；`SessionActorPersistenceTest.endSessionFlushFailureMarksFailedAndDoesNotPushEnded`；REST 端到端 `SessionEndPersistenceFailureIT.restEndCommitsFailedRowAndEvictsActorWhenTerminalFlushFails` |
 | 批次事务 / 幂等 | `JpaSessionBatchStore` 先 texts 后 events；事件 `ON CONFLICT DO NOTHING`、文本主键 upsert；`ContextPersistenceWriterIT.manualFlushPersistsEventAndText` |
 | `REQUIRES_NEW` 隔离 | `JpaSessionBatchStoreTransactionIT.failedBatchWriteDoesNotPoisonOuterTransaction` |
-| 有界队列 | 10 000 条上限，溢出先同步 flush 再抛异常；由代码检查覆盖，无专门用例（见 §6） |
+| 有界队列 | 10 000 条上限，溢出先同步 flush 再抛异常；`JpaContextPersistenceWriterTest.queueAtCapacityFlushesSynchronouslyAndPropagatesFailure` |
 | 内存文本上下文 | `SessionContext.addText` / `texts("teacher")`；`SessionActorPersistenceTest.teacherFinalStillReachesNextContentRequestBeforeFlush` |
 | 普通命令不强制 flush | `SessionActorPersistenceTest.nonTerminalCommandsDoNotForceFlush` |
-| 活跃 `last_seq` | `toView` 优先 `lastSeq()`；由代码检查覆盖 |
+| 活跃 `last_seq` | `toView` 优先 `lastSeq()`；`SessionEndPersistenceFailureIT.restViewReportsLiveLastSeqWhileAsyncWritesAreBuffered`（writer 未落库时 REST `last_seq` 仍不回退） |
 | 提交前 flush 顺序 | **deferred M3C**：M3B 提供 `forceFlush()` 接缝；submission / required_streams / `submission.created` 同事务顺序尚未实现，故 T16 的“提交前 flush 顺序”一项不计入本轮完成 |
 
 ### 5.2 M3-T19（页面刷新 / recording lost / grace 超时 → failed；正常 ended 不 failed）
@@ -182,28 +188,38 @@ M3B 口径 64 类 / 499 条），本切片新增 **4 个测试类 / 22 条用例
 3. **`REQUIRES_NEW` 独立提交**：批次事务独立于外层 REST 命令事务。若外层事务
    因无关原因回滚，已 flush 的事件 / 文本仍保留。这是终态 flush 持久性的有意
    取舍：只有 `session.ended` 是 flush-before-push；`interview.ended` 与
-   `session.failed` 在终态 flush 运行时可能已经推送。因此终态 flush 失败时
-   （如 `session.ended` flush 失败转 failed）会在这些事件之后追加并推送
-   `session.failed`，且不会重复推送 `session.ended`；这样可避免批次失败把命令
-   事务标记为 rollback-only。
+   `session.failed` 在终态 flush 运行时可能已经推送。仅当 `session.ended` 的
+   关键 flush 失败并进入 `persistenceFailed` 路径时，才会在已推送的
+   `interview.ended` / `session.failed`（如适用）之后追加并推送
+   `session.failed`，且不会重复推送 `session.ended`；普通异步 flush 失败与
+   `interview.ended` 之后的正常终态 flush 失败不触发该追加路径。这样可避免
+   批次失败把命令事务标记为 rollback-only。
 4. **教师文本上下文在 actor 重建时回填**：活跃 actor 的 LLM 上下文读内存；
    `SessionRuntimeRegistry.buildActor` 在重建（重连 / 终态对账）时从
    `m3.session_texts` 读取 `speaker_type=teacher` 的文本回填。Java 进程重启后
    `in_progress` session 仍标记 failed（不做恢复），因此该回填只覆盖工作区内
    的 actor 重建。
-5. **未专门覆盖的分支**：64 KB 内容量触发与 10 000 条队列上限没有独立用例
-   （与 100 条触发共用同一阈值 / 溢出分支，由代码检查确认）；异步 flush 合并
-   （每 session 单在途任务）无并发用例；重试次数由代码检查与 `failNext(4)`
-   用例间接证明。以上为已知测试缺口，不改变本轮测试层级判定。
+5. **未专门覆盖的分支**：最终审查修复已补 64 KB（UTF-8 字节）与 10 000 条上限
+   用例；溢出用例只覆盖“溢出同步 flush 失败”路径，“flush 成功但并发入队仍满”
+   的 `持久化队列已满` 分支仍无并发用例。异步 flush 合并（每 session 单在途
+   任务）无并发用例；重试次数由代码检查与 `failNext(4)` 用例间接证明。以上为
+   已知测试缺口，不改变本轮测试层级判定。
 6. **`session.failed` 推送顺序**：`persistenceFailed` 先追加 / 推送
    `session.failed`，再 best-effort flush；只有 `session.ended` 保证
    flush-before-push。该行为在 Task 2 报告中记录，属非阻塞。
 7. **关闭 / 应用停止**：`close` / `@PreDestroy` 为 best-effort flush，失败只
    记录日志并丢弃尾部；Java 重启恢复不在范围内。
+8. **失败终态不能以事件存在性判断**：`session.ended` 的关键 flush 失败后，
+   `persistenceFailed` 会 best-effort flush `session.failed`；若后续重试成功，
+   同一队列里已入队的 `session.ended` 也可能最终落库，而客户端只看到过
+   `session.failed`。M4 / 回放必须依据 session 状态（`failed`）判断终态，不得
+   以某个终态事件是否存在作为成功 / 结束依据。
 
 ## 7. 变更文件
 
-本切片提交（`9487b5a..ffa3c4b`，共 22 个文件）：
+本切片提交（`9487b5a..ffa3c4b`，共 22 个文件）；最终审查修复提交
+`3561653` 在此基础上前述生产文件的准确性修正与测试补充（新增
+`SessionEndPersistenceFailureIT`，并调整 `JpaContextPersistenceWriterTest`）：
 
 生产代码（14 个文件）：
 
@@ -224,7 +240,7 @@ server/src/main/java/com/shijiangtai/m3classroom/infrastructure/persistence/jpa/
 server/src/main/java/com/shijiangtai/m3classroom/infrastructure/persistence/jpa/SessionTextStoreAdapter.java
 ```
 
-测试（8 个文件；其中 7 个测试类 + 1 个测试支持类）：
+测试（9 个文件；其中 8 个测试类 + 1 个测试支持类）：
 
 ```text
 server/src/test/java/com/shijiangtai/m3classroom/application/SessionActorPersistenceTest.java
@@ -233,6 +249,7 @@ server/src/test/java/com/shijiangtai/m3classroom/application/SessionReconnectTes
 server/src/test/java/com/shijiangtai/m3classroom/infrastructure/persistence/jpa/JpaContextPersistenceWriterTest.java
 server/src/test/java/com/shijiangtai/m3classroom/infrastructure/persistence/jpa/JpaSessionBatchStoreTransactionIT.java
 server/src/test/java/com/shijiangtai/m3classroom/persistence/ContextPersistenceWriterIT.java
+server/src/test/java/com/shijiangtai/m3classroom/persistence/SessionEndPersistenceFailureIT.java
 server/src/test/java/com/shijiangtai/m3classroom/support/BufferingContextPersistenceWriter.java
 server/src/test/java/com/shijiangtai/m3classroom/ws/ClassroomWebSocketIT.java
 ```
@@ -245,6 +262,9 @@ docs/implementation/04-M3-实现设计.md
 docs/team/evidence/2026-11-05-m3b-persistence-t19.md
 docs/team/02-进度看板.md
 ```
+
+最终审查修复同时更新 `docs/superpowers/plans/2026-11-05-m3b-persistence-t19.md`
+（Task 6 的 M3B 测试完成度改为 60%，与进度看板 3/5 列一致）；进度看板不变。
 
 ## 8. 进度口径
 

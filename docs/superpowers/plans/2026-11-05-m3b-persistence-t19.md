@@ -969,7 +969,8 @@ In §9.2 / §9.3:
 - [ ] **Step 4: Update the progress board**
 
 Only the M3B test row and a new §5 record:
-- M3B test completion 80% (UT / IT / contract done; E2E and performance/security missing).
+- M3B test completion 60% (UT / IT / contract done; E2E and performance/security missing).
+  This matches the board's 3/5 test-layer columns.
 - M3B blocker: “P0 后端完成（含异步持久化）；前端、M3C、E2E/NFR 待续”.
 - Do not change G2–G8 or the 10% module completion.
 
