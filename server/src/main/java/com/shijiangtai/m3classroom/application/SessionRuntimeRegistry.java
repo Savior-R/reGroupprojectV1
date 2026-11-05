@@ -271,6 +271,11 @@ public final class SessionRuntimeRegistry {
             return;
         }
         stopTick(id);
+        // Close before the terminal-row save: the close flush runs in its own REQUIRES_NEW
+        // transaction and must not contend with the uncommitted UPDATE lock the caller's
+        // transaction holds on this session row. The row already exists from create/start, so
+        // the events FK stays satisfiable.
+        closeWriter(id);
         try {
             sessionRepository.save(actor.session());
         } catch (RuntimeException exception) {
@@ -280,7 +285,6 @@ public final class SessionRuntimeRegistry {
             return;
         }
         actors.remove(id, actor);
-        closeWriter(id);
     }
 
     /**

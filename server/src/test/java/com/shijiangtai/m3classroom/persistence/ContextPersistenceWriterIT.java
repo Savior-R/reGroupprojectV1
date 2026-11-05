@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,6 +41,18 @@ class ContextPersistenceWriterIT extends PostgresIntegrationTest {
 
     @Autowired
     private SessionTextStore textStore;
+
+    private SessionId currentSessionId;
+
+    @AfterEach
+    void closeWriterQueue() {
+        // The writer bean is shared for the whole context; close the queue before @Sql truncates
+        // the session rows so a leftover scheduler retry cannot hit a missing FK target.
+        if (currentSessionId != null) {
+            writer.close(currentSessionId);
+            currentSessionId = null;
+        }
+    }
 
     @Test
     void manualFlushPersistsEventAndText() {
@@ -93,6 +106,7 @@ class ContextPersistenceWriterIT extends PostgresIntegrationTest {
                 VALUES (?, 'task', ?, ?, ?, 'free', 'in_progress')
                 """, sessionId.value(), taskId.value(), TestFixtures.COURSE_ID,
                 TestFixtures.STUDENT_ID);
+        currentSessionId = sessionId;
         return sessionId;
     }
 

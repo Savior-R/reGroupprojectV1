@@ -43,7 +43,7 @@ class JpaContextPersistenceWriterTest {
     @Test
     void flushFailureRetriesThenThrowsAndKeepsPending() {
         SessionId id = new SessionId(UUID.randomUUID());
-        store.failNext(3);
+        store.failNext(4);
         writer.appendEvent(event(id, 1));
 
         assertThatThrownBy(() -> writer.flush(id))
@@ -69,13 +69,13 @@ class JpaContextPersistenceWriterTest {
     @Test
     void asyncFailureKeepsBatchForNextFlush() {
         SessionId id = new SessionId(UUID.randomUUID());
-        store.failNext(3);
+        store.failNext(4);
 
         for (int i = 1; i <= 100; i++) {
             writer.appendEvent(event(id, i));
         }
 
-        // The inline executor ran the size-triggered flush and its three attempts failed, so the
+        // The inline executor ran the size-triggered flush and its four attempts failed, so the
         // whole batch was requeued and nothing reached the store.
         assertThat(store.allEvents()).isEmpty();
 

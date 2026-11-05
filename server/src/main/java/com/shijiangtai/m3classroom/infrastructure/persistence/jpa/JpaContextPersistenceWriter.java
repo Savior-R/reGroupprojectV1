@@ -21,6 +21,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
@@ -55,10 +56,11 @@ public class JpaContextPersistenceWriter implements ContextPersistenceWriter {
     private static final int BATCH_BYTES = 64 * 1024;
     private static final int QUEUE_CAPACITY = 10_000;
     private static final int MAX_DRAIN_ITEMS = 500;
-    private static final int MAX_ATTEMPTS = 3;
+    /** One initial attempt plus the three retries documented in 05A §9.3. */
+    private static final int MAX_ATTEMPTS = 4;
     private static final long FLUSH_INTERVAL_MS = 1_000L;
     private static final long[] PRODUCTION_RETRY_BACKOFF_MS = {50L, 100L, 200L};
-    private static final long[] NO_RETRY_BACKOFF_MS = {0L, 0L, 0L};
+    private static final long[] NO_RETRY_BACKOFF_MS = {0L, 0L, 0L, 0L};
     private static final int FLUSH_THREADS = 2;
 
     private final SessionBatchStore store;
@@ -204,6 +206,12 @@ public class JpaContextPersistenceWriter implements ContextPersistenceWriter {
     }
 
     private void flushAsync(SessionId sessionId) {
+        SessionQueue queue = queues.get(sessionId);
+        // Coalesce scheduler + size triggers into at most one queued/running task per session.
+        // A forced flush(SessionId) bypasses this guard and drains under the flush lock.
+        if (queue == null || !queue.flushScheduled.compareAndSet(false, true)) {
+            return;
+        }
         try {
             flushExecutor.execute(() -> {
                 try {
@@ -215,9 +223,12 @@ public class JpaContextPersistenceWriter implements ContextPersistenceWriter {
                 } catch (RuntimeException exception) {
                     LOG.error("Unexpected failure in async persistence flush for session {}",
                             sessionId.value(), exception);
+                } finally {
+                    queue.flushScheduled.set(false);
                 }
             });
         } catch (RejectedExecutionException exception) {
+            queue.flushScheduled.set(false);
             // Executor shut down (application stop): leave the batch for the next tick or drop it
             // with the process; never fail the actor's append.
             LOG.warn("Persistence flush executor rejected session {}", sessionId.value(),
@@ -351,6 +362,7 @@ public class JpaContextPersistenceWriter implements ContextPersistenceWriter {
     private static final class SessionQueue {
         private final ArrayDeque<Item> pending = new ArrayDeque<>();
         private final ReentrantLock flushLock = new ReentrantLock();
+        private final AtomicBoolean flushScheduled = new AtomicBoolean();
         private int bytes;
     }
 }
