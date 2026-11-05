@@ -211,6 +211,10 @@ public final class SessionActor {
      * invalidates in-flight timer generations, clears open hands and cancels every scheduled
      * task. A callback already running either finished before this lock or observes the
      * terminal status and becomes a no-op.
+     *
+     * <p>The best-effort flush runs <em>before</em> {@link #notifyStatusChanged()}: the registry
+     * reacts to the terminal status by closing (and thus releasing) the persistence queue, so
+     * flushing afterwards would find no queue and silently skip the retry.
      */
     public synchronized void cancel(Instant now) {
         Objects.requireNonNull(now, "now");
@@ -221,12 +225,12 @@ public final class SessionActor {
         dialogueAnswerId = null;
         dialogueAwaitingSinceMs = 0L;
         cancelAllTasks();
-        notifyStatusChanged();
         try {
             forceFlush();
         } catch (RuntimeException exception) {
             LOG.warn("Failed to flush cancelled session {}", session.id().value(), exception);
         }
+        notifyStatusChanged();
     }
 
     public synchronized CommandResult handle(SessionCommand command) {

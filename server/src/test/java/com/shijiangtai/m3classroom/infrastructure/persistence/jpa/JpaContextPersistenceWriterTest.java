@@ -87,6 +87,40 @@ class JpaContextPersistenceWriterTest {
     }
 
     @Test
+    void chineseTextSizeIsMeasuredInUtf8BytesFor64KbTrigger() {
+        SessionId id = new SessionId(UUID.randomUUID());
+        // 22 000 Chinese characters are 22 000 chars but 66 000 UTF-8 bytes: a char count stays
+        // below the 64 KB trigger and would leave this write buffered.
+        writer.saveText(text(id, "中".repeat(22_000)));
+
+        assertThat(store.writes()).hasSize(1);
+        assertThat(store.writes().get(0).texts()).hasSize(1);
+    }
+
+    @Test
+    void queueAtCapacityFlushesSynchronouslyAndPropagatesFailure() {
+        SessionId id = new SessionId(UUID.randomUUID());
+        // A discarding executor keeps the 100-item async trigger from draining the queue, so the
+        // 10 000-item cap is reached on the caller's thread.
+        JpaContextPersistenceWriter bounded = new JpaContextPersistenceWriter(store, command -> { });
+        store.failNext(Integer.MAX_VALUE);
+        for (int seq = 1; seq < 10_000; seq++) {
+            bounded.appendEvent(event(id, seq));
+        }
+
+        // The cap forces a synchronous drain on the caller's thread; a persistently failing store
+        // makes that overflow flush fail instead of letting the queue grow past 10 000.
+        assertThatThrownBy(() -> bounded.appendEvent(event(id, 10_000)))
+                .isInstanceOf(PersistenceFlushException.class);
+
+        // The failed overflow flush requeued its 500-item batch in order; close drains everything.
+        store.resetFailure();
+        bounded.close(id);
+        assertThat(store.allEvents()).extracting(SessionEvent::seq)
+                .containsExactlyElementsOf(LongStream.rangeClosed(1, 10_000).boxed().toList());
+    }
+
+    @Test
     void closeFlushesAndForgetsQueue() {
         SessionId id = new SessionId(UUID.randomUUID());
         writer.appendEvent(event(id, 1));
@@ -107,9 +141,13 @@ class JpaContextPersistenceWriterTest {
     }
 
     private static SessionText text(SessionId id) {
+        return text(id, "同学们好");
+    }
+
+    private static SessionText text(SessionId id, String value) {
         return new SessionText(
                 UUID.randomUUID(), id, "teacher", null, "asr", "utterance",
-                "同学们好", 0L, 100L, 0L, null, null, null, "final");
+                value, 0L, 100L, 0L, null, null, null, "final");
     }
 
     private record Write(List<SessionEvent> events, List<SessionText> texts) {

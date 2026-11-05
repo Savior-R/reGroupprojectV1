@@ -195,9 +195,12 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
 
     /**
      * Ending may legitimately fail with {@link ErrorCode#SESSION_FAILED} after the actor moved to
-     * {@code FAILED} and the registry persisted that row. Rolling back would leave the derived
-     * failed row uncommitted while the live actor has already been evicted, so domain errors
-     * still commit; genuine infrastructure errors keep the default rollback.
+     * {@code FAILED}, so every {@link DomainException} thrown by {@code end} must commit the
+     * transaction it already performed writes in. Those pre-throw writes are the registry's
+     * terminal session row (same transaction) and the terminal batch flush ({@code REQUIRES_NEW});
+     * rolling back would leave the derived {@code failed} row uncommitted while the live actor has
+     * already been evicted. Infrastructure failures that are not domain exceptions keep the
+     * default rollback behavior.
      */
     @Override
     @Transactional(noRollbackFor = DomainException.class)

@@ -14,10 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Persists a drained event/text batch in one transaction.
  *
- * <p>Texts are written before events: an event may reference a text through {@code text_id}
- * (05A §9.3). Event inserts are idempotent on {@code (session_id, seq)}; texts upsert by id via
- * {@code saveAll}. Either both writes commit or neither does, so a requeued batch can never leave
- * a half-persisted pair behind.
+ * <p>Texts are written before events as a consumer convention: some event payloads carry a
+ * {@code text_id} (for example {@code student.question} / {@code student.answer} / {@code
+ * student.follow_up}) and a consumer may resolve it as soon as the event is visible, but there is
+ * no database foreign key between events and texts. Event inserts are idempotent on
+ * {@code (session_id, seq)}; texts upsert by id via {@code saveAll}. Either both writes commit or
+ * neither does, so a requeued batch can never leave a half-persisted pair behind.
  *
  * <p>Each batch runs in its own {@code REQUIRES_NEW} transaction. A terminal flush executed from
  * inside a REST command transaction (for example {@code SessionApplicationServiceImpl.end}) must

@@ -288,9 +288,16 @@ public final class SessionRuntimeRegistry {
     }
 
     /**
-     * Releases the session's persistence queue after the actor is gone. A failed final flush is
-     * logged and swallowed: terminal state is already persisted (or deliberately kept live), and
-     * a writer failure must never fail the status transition that triggered the eviction.
+     * Performs a best-effort flush of the session's pending writes and releases its persistence
+     * queue. A failed final flush is logged and swallowed: terminal state is already persisted (or
+     * deliberately kept live), and a writer failure must never fail the status transition that
+     * triggered the eviction.
+     *
+     * <p>Call ordering differs by path. {@link #onStatusChanged} deliberately closes before the
+     * terminal-row save: the close flush runs in its own {@code REQUIRES_NEW} transaction and must
+     * not contend with the uncommitted UPDATE lock held by the caller's transaction.
+     * {@link #remove(SessionId)} and {@link #removeIfPersistedTerminal(SessionId)} close after the
+     * actor has been removed from the live map. Do not reorder these calls.
      */
     private void closeWriter(SessionId id) {
         try {

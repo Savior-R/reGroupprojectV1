@@ -8,6 +8,7 @@ import com.shijiangtai.m3classroom.domain.session.SessionText;
 import com.shijiangtai.shared.domain.SessionId;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
@@ -327,17 +328,26 @@ public class JpaContextPersistenceWriter implements ContextPersistenceWriter {
     }
 
     private static int estimateBytes(SessionEvent event) {
-        int bytes = 128 + event.type().length();
+        int bytes = 128 + utf8Length(event.type());
         for (Map.Entry<String, Object> entry : event.payload().entrySet()) {
-            bytes += entry.getKey().length();
+            bytes += utf8Length(entry.getKey());
             Object value = entry.getValue();
-            bytes += value == null ? 4 : String.valueOf(value).length();
+            bytes += value == null ? 4 : utf8Length(String.valueOf(value));
         }
         return bytes;
     }
 
     private static int estimateBytes(SessionText text) {
-        return 128 + text.text().length();
+        return 128 + utf8Length(text.text());
+    }
+
+    /**
+     * The 64 KB trigger is a byte threshold, not a character count: Chinese text is three UTF-8
+     * bytes per character, so counting {@link String#length()} would delay the flush until roughly
+     * three times the intended payload.
+     */
+    private static int utf8Length(String value) {
+        return value.getBytes(StandardCharsets.UTF_8).length;
     }
 
     private static ThreadFactory daemonThreadFactory(String prefix) {
