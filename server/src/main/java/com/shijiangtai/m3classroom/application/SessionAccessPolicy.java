@@ -3,6 +3,7 @@ package com.shijiangtai.m3classroom.application;
 import com.shijiangtai.m3classroom.application.port.CourseQueryPort;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
+import com.shijiangtai.m3classroom.domain.submission.SubmissionRepository;
 import com.shijiangtai.m3classroom.domain.task.CourseInfo;
 import com.shijiangtai.shared.application.AccountType;
 import com.shijiangtai.shared.application.CurrentUser;
@@ -16,17 +17,22 @@ import org.springframework.stereotype.Component;
  * Authorization rules for a task session (02 §4.3).
  *
  * <p>A student may only access their own session. A teacher in the session's course group may
- * read a submitted session only; teachers cannot read preparing / in-progress / ended sessions
- * and never mutate one. Administrators are always forbidden. A user whose school differs from
- * the session course's school gets {@link ErrorCode#CROSS_SCHOOL_ACCESS}.
+ * read a submitted session only, and only once the session is bound to a submission; teachers
+ * cannot read preparing / in-progress / ended / reviewing sessions and never mutate one.
+ * Administrators are always forbidden. A user whose school differs from the session course's
+ * school gets {@link ErrorCode#CROSS_SCHOOL_ACCESS}.
  */
 @Component
 public class SessionAccessPolicy {
 
     private final CourseQueryPort courseQueryPort;
+    private final SubmissionRepository submissionRepository;
 
-    public SessionAccessPolicy(CourseQueryPort courseQueryPort) {
+    public SessionAccessPolicy(
+            CourseQueryPort courseQueryPort, SubmissionRepository submissionRepository) {
         this.courseQueryPort = Objects.requireNonNull(courseQueryPort, "courseQueryPort");
+        this.submissionRepository = Objects.requireNonNull(
+                submissionRepository, "submissionRepository");
     }
 
     /** Read access: owner, or a course teacher when the session is submitted. */
@@ -47,7 +53,8 @@ public class SessionAccessPolicy {
         if (user.type() != AccountType.TEACHER) {
             throw forbidden("无权限访问会话");
         }
-        if (session.status() != SessionStatus.SUBMITTED) {
+        if (session.status() != SessionStatus.SUBMITTED
+                || !submissionRepository.existsBySession(session.id())) {
             throw forbidden("仅可查看已提交的会话");
         }
         if (course == null || !courseQueryPort.isTeacherInGroup(

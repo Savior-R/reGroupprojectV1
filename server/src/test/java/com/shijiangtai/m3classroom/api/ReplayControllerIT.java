@@ -1,6 +1,8 @@
 package com.shijiangtai.m3classroom.api;
 
+import static com.shijiangtai.m3classroom.TestFixtures.CLASS;
 import static com.shijiangtai.m3classroom.TestFixtures.SCHOOL_ID;
+import static com.shijiangtai.m3classroom.TestFixtures.STUDENT;
 import static com.shijiangtai.m3classroom.TestFixtures.STUDENT_ID;
 import static com.shijiangtai.m3classroom.TestFixtures.STUDENT2_ID;
 import static com.shijiangtai.m3classroom.TestFixtures.TEACHER_ID;
@@ -24,6 +26,8 @@ import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionEvent;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.session.SessionText;
+import com.shijiangtai.m3classroom.domain.submission.Submission;
+import com.shijiangtai.m3classroom.domain.submission.SubmissionRepository;
 import com.shijiangtai.m3classroom.infrastructure.storage.InMemoryRecordingObjectStorage;
 import com.shijiangtai.m3classroom.persistence.PostgresIntegrationTest;
 import com.shijiangtai.shared.domain.SessionId;
@@ -72,6 +76,9 @@ class ReplayControllerIT extends PostgresIntegrationTest {
 
     @Autowired
     private SessionTextStore textStore;
+
+    @Autowired
+    private SubmissionRepository submissionRepository;
 
     private TaskId taskId;
 
@@ -251,6 +258,28 @@ class ReplayControllerIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void submittedSessionWithoutSubmissionRowIsHiddenFromTeacher() throws Exception {
+        String sessionId = createSession();
+        uploadAllStreams(sessionId);
+
+        Session session = sessionRepository.findById(sessionId(sessionId)).orElseThrow();
+        session.start(NOW);
+        session.end(END);
+        session.submit(END);
+        sessionRepository.save(session);
+
+        mockMvc.perform(asTeacher(get("/api/v1/sessions/{sessionId}/replay", sessionId)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(asTeacher(get("/api/v1/sessions/{sessionId}/events", sessionId)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(asStudent(get("/api/v1/sessions/{sessionId}/replay", sessionId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.session_id").value(sessionId));
+    }
+
+    @Test
     void unknownSessionAndMissingIdentityAreRejected() throws Exception {
         mockMvc.perform(asStudent(get("/api/v1/sessions/{sessionId}/replay",
                         UUID.randomUUID())))
@@ -308,6 +337,8 @@ class ReplayControllerIT extends PostgresIntegrationTest {
         session.end(END);
         session.submit(END);
         sessionRepository.save(session);
+        submissionRepository.save(Submission.create(
+                UUID.randomUUID(), taskId, STUDENT, session.id(), CLASS, END));
     }
 
     private void appendEvents(SessionId sessionId) {

@@ -26,10 +26,12 @@ import com.shijiangtai.m3classroom.domain.session.SessionEvent;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.session.SessionText;
 import com.shijiangtai.m3classroom.domain.session.SessionType;
+import com.shijiangtai.m3classroom.domain.submission.Submission;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.m3classroom.support.InMemorySessionEventStore;
 import com.shijiangtai.m3classroom.support.InMemorySessionRepository;
 import com.shijiangtai.m3classroom.support.InMemorySessionTextStore;
+import com.shijiangtai.m3classroom.support.InMemorySubmissionRepository;
 import com.shijiangtai.shared.application.AccountType;
 import com.shijiangtai.shared.application.CurrentUser;
 import com.shijiangtai.shared.domain.AccountId;
@@ -60,6 +62,7 @@ class ReplayQueryServiceTest {
     private RecordingStorageFake storage;
     private InMemorySessionEventStore events;
     private InMemorySessionTextStore texts;
+    private InMemorySubmissionRepository submissions;
     private ReplayQueryService service;
 
     @BeforeEach
@@ -69,9 +72,10 @@ class ReplayQueryServiceTest {
         storage = new RecordingStorageFake();
         events = new InMemorySessionEventStore();
         texts = new InMemorySessionTextStore();
+        submissions = new InMemorySubmissionRepository();
         service = new ReplayQueryServiceImpl(
                 sessions, recordings, storage, events, texts,
-                new SessionAccessPolicy(coursePort()));
+                new SessionAccessPolicy(coursePort(), submissions));
     }
 
     @Test
@@ -294,6 +298,10 @@ class ReplayQueryServiceTest {
             session.submit(END);
         }
         sessions.save(session);
+        if (status == SessionStatus.SUBMITTED) {
+            submissions.save(Submission.create(
+                    UUID.randomUUID(), session.taskId(), STUDENT, session.id(), null, END));
+        }
         return session;
     }
 

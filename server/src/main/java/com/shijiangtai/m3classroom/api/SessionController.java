@@ -2,6 +2,7 @@ package com.shijiangtai.m3classroom.api;
 
 import com.shijiangtai.m3classroom.application.SessionApplicationService;
 import com.shijiangtai.m3classroom.application.view.SessionView;
+import com.shijiangtai.m3classroom.application.view.SubmissionView;
 import com.shijiangtai.shared.application.CurrentUserProvider;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -61,5 +62,11 @@ public class SessionController {
         sessionApplicationService.cancel(
                 currentUserProvider.require(), requestMapper.toSessionId(sessionId));
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/sessions/{sessionId}/submit")
+    public SubmissionView submit(@PathVariable UUID sessionId) {
+        return sessionApplicationService.submit(
+                currentUserProvider.require(), requestMapper.toSessionId(sessionId));
     }
 }

@@ -14,8 +14,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.session.SessionType;
+import com.shijiangtai.m3classroom.domain.submission.Submission;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.m3classroom.support.FakeCourseQueryPort;
+import com.shijiangtai.m3classroom.support.InMemorySubmissionRepository;
 import com.shijiangtai.shared.domain.CourseId;
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
@@ -30,12 +32,14 @@ class RecordingAccessPolicyTest {
 
     private static final Instant NOW = Instant.parse("2026-11-05T00:00:00Z");
 
+    private InMemorySubmissionRepository submissions;
     private RecordingAccessPolicy policy;
 
     @BeforeEach
     void setUp() {
         FakeCourseQueryPort courses = coursePort();
-        policy = new RecordingAccessPolicy(new SessionAccessPolicy(courses));
+        submissions = new InMemorySubmissionRepository();
+        policy = new RecordingAccessPolicy(new SessionAccessPolicy(courses, submissions));
     }
 
     @Test
@@ -58,8 +62,17 @@ class RecordingAccessPolicyTest {
 
     @Test
     void courseTeacherMayReadSubmittedSession() {
-        assertThatCode(() -> policy.requireRead(teacher(), session(SessionStatus.SUBMITTED)))
-                .doesNotThrowAnyException();
+        Session session = session(SessionStatus.SUBMITTED);
+        submissions.save(Submission.create(
+                UUID.randomUUID(), session.taskId(), STUDENT, session.id(), null, NOW));
+
+        assertThatCode(() -> policy.requireRead(teacher(), session)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void courseTeacherCannotReadSubmittedSessionWithoutSubmission() {
+        assertCode(() -> policy.requireRead(teacher(), session(SessionStatus.SUBMITTED)),
+                ErrorCode.FORBIDDEN);
     }
 
     @Test
@@ -70,8 +83,11 @@ class RecordingAccessPolicyTest {
 
     @Test
     void teacherOutsideCourseGroupIsForbidden() {
-        assertCode(() -> policy.requireRead(otherTeacher(), session(SessionStatus.SUBMITTED)),
-                ErrorCode.FORBIDDEN);
+        Session session = session(SessionStatus.SUBMITTED);
+        submissions.save(Submission.create(
+                UUID.randomUUID(), session.taskId(), STUDENT, session.id(), null, NOW));
+
+        assertCode(() -> policy.requireRead(otherTeacher(), session), ErrorCode.FORBIDDEN);
     }
 
     @Test

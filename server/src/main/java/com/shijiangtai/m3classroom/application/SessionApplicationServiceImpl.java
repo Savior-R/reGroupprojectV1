@@ -4,6 +4,7 @@ import com.shijiangtai.m3classroom.application.port.CourseQueryPort;
 import com.shijiangtai.m3classroom.application.port.RecordingLifecyclePort;
 import com.shijiangtai.m3classroom.application.port.SessionEventStore;
 import com.shijiangtai.m3classroom.application.view.SessionView;
+import com.shijiangtai.m3classroom.application.view.SubmissionView;
 import com.shijiangtai.m3classroom.domain.recording.StreamType;
 import com.shijiangtai.m3classroom.domain.session.CommandResult;
 import com.shijiangtai.m3classroom.domain.session.Session;
@@ -52,6 +53,7 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
     private final SessionAccessPolicy sessionAccessPolicy;
     private final SessionRepository sessionRepository;
     private final SessionEventStore eventStore;
+    private final SubmissionService submissionService;
     private final SessionRuntimeRegistry runtimeRegistry;
     private final RecordingLifecyclePort recordingLifecyclePort;
     private final SessionStartGuard startGuard;
@@ -66,6 +68,7 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
             SessionAccessPolicy sessionAccessPolicy,
             SessionRepository sessionRepository,
             SessionEventStore eventStore,
+            SubmissionService submissionService,
             SessionRuntimeRegistry runtimeRegistry,
             RecordingLifecyclePort recordingLifecyclePort,
             SessionStartGuard startGuard,
@@ -80,6 +83,8 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
                 sessionAccessPolicy, "sessionAccessPolicy");
         this.sessionRepository = Objects.requireNonNull(sessionRepository, "sessionRepository");
         this.eventStore = Objects.requireNonNull(eventStore, "eventStore");
+        this.submissionService = Objects.requireNonNull(
+                submissionService, "submissionService");
         this.runtimeRegistry = Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
         this.recordingLifecyclePort = Objects.requireNonNull(
                 recordingLifecyclePort, "recordingLifecyclePort");
@@ -241,6 +246,11 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
         sessionRepository.save(live);
         runtimeRegistry.remove(sessionId);
         recordingLifecyclePort.abortAll(sessionId);
+    }
+
+    @Override
+    public SubmissionView submit(CurrentUser student, SessionId sessionId) {
+        return submissionService.submit(student, sessionId);
     }
 
     private Session findSession(SessionId sessionId) {

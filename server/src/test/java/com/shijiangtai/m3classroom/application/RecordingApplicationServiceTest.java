@@ -36,6 +36,7 @@ import com.shijiangtai.m3classroom.domain.task.TaskSnapshot;
 import com.shijiangtai.m3classroom.domain.task.TaskSnapshotFactory;
 import com.shijiangtai.m3classroom.infrastructure.storage.InMemoryRecordingObjectStorage;
 import com.shijiangtai.m3classroom.support.InMemorySessionRepository;
+import com.shijiangtai.m3classroom.support.InMemorySubmissionRepository;
 import com.shijiangtai.m3classroom.support.InMemoryTaskRepository;
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
@@ -70,7 +71,8 @@ class RecordingApplicationServiceTest {
         sessions = new InMemorySessionRepository();
         recordings = new InMemoryRecordingRepository();
         storage = new InMemoryRecordingObjectStorage();
-        accessPolicy = new RecordingAccessPolicy(new SessionAccessPolicy(coursePort()));
+        accessPolicy = new RecordingAccessPolicy(
+                new SessionAccessPolicy(coursePort(), new InMemorySubmissionRepository()));
         service = new RecordingApplicationServiceImpl(
                 sessions, tasks, recordings, storage, accessPolicy,
                 UUID::randomUUID, () -> NOW);

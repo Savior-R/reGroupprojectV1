@@ -14,8 +14,10 @@ import com.shijiangtai.m3classroom.TestFixtures;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.session.SessionType;
+import com.shijiangtai.m3classroom.domain.submission.Submission;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.m3classroom.support.FakeCourseQueryPort;
+import com.shijiangtai.m3classroom.support.InMemorySubmissionRepository;
 import com.shijiangtai.shared.application.AccountType;
 import com.shijiangtai.shared.application.CurrentUser;
 import com.shijiangtai.shared.domain.AccountId;
@@ -35,12 +37,14 @@ class SessionAccessPolicyTest {
     private static final Instant NOW = Instant.parse("2026-11-04T00:00:00Z");
 
     private FakeCourseQueryPort courses;
+    private InMemorySubmissionRepository submissions;
     private SessionAccessPolicy policy;
 
     @BeforeEach
     void setUp() {
         courses = coursePort();
-        policy = new SessionAccessPolicy(courses);
+        submissions = new InMemorySubmissionRepository();
+        policy = new SessionAccessPolicy(courses, submissions);
     }
 
     @Test
@@ -56,9 +60,18 @@ class SessionAccessPolicyTest {
     }
 
     @Test
-    void teacherMayReadSubmittedSession() {
-        assertThatCode(() -> policy.requireRead(teacher(), session(SessionStatus.SUBMITTED)))
-                .doesNotThrowAnyException();
+    void teacherMayReadSubmittedSessionBoundToSubmission() {
+        Session session = session(SessionStatus.SUBMITTED);
+        seedSubmission(session);
+
+        assertThatCode(() -> policy.requireRead(teacher(), session)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void teacherCannotReadSubmittedSessionWithoutSubmission() {
+        Session session = session(SessionStatus.SUBMITTED);
+
+        assertCode(() -> policy.requireRead(teacher(), session), ErrorCode.FORBIDDEN);
     }
 
     @Test
@@ -72,8 +85,10 @@ class SessionAccessPolicyTest {
 
     @Test
     void teacherOutsideCourseGroupIsForbidden() {
-        assertCode(() -> policy.requireRead(otherTeacher(), session(SessionStatus.SUBMITTED)),
-                ErrorCode.FORBIDDEN);
+        Session session = session(SessionStatus.SUBMITTED);
+        seedSubmission(session);
+
+        assertCode(() -> policy.requireRead(otherTeacher(), session), ErrorCode.FORBIDDEN);
     }
 
     @Test
@@ -108,6 +123,11 @@ class SessionAccessPolicyTest {
         assertCode(() -> policy.requireOwner(student2(), session), ErrorCode.FORBIDDEN);
         assertCode(() -> policy.requireOwner(teacher(), session), ErrorCode.FORBIDDEN);
         assertCode(() -> policy.requireOwner(admin(), session), ErrorCode.FORBIDDEN);
+    }
+
+    private void seedSubmission(Session session) {
+        submissions.save(Submission.create(
+                UUID.randomUUID(), session.taskId(), STUDENT, session.id(), null, NOW));
     }
 
     private Session session(SessionStatus status) {

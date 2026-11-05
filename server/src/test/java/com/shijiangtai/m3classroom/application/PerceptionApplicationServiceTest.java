@@ -26,6 +26,7 @@ import com.shijiangtai.m3classroom.support.FakeMaterialObjectStorage;
 import com.shijiangtai.m3classroom.support.FakeOcrClient;
 import com.shijiangtai.m3classroom.support.InMemorySessionFrameStore;
 import com.shijiangtai.m3classroom.support.InMemorySessionRepository;
+import com.shijiangtai.m3classroom.support.InMemorySubmissionRepository;
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
@@ -51,7 +52,8 @@ class PerceptionApplicationServiceTest {
     private final InMemorySessionFrameStore frames = new InMemorySessionFrameStore();
     private final FakeOcrClient ocr = new FakeOcrClient();
     private final FakeCourseQueryPort courses = TestFixtures.coursePort();
-    private final SessionAccessPolicy accessPolicy = new SessionAccessPolicy(courses);
+    private final SessionAccessPolicy accessPolicy = new SessionAccessPolicy(
+            courses, new InMemorySubmissionRepository());
 
     private ExecutorService executor;
     private FakeMaterialObjectStorage storage;

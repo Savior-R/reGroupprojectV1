@@ -17,6 +17,7 @@ import static com.shijiangtai.m3classroom.TestFixtures.student2;
 import static com.shijiangtai.m3classroom.TestFixtures.teacher;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 import com.shijiangtai.m3classroom.application.port.ContentClient;
 import com.shijiangtai.m3classroom.application.port.ContentRequest;
@@ -27,6 +28,7 @@ import com.shijiangtai.m3classroom.domain.recording.StreamType;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionCommand;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
+import com.shijiangtai.m3classroom.domain.submission.Submission;
 import com.shijiangtai.m3classroom.domain.task.AssignmentStatus;
 import com.shijiangtai.m3classroom.domain.task.CourseInfo;
 import com.shijiangtai.m3classroom.domain.task.PublishQuestion;
@@ -43,6 +45,7 @@ import com.shijiangtai.m3classroom.support.FakeScheduler;
 import com.shijiangtai.m3classroom.support.InMemorySessionEventStore;
 import com.shijiangtai.m3classroom.support.InMemorySessionRepository;
 import com.shijiangtai.m3classroom.support.InMemorySessionTextStore;
+import com.shijiangtai.m3classroom.support.InMemorySubmissionRepository;
 import com.shijiangtai.m3classroom.support.InMemoryTaskAssignmentRepository;
 import com.shijiangtai.m3classroom.support.InMemoryTaskRepository;
 import com.shijiangtai.shared.domain.AccountId;
@@ -73,6 +76,7 @@ class SessionApplicationServiceTest {
     private InMemorySessionRepository sessions;
     private InMemorySessionEventStore events;
     private InMemorySessionTextStore texts;
+    private InMemorySubmissionRepository submissions;
     private FakeScheduler scheduler;
     private RecordingLifecycleRecorder recording;
     private SessionRuntimeRegistry registry;
@@ -87,6 +91,7 @@ class SessionApplicationServiceTest {
         sessions = new InMemorySessionRepository();
         events = new InMemorySessionEventStore();
         texts = new InMemorySessionTextStore();
+        submissions = new InMemorySubmissionRepository();
         scheduler = new FakeScheduler();
         recording = new RecordingLifecycleRecorder();
 
@@ -106,7 +111,8 @@ class SessionApplicationServiceTest {
                 unavailableContent);
         service = new SessionApplicationServiceImpl(
                 tasks, assignments, courses, new TaskAccessPolicy(courses),
-                new SessionAccessPolicy(courses), sessions, events, registry, recording,
+                new SessionAccessPolicy(courses, submissions), sessions, events,
+                mock(SubmissionService.class), registry, recording,
                 new SessionStartGuard(sessions, tasks, courses, () -> NOW),
                 UUID::randomUUID, () -> NOW);
         taskId = createPublishedTask();
@@ -365,6 +371,8 @@ class SessionApplicationServiceTest {
         session.end(NOW);
         session.submit(NOW);
         sessions.save(session);
+        submissions.save(Submission.create(
+                UUID.randomUUID(), taskId, STUDENT, session.id(), CLASS, NOW));
 
         SessionView view = service.get(teacher(), new SessionId(created.sessionId()));
 
