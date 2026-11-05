@@ -189,11 +189,12 @@ M3B 口径 64 类 / 499 条），本切片新增 **5 个测试类 / 26 条用例
    因无关原因回滚，已 flush 的事件 / 文本仍保留。这是终态 flush 持久性的有意
    取舍：只有 `session.ended` 是 flush-before-push；`interview.ended` 与
    `session.failed` 在终态 flush 运行时可能已经推送。仅当 `session.ended` 的
-   关键 flush 失败并进入 `persistenceFailed` 路径时，才会在已推送的
-   `interview.ended` / `session.failed`（如适用）之后追加并推送
-   `session.failed`，且不会重复推送 `session.ended`；普通异步 flush 失败与
-   `interview.ended` 之后的正常终态 flush 失败不触发该追加路径。这样可避免
-   批次失败把命令事务标记为 rollback-only。
+   关键 flush 失败并进入 `persistenceFailed` 路径时，才会在已推送的前序终态
+   事件之后（面试路径为 `interview.ended`）追加并推送 `session.failed`，且
+   不会重复推送 `session.ended`；普通异步 flush 失败不会进入
+   `persistenceFailed`。在持久化失败的终态路径中，唯一会追加并推送
+   `session.failed` 的是 `session.ended` 的关键 flush 失败。这样可避免批次
+   失败把命令事务标记为 rollback-only。
 4. **教师文本上下文在 actor 重建时回填**：活跃 actor 的 LLM 上下文读内存；
    `SessionRuntimeRegistry.buildActor` 在重建（重连 / 终态对账）时从
    `m3.session_texts` 读取 `speaker_type=teacher` 的文本回填。Java 进程重启后
