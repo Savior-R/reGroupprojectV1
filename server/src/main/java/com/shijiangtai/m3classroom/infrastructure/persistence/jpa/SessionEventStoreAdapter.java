@@ -44,23 +44,34 @@ public class SessionEventStoreAdapter implements SessionEventStore {
 
     @Override
     public void append(SessionEvent event) {
-        String payload = jsonCodec.writeEventPayload(event.payload());
+        appendAll(List.of(event));
+    }
+
+    @Override
+    public void appendAll(List<SessionEvent> events) {
+        if (events.isEmpty()) {
+            return;
+        }
+        List<String> payloads = events.stream()
+                .map(event -> jsonCodec.writeEventPayload(event.payload()))
+                .toList();
         jdbcTemplate.batchUpdate(INSERT_SQL, new BatchPreparedStatementSetter() {
             @Override
             public void setValues(PreparedStatement statement, int index) throws SQLException {
+                SessionEvent event = events.get(index);
                 statement.setObject(1, event.eventId());
                 statement.setObject(2, event.sessionId().value());
                 statement.setLong(3, event.seq());
                 statement.setString(4, event.type());
                 statement.setLong(5, event.atMs());
-                statement.setString(6, payload);
+                statement.setString(6, payloads.get(index));
                 statement.setObject(7,
                         OffsetDateTime.ofInstant(event.createdAt(), ZoneOffset.UTC));
             }
 
             @Override
             public int getBatchSize() {
-                return 1;
+                return events.size();
             }
         });
     }

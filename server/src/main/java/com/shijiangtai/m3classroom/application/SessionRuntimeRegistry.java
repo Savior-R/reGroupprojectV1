@@ -1,6 +1,7 @@
 package com.shijiangtai.m3classroom.application;
 
 import com.shijiangtai.m3classroom.application.port.ContentClient;
+import com.shijiangtai.m3classroom.application.port.ContextPersistenceWriter;
 import com.shijiangtai.m3classroom.application.port.SchedulerPort;
 import com.shijiangtai.m3classroom.application.port.SessionEventStore;
 import com.shijiangtai.m3classroom.application.port.SessionTextStore;
@@ -59,11 +60,13 @@ public final class SessionRuntimeRegistry {
     private final ClockProvider clockProvider;
     private final SchedulerPort scheduler;
     private final ContentGenerationService contentGeneration;
+    private final ContextPersistenceWriter persistence;
     private final Supplier<RandomGenerator> randomFactory;
 
     /**
-     * Production wiring: every rebuilt actor gets a fresh {@link Random}. Explicitly annotated
-     * because the random-factory overload below makes this a multi-constructor class.
+     * Production wiring: async batch persistence and a fresh {@link Random} per rebuilt actor.
+     * Explicitly annotated because the test-seam overloads below make this a multi-constructor
+     * class.
      */
     @Autowired
     public SessionRuntimeRegistry(
@@ -74,16 +77,33 @@ public final class SessionRuntimeRegistry {
             IdGenerator idGenerator,
             ClockProvider clockProvider,
             SchedulerPort scheduler,
+            ContentClient contentClient,
+            ContextPersistenceWriter persistence) {
+        this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
+                clockProvider, scheduler, contentClient, persistence, Random::new);
+    }
+
+    /**
+     * Backwards-compatible wiring: synchronous persistence through the two stores.
+     */
+    public SessionRuntimeRegistry(
+            SessionRepository sessionRepository,
+            TaskRepository taskRepository,
+            SessionEventStore eventStore,
+            SessionTextStore textStore,
+            IdGenerator idGenerator,
+            ClockProvider clockProvider,
+            SchedulerPort scheduler,
             ContentClient contentClient) {
         this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
-                clockProvider, scheduler, contentClient, Random::new);
+                clockProvider, scheduler, contentClient,
+                new DirectContextPersistenceWriter(eventStore, textStore));
     }
 
     /**
      * Test seam: the factory supplies the generator used for hand-raise delay, behaviour noise
-     * and follow-up rolls. Production callers use the constructor above ({@link Random::new});
-     * integration tests pass a shared deterministic generator so a teacher ASR final always
-     * advances the dialogue. Production behavior is unchanged.
+     * and follow-up rolls. Integration tests pass a shared deterministic generator so a teacher
+     * ASR final always advances the dialogue. Persistence stays synchronous.
      */
     public SessionRuntimeRegistry(
             SessionRepository sessionRepository,
@@ -95,6 +115,23 @@ public final class SessionRuntimeRegistry {
             SchedulerPort scheduler,
             ContentClient contentClient,
             Supplier<RandomGenerator> randomFactory) {
+        this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
+                clockProvider, scheduler, contentClient,
+                new DirectContextPersistenceWriter(eventStore, textStore), randomFactory);
+    }
+
+    /** Full test seam: explicit persistence writer and random factory. */
+    public SessionRuntimeRegistry(
+            SessionRepository sessionRepository,
+            TaskRepository taskRepository,
+            SessionEventStore eventStore,
+            SessionTextStore textStore,
+            IdGenerator idGenerator,
+            ClockProvider clockProvider,
+            SchedulerPort scheduler,
+            ContentClient contentClient,
+            ContextPersistenceWriter persistence,
+            Supplier<RandomGenerator> randomFactory) {
         this.sessionRepository = Objects.requireNonNull(
                 sessionRepository, "sessionRepository");
         this.taskRepository = Objects.requireNonNull(taskRepository, "taskRepository");
@@ -105,6 +142,7 @@ public final class SessionRuntimeRegistry {
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
         this.contentGeneration = new ContentGenerationService(
                 Objects.requireNonNull(contentClient, "contentClient"));
+        this.persistence = Objects.requireNonNull(persistence, "persistence");
         this.randomFactory = Objects.requireNonNull(randomFactory, "randomFactory");
     }
 
@@ -141,6 +179,7 @@ public final class SessionRuntimeRegistry {
         Objects.requireNonNull(id, "id");
         actors.remove(id);
         stopTick(id);
+        closeWriter(id);
     }
 
     /**
@@ -166,6 +205,7 @@ public final class SessionRuntimeRegistry {
         }
         if (actors.remove(id, actor)) {
             stopTick(id);
+            closeWriter(id);
             return true;
         }
         return false;
@@ -240,6 +280,20 @@ public final class SessionRuntimeRegistry {
             return;
         }
         actors.remove(id, actor);
+        closeWriter(id);
+    }
+
+    /**
+     * Releases the session's persistence queue after the actor is gone. A failed final flush is
+     * logged and swallowed: terminal state is already persisted (or deliberately kept live), and
+     * a writer failure must never fail the status transition that triggered the eviction.
+     */
+    private void closeWriter(SessionId id) {
+        try {
+            persistence.close(id);
+        } catch (RuntimeException exception) {
+            LOG.warn("Failed to close persistence queue for session {}", id.value(), exception);
+        }
     }
 
     /** One self-rescheduling 1 s tick; {@link #cancel()} stops both the current and next run. */
@@ -311,6 +365,9 @@ public final class SessionRuntimeRegistry {
         // ON CONFLICT (session_id, seq) DO NOTHING silently drops.
         SessionContext context = new SessionContext(
                 id, idGenerator::nextId, clockProvider::now, eventStore.maxSeq(id));
+        // The in-memory context does not replay texts, but content requests must still see the
+        // teacher utterances persisted before a restart. Hydrate from the unified text stream.
+        textStore.bySession(id, "teacher").forEach(context::addText);
         SessionActor actor = new SessionActor(
                 session,
                 snapshot,
@@ -319,8 +376,7 @@ public final class SessionRuntimeRegistry {
                 students,
                 new InterviewStateMachine(idGenerator::nextId),
                 contentGeneration,
-                eventStore,
-                textStore,
+                persistence,
                 idGenerator,
                 clockProvider,
                 scheduler,

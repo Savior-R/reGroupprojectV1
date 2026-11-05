@@ -9,5 +9,10 @@ public interface SessionTextStore {
 
     void save(SessionText text);
 
+    /** Saves a batch; adapters that can batch override this for one round trip. */
+    default void saveAll(List<SessionText> texts) {
+        texts.forEach(this::save);
+    }
+
     List<SessionText> bySession(SessionId id, String speakerType);
 }

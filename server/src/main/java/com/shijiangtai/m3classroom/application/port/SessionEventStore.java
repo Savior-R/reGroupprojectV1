@@ -20,6 +20,11 @@ public interface SessionEventStore {
 
     void append(SessionEvent event);
 
+    /** Appends a batch in order; adapters that can batch override this for one round trip. */
+    default void appendAll(List<SessionEvent> events) {
+        events.forEach(this::append);
+    }
+
     List<SessionEvent> after(SessionId id, long seq, int limit);
 
     long maxSeq(SessionId id);

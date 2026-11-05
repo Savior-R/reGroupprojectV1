@@ -9,7 +9,11 @@ public final class PersistenceFlushException extends RuntimeException {
     private final SessionId sessionId;
 
     public PersistenceFlushException(SessionId sessionId, String message) {
-        super(message);
+        this(sessionId, message, null);
+    }
+
+    public PersistenceFlushException(SessionId sessionId, String message, Throwable cause) {
+        super(message, cause);
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId");
     }
 

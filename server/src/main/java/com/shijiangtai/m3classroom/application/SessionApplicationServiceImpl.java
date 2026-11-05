@@ -193,8 +193,14 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
         return toView(updated);
     }
 
+    /**
+     * Ending may legitimately fail with {@link ErrorCode#SESSION_FAILED} after the actor moved to
+     * {@code FAILED} and the registry persisted that row. Rolling back would leave the derived
+     * failed row uncommitted while the live actor has already been evicted, so domain errors
+     * still commit; genuine infrastructure errors keep the default rollback.
+     */
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public SessionView end(CurrentUser student, SessionId sessionId) {
         Session session = findSession(sessionId);
         sessionAccessPolicy.requireOwner(student, session);
@@ -259,6 +265,11 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
         for (Map.Entry<StreamType, Long> entry : session.streamOffsets().entrySet()) {
             offsets.put(entry.getKey().wireValue(), entry.getValue());
         }
+        // Asynchronous persistence may lag the live actor; report its in-memory seq so REST
+        // clients never observe a rewound last_seq.
+        long lastSeq = runtimeRegistry.find(session.id())
+                .map(SessionActor::lastSeq)
+                .orElseGet(() -> eventStore.maxSeq(session.id()));
         return new SessionView(
                 session.id().value(),
                 session.taskId().value(),
@@ -271,7 +282,7 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
                 session.endedAt() == null ? null : session.endedAt().toString(),
                 session.durationMs(),
                 offsets,
-                eventStore.maxSeq(session.id()));
+                lastSeq);
     }
 
     private static DomainException notFound(String message, String field, Object value) {

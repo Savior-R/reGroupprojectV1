@@ -21,6 +21,14 @@ public class SessionTextStoreAdapter implements SessionTextStore {
     }
 
     @Override
+    public void saveAll(List<SessionText> texts) {
+        if (texts.isEmpty()) {
+            return;
+        }
+        repository.saveAll(texts.stream().map(this::toEntity).toList());
+    }
+
+    @Override
     public List<SessionText> bySession(SessionId id, String speakerType) {
         List<SessionTextEntity> entities = speakerType == null
                 ? repository.findBySessionIdOrderByAtMsAscIdAsc(id.value())
