@@ -64,7 +64,7 @@
 
 | Task | 提交 | 测试类（用例数） | RED | GREEN |
 |---|---|---|---|---|
-| 1 状态机 trigger | `f54425d` | `ClassroomStateMachineTest`（27） | 新增 3 条 trigger 用例编译 / 断言失败 | 27/27 |
+| 1 状态机 trigger | `f54425d` | `ClassroomStateMachineTest`（27） | 新增 2 条 trigger 用例编译 / 断言失败 | 27/27 |
 | 2 学生动态对话转移 | `22d5f38` | `VirtualStudentDynamicsTest`（21） | 新增用例 RED（`applyFollowUp` 无返回值 / 无 `applyDialogueEnded`） | 21/21；`ClassroomStateMachineTest` 27/27 回归 |
 | 3 初始回答 → 对话 | `b9f42eb` / `c440173` | `SessionActorDialogueTest`（4） | 4 条新增用例失败（无 `dialogue.started` / `student.follow_up`） | 4/4；`SessionActorTest` 30/30；当轮全量 67 classes / 498 tests |
 | 4 教师 final 推进 | `89b97c1` | `SessionActorDialogueTest`（9） | 5 条新增用例失败（无第二轮 / 无边界 / 无 max_rounds 终止） | 9/9；`SessionActorTest` 30/30、`ClassroomStateMachineTest` 27/27 |
@@ -91,6 +91,11 @@ Task 6 的 RED / GREEN 细节：
   2. `classroom.state_changed` 的 `to` 是宏观状态 `qa`，`qa_phase` 才是
      `dialogue` / `waiting_hands`；断言改为 `to=qa` + `qa_phase` + `trigger`。
 - 最终 GREEN：`PerceptionWebSocketIT` tests=24, failures=0, errors=0, skipped=0。
+- 最终审查修复（本次提交）：`SessionActorDialogueTest` 增加可变时钟接缝与
+  `secondFinalFromSameTeacherUtteranceDoesNotCreateAnotherRound`（该类现为 17 条）；
+  `PerceptionWebSocketIT` 的 `dialogue.ended` 断言改为检查第一、第二条
+  `student.follow_up` 之间的窗口，并断言 `dialogue.started` 存在。两组测试
+  17/17、24/24 通过；新用例未暴露生产缺陷（原实现已满足边界规则，属覆盖缺口）。
 
 ## 4. 测试计数
 
@@ -100,20 +105,21 @@ Task 6 的 RED / GREEN 细节：
 docker compose --profile test run --rm test gradle clean test --no-daemon --console=plain
 ```
 
-结果：`BUILD SUCCESSFUL in 1m 17s`；XML 汇总 **67 个测试类 / 511 条用例，
-0 failure / 0 error / 0 skipped**。
+结果：`BUILD SUCCESSFUL in 1m 17s`；XML 汇总 **67 个测试类 / 512 条用例，
+0 failure / 0 error / 0 skipped**（最终审查修复后的重新执行结果）。
 
 口径拆分：
 
-- M3B 提交范围：**64 个测试类 / 498 条用例**（相对上一基线 63 类 / 477 条新增
-  **1 个类 / 21 条用例**）。
+- M3B 提交范围：**64 个测试类 / 499 条用例**（相对上一基线 63 类 / 477 条新增
+  **1 个类 / 22 条用例**）。
 - 同一工作区包含暂停中的 M3C 未跟踪测试 3 个类 / 13 条用例
   （`RecordingTest` 8、`RecordingObjectKeyBuilderTest` 2、`RequiredStreamsTest` 3），
-  合计 67 类 / 511 条；M3C 文件不进入本次提交。
-- 本切片新增 / 扩充：
-  - 新增 `SessionActorDialogueTest` 16 条（初始追问、教师 final 边界、max_rounds、
-    `no_follow_up`、分类忽略、全部终止路径、`dialogue_id` 校验）。
-  - `ClassroomStateMachineTest` +3（trigger 重载 / `no_follow_up` / `max_rounds`）。
+  合计 67 类 / 512 条；M3C 文件不进入本次提交。
+- 本切片新增 / 扩充（17 + 2 + 2 + 1 = 22 条）：
+  - 新增 `SessionActorDialogueTest` 17 条（初始追问、教师 final 边界与多 final
+    同句边界、max_rounds、`no_follow_up`、分类忽略、全部终止路径、`dialogue_id` 校验）。
+  - `ClassroomStateMachineTest` +2（trigger 重载 / 空白 trigger 与错误阶段校验；
+    该文件 17 个 `@Test` → 19 个，另有 8 条固定参数化用例，合计 27 条）。
   - `VirtualStudentDynamicsTest` +2（`applyFollowUp` 事件 + `applyDialogueEnded`）。
   - `PerceptionWebSocketIT` +1（感知驱动的多轮对话 IT）。
 

@@ -481,6 +481,9 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
                 .isTrue();
 
         SessionEvent firstFollowUp = awaitEvent(id, "student.follow_up");
+        SessionEvent dialogueStarted = awaitEvent(id, "dialogue.started");
+        assertThat(String.valueOf(dialogueStarted.payload().get("student_id")))
+                .isEqualTo(studentId.toString());
         assertThat(eventStore.after(id, 0, 200))
                 .anySatisfy(event -> {
                     assertThat(event.type()).isEqualTo("classroom.state_changed");
@@ -505,7 +508,12 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
                 id, "student.follow_up", firstFollowUp.seq());
         assertThat(secondFollowUp.payload().get("answer_id"))
                 .isEqualTo(firstFollowUp.payload().get("answer_id"));
-        assertThat(eventStore.after(id, secondFollowUp.seq(), 200))
+        // The dialogue is still open between round 1 and round 2: no dialogue.ended may appear
+        // in that window (the second follow-up itself proves the events up to its seq are
+        // persisted, so this assertion is not vacuous).
+        assertThat(eventStore.after(id, firstFollowUp.seq(), 200).stream()
+                .filter(event -> event.seq() < secondFollowUp.seq())
+                .toList())
                 .noneMatch(event -> "dialogue.ended".equals(event.type()));
         assertThat(textStore.bySession(id, "teacher")).hasSize(1);
 

@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 /** Actor-level tests for the initial answer -> dialogue decision (M3B multi-turn dialogue). */
@@ -167,6 +168,41 @@ class SessionActorDialogueTest {
                 boundary - 1000, boundary - 500, BigDecimal.valueOf(0.9));
 
         assertThat(f.countEvents("student.follow_up")).isEqualTo(before);
+    }
+
+    /**
+     * Review focus #6: an ASR utterance may produce several finals. The first advances the
+     * dialogue and moves the boundary to its own follow-up; the second final of the same
+     * utterance starts before that boundary and must not create a third round.
+     */
+    @Test
+    void secondFinalFromSameTeacherUtteranceDoesNotCreateAnotherRound() {
+        MutableRandom random = new MutableRandom(0.0);
+        Fixture f = fixture(random);
+        f.start();
+        f.actor().handle(f.callOn());
+        assertThat(f.lastFollowUpAtMs()).isZero(); // first follow-up at session start (at_ms=0)
+        assertThat(f.dialogueRound()).isEqualTo(1);
+
+        f.advanceClock(Duration.ofMillis(1000));
+
+        // Final A starts at 500 ms (>= boundary 0) and advances the dialogue to round 2; the
+        // new follow-up is emitted at at_ms=1000, which moves the boundary forward.
+        f.actor().recordSpeechFinal("teacher", null, "对，你能再具体说说吗？",
+                500L, 600L, BigDecimal.valueOf(0.9));
+        assertThat(f.dialogueRound()).isEqualTo(2);
+        assertThat(f.lastFollowUpAtMs()).isEqualTo(1_000L);
+
+        // Final B belongs to the same utterance: its start (500 ms) is now before the moved
+        // boundary (1000 ms), so it is persisted only and must not advance the dialogue.
+        f.actor().recordSpeechFinal("teacher", null, "对，你能再具体说说吗？",
+                500L, 600L, BigDecimal.valueOf(0.9));
+
+        assertThat(f.countEvents("student.follow_up")).isEqualTo(2);
+        assertThat(f.countEvents("dialogue.ended")).isZero();
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.DIALOGUE);
     }
 
     @Test
@@ -366,7 +402,8 @@ class SessionActorDialogueTest {
                 .map(SessionActorDialogueTest::toConfig)
                 .toList());
         IdGenerator ids = UUID::randomUUID;
-        SessionContext context = new SessionContext(session.id(), ids::nextId, () -> NOW);
+        AtomicReference<Instant> clock = new AtomicReference<>(NOW);
+        SessionContext context = new SessionContext(session.id(), ids::nextId, clock::get);
         ClassroomStateMachine classroom = new ClassroomStateMachine();
         InterviewStateMachine interview = new InterviewStateMachine(ids::nextId);
         FakeScheduler scheduler = new FakeScheduler();
@@ -375,8 +412,8 @@ class SessionActorDialogueTest {
         SessionActor actor = new SessionActor(
                 session, taskSnapshot, context, classroom, dynamics, interview,
                 new ContentGenerationService(client), eventStore, textStore, ids,
-                () -> NOW, scheduler, random);
-        return new Fixture(actor, context, classroom, dynamics, textStore, scheduler);
+                clock::get, scheduler, random);
+        return new Fixture(actor, context, classroom, dynamics, textStore, scheduler, clock);
     }
 
     private static TaskSnapshot taskSnapshot() {
@@ -424,6 +461,7 @@ class SessionActorDialogueTest {
         private final VirtualStudentDynamics dynamics;
         private final InMemorySessionTextStore textStore;
         private final FakeScheduler scheduler;
+        private final AtomicReference<Instant> clock;
         private UUID studentId;
 
         private Fixture(
@@ -432,13 +470,15 @@ class SessionActorDialogueTest {
                 ClassroomStateMachine classroom,
                 VirtualStudentDynamics dynamics,
                 InMemorySessionTextStore textStore,
-                FakeScheduler scheduler) {
+                FakeScheduler scheduler,
+                AtomicReference<Instant> clock) {
             this.actor = actor;
             this.context = context;
             this.classroom = classroom;
             this.dynamics = dynamics;
             this.textStore = textStore;
             this.scheduler = scheduler;
+            this.clock = clock;
         }
 
         private SessionActor actor() {
@@ -525,6 +565,11 @@ class SessionActorDialogueTest {
 
         private long lastFollowUpAtMs() {
             return lastEvent("student.follow_up").atMs();
+        }
+
+        /** Moves the actor clock forward so later events carry a non-zero {@code at_ms}. */
+        private void advanceClock(Duration duration) {
+            clock.updateAndGet(current -> current.plus(duration));
         }
 
         /** One {@code student.follow_up} is emitted per round, so the count equals the round. */
