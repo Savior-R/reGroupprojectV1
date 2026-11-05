@@ -54,6 +54,7 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
     private final SessionEventStore eventStore;
     private final SessionRuntimeRegistry runtimeRegistry;
     private final RecordingLifecyclePort recordingLifecyclePort;
+    private final SessionStartGuard startGuard;
     private final IdGenerator idGenerator;
     private final ClockProvider clockProvider;
 
@@ -67,6 +68,7 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
             SessionEventStore eventStore,
             SessionRuntimeRegistry runtimeRegistry,
             RecordingLifecyclePort recordingLifecyclePort,
+            SessionStartGuard startGuard,
             IdGenerator idGenerator,
             ClockProvider clockProvider) {
         this.taskRepository = Objects.requireNonNull(taskRepository, "taskRepository");
@@ -81,6 +83,7 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
         this.runtimeRegistry = Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
         this.recordingLifecyclePort = Objects.requireNonNull(
                 recordingLifecyclePort, "recordingLifecyclePort");
+        this.startGuard = Objects.requireNonNull(startGuard, "startGuard");
         this.idGenerator = Objects.requireNonNull(idGenerator, "idGenerator");
         this.clockProvider = Objects.requireNonNull(clockProvider, "clockProvider");
     }
@@ -179,6 +182,9 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
         if (session.status() == SessionStatus.IN_PROGRESS) {
             return toView(session);
         }
+        // Re-check the task/course after the preparing wait: an archived or ended course must
+        // not start a session even though creation succeeded earlier (05A §4.3).
+        startGuard.requireStartable(session);
         SessionActor actor = runtimeRegistry.getOrCreate(sessionId);
         requireOk(actor.handle(new SessionCommand.StartSession(
                 idGenerator.nextId().toString())));

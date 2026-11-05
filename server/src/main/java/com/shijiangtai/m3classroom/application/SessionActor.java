@@ -51,6 +51,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.random.RandomGenerator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * One actor per active session (05A §6.1, implementation/04 §3.3).
@@ -71,6 +73,8 @@ import java.util.random.RandomGenerator;
  * dialogue.ended} and {@code student.follow_up} are deferred to a later slice.
  */
 public final class SessionActor {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SessionActor.class);
 
     private static final int COMMAND_HISTORY_LIMIT = 200;
     private static final long HAND_RAISE_MIN_DELAY_MS = 1_000L;
@@ -197,8 +201,11 @@ public final class SessionActor {
         } catch (DomainException exception) {
             result = CommandResult.error(exception.code(), exception.getMessage());
         } catch (RuntimeException exception) {
-            result = CommandResult.error(ErrorCode.INTERNAL_ERROR,
-                    exception.getMessage() == null ? "命令处理失败" : exception.getMessage());
+            LOG.error("Unexpected failure handling session command: session_id={}, "
+                            + "command={}, command_id={}",
+                    session.id().value(), command.getClass().getSimpleName(),
+                    command.commandId(), exception);
+            result = CommandResult.error(ErrorCode.INTERNAL_ERROR, "命令处理失败");
         }
         commandHistory.put(command.commandId(), result);
         return result;
@@ -367,6 +374,11 @@ public final class SessionActor {
                 + random.nextLong(HAND_RAISE_MAX_EXTRA_DELAY_MS + 1L);
         handRaiseTask = scheduler.schedule(
                 () -> emitHandRaises(expectedIntent, generation), Duration.ofMillis(delayMs));
+        // The timeout is scheduled for every manual ask, not only after the first hand is raised:
+        // a class with no eligible student must still leave qa.waiting_hands after 30 s. When a
+        // hand is raised the timer is moved to 30 s from that first raise (05A §5.4).
+        handWindowTask = scheduler.schedule(
+                () -> emitHandWindowTimeout(generation), HAND_WINDOW_TIMEOUT);
         return CommandResult.ok(events);
     }
 
@@ -382,6 +394,8 @@ public final class SessionActor {
         Instant now = clock.now();
         List<HandRaise> handRaises = handRaisePolicy.select(students.students(), now, random);
         if (handRaises.isEmpty()) {
+            // Keep the timeout scheduled by handleAsk; the class may simply have no eligible
+            // student (all whispering / in dialogue / ineligible), and the window must still end.
             return;
         }
         for (HandRaise handRaise : handRaises) {
@@ -389,9 +403,13 @@ public final class SessionActor {
             payload.put("student_id", handRaise.studentId());
             payload.put("hand_raise_id", handRaise.handRaiseId());
             append(STUDENT_HAND_RAISED, payload, now);
-            students.applyHandRaised(handRaise.studentId(), now, random);
+            appendStudentEvents(students.applyHandRaised(
+                    handRaise.studentId(), now, random), now);
             openHandRaises.put(handRaise.handRaiseId(), handRaise.studentId());
         }
+        // Move the window timeout to 30 s after the first hand raise; the ask-scheduled timer
+        // only covers the "nobody raises" path.
+        cancel(handWindowTask);
         handWindowTask = scheduler.schedule(
                 () -> emitHandWindowTimeout(generation), HAND_WINDOW_TIMEOUT);
     }
@@ -404,10 +422,9 @@ public final class SessionActor {
                 || classroom.qaPhase() != QaPhase.WAITING_HANDS) {
             return;
         }
+        // P0 fallback: an empty window still times out. A class with no eligible student must
+        // not stay in qa.waiting_hands forever; the event carries an empty id list.
         List<UUID> handRaiseIds = List.copyOf(openHandRaises.keySet());
-        if (handRaiseIds.isEmpty()) {
-            return;
-        }
         Instant now = clock.now();
         emitHandLowers("teacher_timeout", now);
         appendClassroomEvents(classroom.handWindowTimeout(now, handRaiseIds), now);
@@ -447,7 +464,7 @@ public final class SessionActor {
             payload.put("hand_raise_id", command.handRaiseId());
         }
         events.add(append(TEACHER_CALLED_ON, payload, now));
-        students.applyCalledOn(command.studentId());
+        events.addAll(appendStudentEvents(students.applyCalledOn(command.studentId()), now));
 
         if (ClassroomStateMachine.INTENT_STUDENT_QUESTION.equals(classroom.intent())) {
             events.addAll(emitStudentQuestion(student, now));
@@ -493,6 +510,7 @@ public final class SessionActor {
         Instant now = clock.now();
 
         List<ClassroomEvent> domainEvents;
+        boolean answerFinished = false;
         if (classroom.macroState() == ClassroomMacroState.QA
                 && classroom.qaPhase() == QaPhase.STUDENT_ANSWERING) {
             // P0: an explicit end_dialogue while the student is answering finishes the answer.
@@ -500,6 +518,7 @@ public final class SessionActor {
                 throw stateInvalid("teacher.end_dialogue", "当前没有可结束的回答");
             }
             domainEvents = classroom.answerFinished(currentStudentId, false, now);
+            answerFinished = true;
         } else {
             domainEvents = classroom.endDialogue(now);
         }
@@ -508,7 +527,13 @@ public final class SessionActor {
         cancel(handWindowTask);
         handWindowTask = null;
         openHandRaises.clear();
-        return CommandResult.ok(appendClassroomEvents(domainEvents, now));
+        List<SessionEvent> events = new ArrayList<>(
+                appendClassroomEvents(domainEvents, now));
+        if (answerFinished) {
+            events.addAll(appendStudentEvents(
+                    students.applyAnswerFinished(currentStudentId), now));
+        }
+        return CommandResult.ok(events);
     }
 
     private CommandResult handleEndQa() {
@@ -682,9 +707,7 @@ public final class SessionActor {
 
     public synchronized SessionSnapshot snapshot() {
         Instant now = clock.now();
-        long elapsedMs = session.startedAt() == null
-                ? 0L
-                : Math.max(0L, Duration.between(session.startedAt(), now).toMillis());
+        long elapsedMs = atMs(now);
 
         Map<String, Object> publicConfig = new LinkedHashMap<>();
         publicConfig.put("topic", taskSnapshot.topic());
@@ -762,6 +785,20 @@ public final class SessionActor {
         }
     }
 
+    /**
+     * Appends already-applied virtual-student transitions (attention deltas and behaviour state
+     * were applied by {@link VirtualStudentDynamics}; re-feeding them through the command-side
+     * dynamics would double-apply the deltas).
+     */
+    private List<SessionEvent> appendStudentEvents(
+            List<ClassroomEvent> studentEvents, Instant now) {
+        List<SessionEvent> appended = new ArrayList<>(studentEvents.size());
+        for (ClassroomEvent event : studentEvents) {
+            appended.add(append(event.type(), event.payload(), now));
+        }
+        return appended;
+    }
+
     private List<SessionEvent> appendClassroomEvents(
             List<ClassroomEvent> classroomEvents, Instant now) {
         List<SessionEvent> expanded = new ArrayList<>(classroomEvents.size());
@@ -807,6 +844,8 @@ public final class SessionActor {
             payload.put("hand_raise_id", entry.getKey());
             payload.put("reason", reason);
             events.add(append(STUDENT_HAND_LOWERED, payload, now));
+            events.addAll(appendStudentEvents(
+                    students.applyHandLowered(entry.getValue(), reason), now));
         }
         openHandRaises.clear();
         return events;
@@ -836,6 +875,7 @@ public final class SessionActor {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("student_id", student.id());
         payload.put("text_id", textId);
+        payload.put("question_id", ids.nextId());
         SessionEvent event = append(STUDENT_QUESTION, payload, now);
         students.applyStudentQuestion(student.id());
         return List.of(event);
@@ -860,14 +900,17 @@ public final class SessionActor {
         payload.put("quality", quality.score());
         payload.put("correctness", quality.correctness().wireValue());
         SessionEvent event = append(STUDENT_ANSWER, payload, now);
-        students.applyAnswer(student.id());
         answerStudents.put(answerId, student.id());
 
         // P0: one answer round, then back to waiting_hands; follow-up rounds are deferred.
+        // Behaviour order mirrors the protocol: fact, answer_started, answer-finished state,
+        // then the student returns to focused.
         List<SessionEvent> events = new ArrayList<>();
         events.add(event);
+        events.addAll(appendStudentEvents(students.applyAnswer(student.id()), now));
         events.addAll(appendClassroomEvents(
                 classroom.answerFinished(student.id(), false, now), now));
+        events.addAll(appendStudentEvents(students.applyAnswerFinished(student.id()), now));
         return events;
     }
 
@@ -1088,7 +1131,10 @@ public final class SessionActor {
         if (startedAt == null) {
             return 0L;
         }
-        return Math.max(0L, Duration.between(startedAt, now).toMillis());
+        // Terminal/reviewing connections must not observe an ever-growing session clock.
+        Instant endedAt = session.endedAt();
+        Instant effectiveNow = endedAt != null && now.isAfter(endedAt) ? endedAt : now;
+        return Math.max(0L, Duration.between(startedAt, effectiveNow).toMillis());
     }
 
     private Map<String, Object> sessionEndedPayload(String reason) {

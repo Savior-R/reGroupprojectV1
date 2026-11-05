@@ -276,8 +276,11 @@ public final class SessionRuntimeRegistry {
                     .map(SessionRuntimeRegistry::toConfig)
                     .toList());
         }
+        // A rebuilt actor must continue after the durable event log. The in-memory context does
+        // not replay history, but starting at 0 would re-emit seq values that
+        // ON CONFLICT (session_id, seq) DO NOTHING silently drops.
         SessionContext context = new SessionContext(
-                id, idGenerator::nextId, clockProvider::now);
+                id, idGenerator::nextId, clockProvider::now, eventStore.maxSeq(id));
         SessionActor actor = new SessionActor(
                 session,
                 snapshot,

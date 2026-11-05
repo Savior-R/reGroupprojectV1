@@ -324,6 +324,46 @@ class SessionReconnectTest {
     }
 
     @Test
+    void rebuiltActorSeedsLastSeqFromPersistedEventStore() {
+        InMemoryTaskRepository tasks = new InMemoryTaskRepository();
+        tasks.save(publishedTask());
+        ReconnectFixture fixture = fixture(
+                new InMemorySessionEventStore(), new InMemorySessionRepository(), tasks);
+        start(fixture);
+        assertThat(fixture.actor().handle(new SessionCommand.AskClass("ask-1")).ok())
+                .isTrue();
+        long persistedMax = fixture.eventStore().maxSeq(fixture.session().id());
+        fixture.sessions().save(fixture.actor().session());
+        fixture.registry().remove(fixture.session().id());
+
+        SessionActor rebuilt = fixture.registry().getOrCreate(fixture.session().id());
+
+        assertThat(rebuilt).isNotSameAs(fixture.actor());
+        assertThat(rebuilt.snapshot().lastSeq()).isEqualTo(persistedMax);
+        CommandResult result = rebuilt.handle(new SessionCommand.AskClass("ask-2"));
+        assertThat(result.ok()).isTrue();
+        assertThat(result.events()).isNotEmpty();
+        assertThat(result.events().get(0).seq()).isEqualTo(persistedMax + 1);
+        assertThat(fixture.eventStore().maxSeq(fixture.session().id()))
+                .isEqualTo(persistedMax + 2);
+    }
+
+    @Test
+    void internalCommandFailureReturnsGenericMessage() {
+        FailingEventStore eventStore = new FailingEventStore();
+        ReconnectFixture fixture = fixture(
+                eventStore, new InMemorySessionRepository(), new InMemoryTaskRepository());
+        start(fixture);
+        eventStore.failFromNow();
+
+        CommandResult result = fixture.actor().handle(new SessionCommand.AskClass("ask-fail"));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.INTERNAL_ERROR);
+        assertThat(result.message()).isEqualTo("命令处理失败");
+    }
+
+    @Test
     void registrySchedulesTickAndStopsOnTerminalState() {
         ReconnectFixture fixture = fixture();
         start(fixture);
@@ -610,6 +650,11 @@ class SessionReconnectTest {
         public List<Session> findByStudentAndTask(
                 AccountId studentAccountId, TaskId taskId) {
             return delegate.findByStudentAndTask(studentAccountId, taskId);
+        }
+
+        @Override
+        public List<Session> findByStatusIn(java.util.Collection<SessionStatus> statuses) {
+            return delegate.findByStatusIn(statuses);
         }
 
         @Override

@@ -6,6 +6,7 @@ import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -48,6 +49,14 @@ public final class InMemorySessionRepository implements SessionRepository {
     public List<Session> findByStudentAndTask(AccountId studentAccountId, TaskId taskId) {
         return sessions.values().stream()
                 .filter(session -> belongsTo(session, studentAccountId, taskId))
+                .map(InMemorySessionRepository::copy)
+                .toList();
+    }
+
+    @Override
+    public List<Session> findByStatusIn(Collection<SessionStatus> statuses) {
+        return sessions.values().stream()
+                .filter(session -> statuses.contains(session.status()))
                 .map(InMemorySessionRepository::copy)
                 .toList();
     }

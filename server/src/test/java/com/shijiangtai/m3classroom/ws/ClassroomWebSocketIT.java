@@ -11,6 +11,8 @@ import com.shijiangtai.m3classroom.application.TaskPublishService;
 import com.shijiangtai.m3classroom.application.view.SessionView;
 import com.shijiangtai.m3classroom.application.view.TaskView;
 import com.shijiangtai.m3classroom.domain.session.FailureReason;
+import com.shijiangtai.m3classroom.domain.task.CourseInfo;
+import com.shijiangtai.m3classroom.infrastructure.crossmodule.InMemoryCourseQueryAdapter;
 import com.shijiangtai.m3classroom.persistence.PostgresIntegrationTest;
 import com.shijiangtai.shared.application.ClockProvider;
 import com.shijiangtai.shared.domain.SessionId;
@@ -22,6 +24,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -76,6 +79,9 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
 
     @Autowired
     private ClockProvider clock;
+
+    @Autowired
+    private InMemoryCourseQueryAdapter courseQueryPort;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -230,6 +236,12 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
         assertThat(replay).noneMatch(message ->
                 ("session.time_tick".equals(type(message)) || "ping".equals(type(message)))
                         && message.get("seq").asLong() <= snapshotLastSeq);
+        JsonNode resumeAck = untilAck.get(untilAck.size() - 1);
+        assertAck(resumeAck, "resume-1", true);
+        // session.resumed carries the newest seq and is pushed before the lower-seq replay
+        // tail; the ack must keep that maximum instead of rewinding to the last replayed event.
+        assertThat(resumeAck.get("seq").asLong())
+                .isGreaterThanOrEqualTo(resumed.get("seq").asLong());
     }
 
     @Test
@@ -346,6 +358,62 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
         assertThat(runtimeRegistry.find(id)).isEmpty();
     }
 
+    @Test
+    void archivedCourseStartIsRejected() throws Exception {
+        SessionId id = createSession();
+        Connection connection = connect(id);
+        connection.nextOfType("session.snapshot");
+        sendReady(connection, "archived");
+
+        try {
+            courseQueryPort.addCourse(new CourseInfo(
+                    TestFixtures.COURSE_ID, TestFixtures.SCHOOL_ID, "语文教学论", false,
+                    Instant.parse("2027-06-30T00:00:00Z"), List.of(TestFixtures.TEACHER_ID)));
+
+            send(connection, "session.start", "archived-start", Map.of());
+
+            JsonNode error = connection.nextOfType("error");
+            assertServerEnvelope(error, id);
+            assertThat(error.get("payload").get("code").asString())
+                    .isEqualTo("COURSE_ARCHIVED");
+            assertThat(error.get("payload").get("command_id").asString())
+                    .isEqualTo("archived-start");
+            assertThat(connection.handler.countOfType("session.started")).isZero();
+        } finally {
+            courseQueryPort.addCourse(TestFixtures.course());
+        }
+
+        assertThat(sessionApplicationService.get(TestFixtures.student(), id).status())
+                .isEqualTo("preparing");
+    }
+
+    @Test
+    void endedCourseStartIsRejected() throws Exception {
+        SessionId id = createSession();
+        Connection connection = connect(id);
+        connection.nextOfType("session.snapshot");
+        sendReady(connection, "ended");
+
+        try {
+            courseQueryPort.addCourse(new CourseInfo(
+                    TestFixtures.COURSE_ID, TestFixtures.SCHOOL_ID, "语文教学论", true,
+                    clock.now().minusSeconds(1), List.of(TestFixtures.TEACHER_ID)));
+
+            send(connection, "session.start", "ended-start", Map.of());
+
+            JsonNode error = connection.nextOfType("error");
+            assertServerEnvelope(error, id);
+            assertThat(error.get("payload").get("code").asString())
+                    .isEqualTo("COURSE_ENDED");
+            assertThat(connection.handler.countOfType("session.started")).isZero();
+        } finally {
+            courseQueryPort.addCourse(TestFixtures.course());
+        }
+
+        assertThat(sessionApplicationService.get(TestFixtures.student(), id).status())
+                .isEqualTo("preparing");
+    }
+
     // ------------------------------------------------------------------
     // Fixture helpers
     // ------------------------------------------------------------------
@@ -357,7 +425,7 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
         return sessionId;
     }
 
-    private JsonNode startSession(Connection connection, String commandPrefix) throws Exception {
+    private void sendReady(Connection connection, String commandPrefix) throws Exception {
         send(connection, "recording.ready", commandPrefix + "-ready", Map.of(
                 "streams", List.of(
                         Map.of("stream_type", "camera", "status", "ready"),
@@ -365,6 +433,10 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
                         Map.of("stream_type", "audio", "status", "ready"))));
         connection.nextOfType("recording.ready_ack");
         connection.nextOfType("server.ack");
+    }
+
+    private JsonNode startSession(Connection connection, String commandPrefix) throws Exception {
+        sendReady(connection, commandPrefix);
 
         send(connection, "session.start", commandPrefix + "-start", Map.of());
         JsonNode started = connection.nextOfType("session.started");

@@ -3,6 +3,7 @@ package com.shijiangtai.m3classroom.domain.session;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,6 +22,9 @@ public interface SessionRepository {
     Optional<Session> findActiveByStudentAndTask(AccountId studentAccountId, TaskId taskId);
 
     List<Session> findByStudentAndTask(AccountId studentAccountId, TaskId taskId);
+
+    /** Sessions in any of the given statuses; used by restart reconciliation. */
+    List<Session> findByStatusIn(Collection<SessionStatus> statuses);
 
     long countByStudentAndTask(AccountId studentAccountId, TaskId taskId);
 }

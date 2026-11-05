@@ -156,8 +156,14 @@ public final class VirtualStudentDynamics {
         applyNoisyEnergy(student, STUDENT_QUESTION_ENERGY);
     }
 
-    /** {@code teacher.call_on}: the called student gains, everybody else loses a little. */
-    public void applyCalledOn(UUID studentId) {
+    /**
+     * {@code teacher.call_on}: the called student gains, everybody else loses a little, and the
+     * called student enters {@code called_on} (05A §5.2).
+     *
+     * @return the persisted {@code student.state_changed} transition, or an empty list when the
+     *     student was already {@code called_on}
+     */
+    public List<ClassroomEvent> applyCalledOn(UUID studentId) {
         VirtualStudentRuntime called = find(studentId);
         applyNoisyAttention(called, CALLED_ON_ATTENTION);
         applyNoisyEnergy(called, CALLED_ON_ENERGY);
@@ -166,6 +172,7 @@ public final class VirtualStudentDynamics {
                 applyNoisyAttention(student, OTHER_STUDENT_CALLED_ON_ATTENTION);
             }
         }
+        return transition(called, VirtualStudentBehavior.CALLED_ON, "called_on");
     }
 
     /** {@code teacher.mark_answer}: attention/energy depend on correctness. */
@@ -201,22 +208,57 @@ public final class VirtualStudentDynamics {
     }
 
     /**
-     * {@code student.hand_raised}: noisy attention {@code +0.05}, noisy energy {@code -0.20} and
-     * a fresh 45 s cooldown. This is the single application point for the event; both deltas use
-     * the supplied random generator.
+     * {@code student.hand_raised}: noisy attention {@code +0.05}, noisy energy {@code -0.20}, a
+     * fresh 45 s cooldown and the {@code hand_raised} behaviour state. This is the single
+     * application point for the event; both deltas use the supplied random generator.
+     *
+     * @return the persisted {@code student.state_changed} transition, or an empty list when the
+     *     student was already {@code hand_raised}
      */
-    public void applyHandRaised(UUID studentId, Instant now, RandomGenerator random) {
+    public List<ClassroomEvent> applyHandRaised(
+            UUID studentId, Instant now, RandomGenerator random) {
         Objects.requireNonNull(now, "now");
         Objects.requireNonNull(random, "random");
         VirtualStudentRuntime student = find(studentId);
         double energyDelta = noisy(HAND_RAISED_ENERGY, random);
         student.applyAttentionDelta(noisy(HAND_RAISED_ATTENTION, random));
         student.markHandRaised(now, energyDelta);
+        return transition(student, VirtualStudentBehavior.HAND_RAISED, "hand_raised");
     }
 
-    /** {@code student.answer}: answering student gains attention. */
-    public void applyAnswer(UUID studentId) {
-        applyNoisyAttention(find(studentId), ANSWER_ATTENTION);
+    /**
+     * Lowers an open hand and returns the student to {@code focused} (05A §5.2: 30 s without a
+     * call-on plus timeout). Non-raised students are left untouched, so a command that lowers a
+     * hand after another transition cannot corrupt the newer state.
+     */
+    public List<ClassroomEvent> applyHandLowered(UUID studentId, String reason) {
+        Objects.requireNonNull(reason, "reason");
+        VirtualStudentRuntime student = find(studentId);
+        if (student.behavior() != VirtualStudentBehavior.HAND_RAISED) {
+            return List.of();
+        }
+        return transition(student, VirtualStudentBehavior.FOCUSED, reason);
+    }
+
+    /**
+     * {@code student.answer}: answering student gains attention and enters {@code answering}
+     * (05A §5.2).
+     */
+    public List<ClassroomEvent> applyAnswer(UUID studentId) {
+        VirtualStudentRuntime student = find(studentId);
+        applyNoisyAttention(student, ANSWER_ATTENTION);
+        return transition(student, VirtualStudentBehavior.ANSWERING, "answer_started");
+    }
+
+    /**
+     * An answer finished (no follow-up in P0): the student returns to {@code focused} (05A §5.2).
+     */
+    public List<ClassroomEvent> applyAnswerFinished(UUID studentId) {
+        VirtualStudentRuntime student = find(studentId);
+        if (student.behavior() == VirtualStudentBehavior.FOCUSED) {
+            return List.of();
+        }
+        return transition(student, VirtualStudentBehavior.FOCUSED, "answer_finished");
     }
 
     /** {@code student.follow_up}: following-up student gains attention. */
@@ -372,6 +414,21 @@ public final class VirtualStudentDynamics {
         Objects.requireNonNull(random, "random");
         double amplitude = Math.max(Math.abs(delta) * EVENT_NOISE_RATIO, MIN_EVENT_NOISE);
         return delta + (random.nextDouble() * 2.0 - 1.0) * amplitude;
+    }
+
+    /**
+     * Applies one externally driven behaviour transition through {@link #applyStateChanged} so the
+     * 05A §5.3 state-scoped deltas stay in one place, and returns the matching
+     * {@code student.state_changed} event. A no-op transition returns an empty list.
+     */
+    private List<ClassroomEvent> transition(
+            VirtualStudentRuntime student, VirtualStudentBehavior to, String reason) {
+        VirtualStudentBehavior from = student.behavior();
+        if (from == to) {
+            return List.of();
+        }
+        applyStateChanged(student.id(), to);
+        return List.of(stateChanged(student, from, to, reason));
     }
 
     private static ClassroomEvent stateChanged(

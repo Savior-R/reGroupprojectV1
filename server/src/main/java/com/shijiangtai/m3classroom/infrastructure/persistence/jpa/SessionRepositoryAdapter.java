@@ -11,6 +11,7 @@ import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -55,6 +56,16 @@ public class SessionRepositoryAdapter implements SessionRepository {
     public List<Session> findByStudentAndTask(AccountId studentAccountId, TaskId taskId) {
         return repository.findByStudentAccountIdAndTaskIdOrderByAttemptNoAsc(
                         studentAccountId.value(), taskId.value()).stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
+    public List<Session> findByStatusIn(Collection<SessionStatus> statuses) {
+        List<String> wireStatuses = statuses.stream()
+                .map(SessionStatus::wireValue)
+                .toList();
+        return repository.findByStatusIn(wireStatuses).stream()
                 .map(this::toDomain)
                 .toList();
     }

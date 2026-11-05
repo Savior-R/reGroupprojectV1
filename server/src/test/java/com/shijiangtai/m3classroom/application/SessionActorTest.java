@@ -26,6 +26,7 @@ import com.shijiangtai.m3classroom.support.FakeContentClient;
 import com.shijiangtai.m3classroom.support.FakeScheduler;
 import com.shijiangtai.m3classroom.support.InMemorySessionEventStore;
 import com.shijiangtai.m3classroom.support.InMemorySessionTextStore;
+import com.shijiangtai.shared.application.ClockProvider;
 import com.shijiangtai.shared.application.IdGenerator;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.CourseId;
@@ -277,6 +278,138 @@ class SessionActorTest {
                 .distinct()
                 .count();
         assertThat(uniqueStudents).isEqualTo(raises.size());
+    }
+
+    @Test
+    void handRaiseIsVisibleInSnapshotAndTickStates() {
+        ActorFixture fixture = freeFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1"));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        fixture.actor().handle(new SessionCommand.AskClass("ask-1"));
+        fixture.scheduler().advance(Duration.ofSeconds(3));
+
+        List<SessionEvent> raises = eventsOfType(fixture, "student.hand_raised");
+        assertThat(raises).isNotEmpty();
+        List<UUID> raisedStudentIds = raises.stream()
+                .map(event -> (UUID) event.payload().get("student_id"))
+                .toList();
+
+        SessionSnapshot snapshot = fixture.actor().snapshot();
+        for (UUID studentId : raisedStudentIds) {
+            assertThat(snapshot.virtualStudents())
+                    .filteredOn(view -> studentId.equals(view.get("virtual_student_id")))
+                    .singleElement()
+                    .satisfies(view -> assertThat(view.get("state")).isEqualTo("hand_raised"));
+            assertThat(fixture.dynamics().find(studentId).behavior())
+                    .isEqualTo(VirtualStudentBehavior.HAND_RAISED);
+        }
+        assertThat(eventsOfType(fixture, "student.state_changed"))
+                .filteredOn(event -> "hand_raised".equals(event.payload().get("reason")))
+                .hasSize(raises.size());
+
+        fixture.actor().onTick(NOW.plusMillis(1_000));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> tickStates = (List<Map<String, Object>>)
+                eventsOfType(fixture, "session.time_tick").get(0).payload().get("states");
+        for (UUID studentId : raisedStudentIds) {
+            assertThat(tickStates)
+                    .filteredOn(state -> studentId.equals(state.get("virtual_student_id")))
+                    .singleElement()
+                    .satisfies(state -> assertThat(state.get("state")).isEqualTo("hand_raised"));
+        }
+    }
+
+    @Test
+    void callOnTransitionsToCalledOnAndAnsweringThenFocused() {
+        ActorFixture fixture = freeFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1"));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        fixture.actor().handle(new SessionCommand.AskClass("ask-1"));
+        fixture.scheduler().advance(Duration.ofSeconds(3));
+        SessionEvent raise = eventsOfType(fixture, "student.hand_raised").get(0);
+        UUID studentId = (UUID) raise.payload().get("student_id");
+
+        assertThat(fixture.actor().handle(new SessionCommand.CallOn(
+                "call-1", studentId, (UUID) raise.payload().get("hand_raise_id"))).ok())
+                .isTrue();
+
+        List<SessionEvent> transitions = eventsOfType(fixture, "student.state_changed").stream()
+                .filter(event -> studentId.equals(event.payload().get("student_id")))
+                .toList();
+        assertThat(transitions).extracting(event -> event.payload().get("to"))
+                .containsExactly("hand_raised", "called_on", "answering", "focused");
+        assertThat(transitions).extracting(event -> event.payload().get("reason"))
+                .containsExactly(
+                        "hand_raised", "called_on", "answer_started", "answer_finished");
+        assertThat(fixture.actor().snapshot().virtualStudents())
+                .filteredOn(view -> studentId.equals(view.get("virtual_student_id")))
+                .singleElement()
+                .satisfies(view -> assertThat(view.get("state")).isEqualTo("focused"));
+    }
+
+    @Test
+    void studentQuestionCallOnKeepsCalledOnState() {
+        ActorFixture fixture = freeFixture(FakeContentClient::new);
+        fixture.actor().handle(ready("ready-1"));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        fixture.actor().handle(new SessionCommand.AskStudentQuestion("ask-1"));
+        fixture.scheduler().advance(Duration.ofSeconds(3));
+        SessionEvent raise = eventsOfType(fixture, "student.hand_raised").get(0);
+        UUID studentId = (UUID) raise.payload().get("student_id");
+
+        assertThat(fixture.actor().handle(new SessionCommand.CallOn(
+                "call-1", studentId, (UUID) raise.payload().get("hand_raise_id"))).ok())
+                .isTrue();
+
+        assertThat(fixture.actor().snapshot().virtualStudents())
+                .filteredOn(view -> studentId.equals(view.get("virtual_student_id")))
+                .singleElement()
+                .satisfies(view -> assertThat(view.get("state")).isEqualTo("called_on"));
+        assertThat(eventsOfType(fixture, "student.question")).hasSize(1);
+        assertThat(eventsOfType(fixture, "student.question").get(0).payload())
+                .containsKey("question_id");
+    }
+
+    @Test
+    void emptyHandWindowTimesOutWhenOnlyStudentIsIneligible() {
+        ActorFixture fixture = freeFixture(FakeContentClient::new);
+        fixture.dynamics().initialize(List.of(toConfig(
+                virtualStudent(VIRTUAL_STUDENT_1, "林小雨", 1))));
+        fixture.dynamics().applyStateChanged(
+                VIRTUAL_STUDENT_1, VirtualStudentBehavior.WHISPERING);
+        fixture.actor().handle(ready("ready-1"));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+
+        fixture.actor().handle(new SessionCommand.AskClass("ask-1"));
+        assertThat(fixture.scheduler().pendingTasks()).isEqualTo(2);
+        fixture.scheduler().advance(Duration.ofSeconds(3));
+
+        assertThat(eventsOfType(fixture, "student.hand_raised")).isEmpty();
+        fixture.scheduler().advance(Duration.ofSeconds(27));
+
+        List<SessionEvent> timeouts = eventsOfType(fixture, "classroom.hand_window_timeout");
+        assertThat(timeouts).hasSize(1);
+        assertThat(timeouts.get(0).payload().get("hand_raise_ids")).isEqualTo(List.of());
+        assertThat(fixture.classroom().macroState()).isEqualTo(ClassroomMacroState.LECTURING);
+        List<SessionEvent> classroomChanges = eventsOfType(fixture, "classroom.state_changed");
+        assertThat(classroomChanges.get(classroomChanges.size() - 1).payload().get("trigger"))
+                .isEqualTo("hand_window_timeout");
+        assertThat(eventsOfType(fixture, "student.hand_lowered")).isEmpty();
+    }
+
+    @Test
+    void snapshotElapsedIsClampedToEndedAt() {
+        MutableClock clock = new MutableClock(NOW);
+        ActorFixture fixture = fixture(TaskMode.FREE, new FakeContentClient(), clock);
+        fixture.actor().handle(ready("ready-1"));
+        fixture.actor().handle(new SessionCommand.StartSession("start-1"));
+        clock.advance(Duration.ofSeconds(60));
+        fixture.actor().handle(new SessionCommand.EndSession("end-1"));
+
+        clock.advance(Duration.ofSeconds(600));
+
+        assertThat(fixture.actor().snapshot().elapsedMs()).isEqualTo(60_000L);
     }
 
     @Test
@@ -544,6 +677,10 @@ class SessionActorTest {
     }
 
     private ActorFixture fixture(TaskMode mode, FakeContentClient client) {
+        return fixture(mode, client, () -> NOW);
+    }
+
+    private ActorFixture fixture(TaskMode mode, FakeContentClient client, ClockProvider clock) {
         UUID sessionUuid = UUID.randomUUID();
         Session session = Session.createPreparing(
                 new SessionId(sessionUuid), SessionType.TASK, new TaskId(TASK_ID),
@@ -563,7 +700,7 @@ class SessionActorTest {
         SessionActor actor = new SessionActor(
                 session, taskSnapshot, context, classroom, dynamics, interview,
                 new ContentGenerationService(client), eventStore, textStore, ids,
-                () -> NOW, scheduler, new java.util.Random(11));
+                clock, scheduler, new java.util.Random(11));
         return new ActorFixture(actor, session, taskSnapshot, context, scheduler, client,
                 eventStore, textStore, dynamics, classroom, interview);
     }
@@ -702,6 +839,24 @@ class SessionActorTest {
                             "无法读取 record 组件 " + component.getName(), exception);
                 }
             }
+        }
+    }
+
+    private static final class MutableClock implements ClockProvider {
+
+        private Instant now;
+
+        private MutableClock(Instant now) {
+            this.now = now;
+        }
+
+        private void advance(Duration duration) {
+            now = now.plus(duration);
+        }
+
+        @Override
+        public Instant now() {
+            return now;
         }
     }
 

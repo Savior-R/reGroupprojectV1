@@ -16,6 +16,7 @@ import com.shijiangtai.shared.domain.CourseId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -121,6 +122,30 @@ class SessionRepositoryIT extends PostgresIntegrationTest {
                 .isEqualTo(secondId);
         assertThat(repository.countByStudentAndTask(
                 new AccountId(DevDataConfig.STUDENT2_ID), taskId)).isZero();
+    }
+
+    @Test
+    void findsSessionsByStatusForRestartReconciliation() {
+        TaskId taskId = seedTask();
+        TaskId otherTaskId = seedTask();
+        // preparing + in_progress are both active; the partial unique index allows only one
+        // active task session per student/task, so the in_progress session needs its own task.
+        Session preparing = preparingSession(new SessionId(UUID.randomUUID()), taskId, 1);
+        Session inProgress = preparingSession(
+                new SessionId(UUID.randomUUID()), otherTaskId, 1);
+        inProgress.start(NOW);
+        Session ended = preparingSession(new SessionId(UUID.randomUUID()), taskId, 3);
+        ended.start(NOW);
+        ended.end(NOW.plusSeconds(30));
+        repository.save(preparing);
+        repository.save(inProgress);
+        repository.save(ended);
+
+        assertThat(repository.findByStatusIn(List.of(
+                SessionStatus.PREPARING, SessionStatus.IN_PROGRESS)))
+                .extracting(Session::id)
+                .containsExactlyInAnyOrder(preparing.id(), inProgress.id());
+        assertThat(repository.findByStatusIn(List.of(SessionStatus.FAILED))).isEmpty();
     }
 
     @Test

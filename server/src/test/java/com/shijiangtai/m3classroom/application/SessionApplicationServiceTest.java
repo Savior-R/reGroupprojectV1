@@ -107,6 +107,7 @@ class SessionApplicationServiceTest {
         service = new SessionApplicationServiceImpl(
                 tasks, assignments, courses, new TaskAccessPolicy(courses),
                 new SessionAccessPolicy(courses), sessions, events, registry, recording,
+                new SessionStartGuard(sessions, tasks, courses, () -> NOW),
                 UUID::randomUUID, () -> NOW);
         taskId = createPublishedTask();
     }
@@ -168,6 +169,38 @@ class SessionApplicationServiceTest {
         courses.addCourse(new CourseInfo(COURSE_ID, SCHOOL_ID, "语文教学论", true,
                 NOW.minusSeconds(1), List.of(TEACHER_ID)));
         assertCode(() -> service.createSession(student(), taskId), ErrorCode.COURSE_ENDED);
+    }
+
+    @Test
+    void archivedCourseRejectsStartAfterSessionCreation() {
+        SessionView created = service.createSession(student(), taskId);
+        SessionId sessionId = new SessionId(created.sessionId());
+        SessionActor actor = registry.getOrCreate(sessionId);
+        assertThat(actor.handle(ready("ready-1")).ok()).isTrue();
+        long seqBeforeStart = events.maxSeq(sessionId);
+
+        courses.addCourse(new CourseInfo(COURSE_ID, SCHOOL_ID, "语文教学论", false,
+                Instant.parse("2027-06-30T00:00:00Z"), List.of(TEACHER_ID)));
+
+        assertCode(() -> service.start(student(), sessionId), ErrorCode.COURSE_ARCHIVED);
+        assertThat(actor.session().status()).isEqualTo(SessionStatus.PREPARING);
+        assertThat(events.maxSeq(sessionId)).isEqualTo(seqBeforeStart);
+        assertThat(events.after(sessionId, 0, 100))
+                .noneMatch(event -> event.type().equals("session.started"));
+    }
+
+    @Test
+    void endedCourseRejectsStartAfterSessionCreation() {
+        SessionView created = service.createSession(student(), taskId);
+        SessionId sessionId = new SessionId(created.sessionId());
+        SessionActor actor = registry.getOrCreate(sessionId);
+        assertThat(actor.handle(ready("ready-1")).ok()).isTrue();
+
+        courses.addCourse(new CourseInfo(COURSE_ID, SCHOOL_ID, "语文教学论", true,
+                NOW.minusSeconds(1), List.of(TEACHER_ID)));
+
+        assertCode(() -> service.start(student(), sessionId), ErrorCode.COURSE_ENDED);
+        assertThat(actor.session().status()).isEqualTo(SessionStatus.PREPARING);
     }
 
     @Test

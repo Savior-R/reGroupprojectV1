@@ -91,7 +91,9 @@ docker compose --profile test run --rm test \
   gradle clean test --no-daemon --console=plain
 ```
 
-结果：`BUILD SUCCESSFUL in 1m 9s`，**50 个测试类 / 385 条用例，0 failure / 0 error / 0 skipped**。Task 11 基线为 365 条，本任务新增 20 条（6 条信封契约 + 10 条 WS IT + 4 条 `SessionReconnectTest` 用例：`preparing` 断线 grace、重连/start 取消 grace、终态 eviction 保护）。
+结果（Task 12 初始实现）：`BUILD SUCCESSFUL in 1m 9s`，**50 个测试类 / 385 条用例，0 failure / 0 error / 0 skipped**。Task 11 基线为 365 条，本任务新增 20 条（6 条信封契约 + 10 条 WS IT + 4 条 `SessionReconnectTest` 用例：`preparing` 断线 grace、重连/start 取消 grace、终态 eviction 保护）。
+
+结果（最终审查修复后复跑）：`docker compose --profile test run --rm test gradle clean test --no-daemon --console=plain` → `BUILD SUCCESSFUL`，**52 个测试类 / 401 条用例，0 failure / 0 error / 0 skipped**。相对 385 条基线新增 16 条最终审查回归用例：`SessionActorTest` 5、`SessionApplicationServiceTest` 2、`SessionReconnectTest` 2、`VirtualStudentDynamicsTest` 1、`SessionRepositoryIT` 1、`ClassroomWebSocketIT` 2、新增 `SessionStartupReconcilerTest` 2、新增 `ClassroomWebSocketHandlerTest` 1。
 
 ## 5. Docker Compose smoke
 
@@ -184,6 +186,41 @@ RESULT {"firstClose":1000,"secondClose":1000,"askAckOk":true}
 
 数据库：该会话最终 `ended|t|t`，事件中无 `session.failed`；证明重连/start 后旧 `PREPARING` grace 不再误杀 `in_progress` 会话。该场景同时验证了 15 秒 `ping` 与客户端 `pong`。
 
+### 5.2 最终审查修复后的 Compose WS 复跑
+
+`docker compose up -d --build` 后 `actuator/health` 为 UP；`SessionStartupReconciler` 启动日志为 `Session startup reconciliation marked 0 task session(s) failed`。使用 Node 22 内置 WebSocket 客户端复跑 Task 12 的四段场景（会话 `01a1a91e-dadf-7a89-80dc-88a033009fce`，free 任务，2 名虚拟学生）：
+
+```text
+[bad-ticket] CLOSE 4001 认证或会话状态不允许连接
+[oversized] << session.snapshot {"state":"preparing",...}
+[oversized] CLOSE 4005 消息超过 64 KB
+[good] << session.snapshot {"state":"preparing",...,"last_seq":0,"elapsed_ms":0}
+[good] << recording.ready_ack {"required_streams":["camera","screen","audio"],"ok":true}
+[good] << session.started {"started_at_ms":0} / server.ack smoke-start ok
+[good] << server.ack {"command_id":"smoke-time","ok":true,"at_ms":34,"server_time_ms":1793838763653}
+[good] << classroom.question_asked {"source":"manual","intent":"answer"}
+[good] << student.hand_raised {"student_id":"2222...","hand_raise_id":"13bdea63-..."}
+[good] << student.state_changed {"student_id":"2222...","from":"focused","to":"hand_raised","reason":"hand_raised"}
+[good] << student.state_changed {"student_id":"2222...","from":"hand_raised","to":"called_on","reason":"called_on"}
+[good] << student.state_changed {"student_id":"2222...","from":"called_on","to":"answering","reason":"answer_started"}
+[good] << student.state_changed {"student_id":"2222...","from":"answering","to":"focused","reason":"answer_finished"}
+[good] << session.ended {"reason":"manual","duration_ms":4414}
+[good] CLOSE 1000 smoke done
+[terminal] << session.snapshot {"state":"ended",...,"last_seq":22,"elapsed_ms":4414}
+[terminal] CLOSE 1000 会话已结束
+RESULT {"failures":0}
+```
+
+数据库校验（同一会话）：
+
+```sql
+select status, started_at is not null, ended_at is not null
+from m3_classroom.sessions where id = '01a1a91e-dadf-7a89-80dc-88a033009fce';
+-- ended | t | t
+```
+
+事件共 22 条，seq 7—10 为两名学生的 `student.hand_raised` + `student.state_changed`，seq 11—12 为其余举手放下，seq 14—19 为 `teacher.called_on` 后的 `called_on → answering → focused`；seq 22 为 `session.ended`。说明行为状态事件按序落库、`at_ms` 正常、终态快照 `last_seq=22` 与持久化最大 seq 一致（证明 registry 重建时从 `eventStore.maxSeq` 续 seq）。
+
 ## 6. smoke 中发现并修复的问题
 
 ### 6.1 Alpine JRE 缺少 `jdk.random`，首个 WS 连接 1011
@@ -208,6 +245,20 @@ RESULT {"firstClose":1000,"secondClose":1000,"askAckOk":true}
    - `startCancelsPreparingGraceWithoutReconnect`：即使没有 `onWsConnected`，`session.start` 也会取消旧 grace。
    - Docker smoke 的 grace 场景：断线 → 重连 → start → 等待 31 s → `teacher.ask_class` ack `ok=true` → `session.ended`，证明真实调度器下未被旧 timer 失败。
 2. **终态 eviction 不绕过 registry 的保存失败保护**：新增 `SessionRuntimeRegistry.removeIfPersistedTerminal(sessionId)`，只有 actor 与持久化行都为终态时才移除；若终态保存失败、DB 行仍为 `in_progress`，保留 actor 作为防重建 shield。handler 的终态连接分支改用该方法。覆盖：`terminalActorIsEvictedOnlyWhenPersistedRowIsTerminal`（先让保存失败 → `removeIfPersistedTerminal=false` 且 actor 保留；恢复保存并持久化终态后 → `true` 且 actor 移除）。
+
+### 6.4 最终审查修复（第 4 轮，4 项必需 + 5 项次要）
+
+1. **虚拟学生行为状态**：`VirtualStudentDynamics.applyHandRaised / applyCalledOn / applyAnswer / applyAnswerFinished / applyHandLowered` 现在统一通过 `applyStateChanged` 应用状态并返回 `student.state_changed {student_id, from, to, reason}`；`SessionActor` 在 `student.hand_raised`、`teacher.call_on`、`student.answer`、`student.hand_lowered` 后按协议顺序追加事件。快照与 `session.time_tick.states` 读取 `VirtualStudentRuntime.behavior()`，因此 `hand_raised / called_on / answering / focused` 对前端可见。覆盖：`SessionActorTest.handRaiseIsVisibleInSnapshotAndTickStates`、`callOnTransitionsToCalledOnAndAnsweringThenFocused`、`studentQuestionCallOnKeepsCalledOnState`；`VirtualStudentDynamicsTest.interactionTransitionsEmitStudentStateChangedEvents`。
+2. **空举手窗口**：`teacher.ask_class` / `teacher.ask_student_question` 每次都会调度 30 秒超时；若 1—3 秒内无人举手（如所有学生都在 whispering / 对话中），超时仍触发 `classroom.hand_window_timeout {hand_raise_ids: []}`、`classroom.state_changed (trigger=hand_window_timeout)` 并回到 `lecturing`，不再永久停留在 `qa.waiting_hands`。有举手时超时改为从第一个举手起 30 秒。覆盖：`SessionActorTest.emptyHandWindowTimesOutWhenOnlyStudentIsIneligible`。
+3. **Java 重启对账**：新增 `SessionStartupReconciler`（`ApplicationRunner`），启动时把仍为 `PREPARING` / `IN_PROGRESS` 的 `TASK` 会话置为 `FAILED`（`FailureReason.INTERNAL`），并在 `maxSeq + 1` 追加持久化 `session.failed {reason: internal}`；`SessionRuntimeRegistry.buildActor` 用 `eventStore.maxSeq` 初始化 `SessionContext.lastSeq`，重建 actor 的新事件不会撞上已落库的 `(session_id, seq)`。Docker 启动日志：`Session startup reconciliation marked 0 task session(s) failed`；终态会话重连快照 `last_seq=22`（对账/落库后重建，证明从持久化最大 seq 继续）。覆盖：`SessionStartupReconcilerTest` 2 条、`SessionReconnectTest.rebuiltActorSeedsLastSeqFromPersistedEventStore`、`SessionRepositoryIT.findsSessionsByStatusForRestartReconciliation`。
+4. **归档 / 已结束课程开始校验**：新增 `SessionStartGuard`，校验 `PREPARING` + 课程 `active` + `endAt > now`，由 `SessionApplicationServiceImpl.start` 与 WS handler 在 `session.start` 前调用；重复 `command_id` 的 start 仍走 actor 命令历史返回原 ack。覆盖：`SessionApplicationServiceTest.archivedCourseRejectsStartAfterSessionCreation` / `endedCourseRejectsStartAfterSessionCreation`、`ClassroomWebSocketIT.archivedCourseStartIsRejected` / `endedCourseStartIsRejected`，并保留 `duplicateCommandIdAcksOnce`。
+5. **次要修复**：连接 `lastSeq` 改为 `accumulateAndGet(..., Math::max)`（`session.resume` 先推高 seq 再补发低 seq 不倒退）；`at_ms` / snapshot `elapsed_ms` 在 `endedAt` 后钳制；`student.question` payload 增加 `question_id`；WS 命令持久化失败改为 `error INTERNAL_ERROR` + close 4002，不再 ack true；actor / handler 的内部异常日志带 `session_id`、命令类型与 `command_id`，对外只返回通用 `命令处理失败`。覆盖：`ClassroomWebSocketIT.reconnectWithinGraceReplaysMissingEvents`（ack seq 断言）、`SessionActorTest.snapshotElapsedIsClampedToEndedAt`、`ClassroomWebSocketHandlerTest.startPersistenceFailureSendsErrorAndCloses4002InsteadOfAck`、`SessionReconnectTest.internalCommandFailureReturnsGenericMessage`。
+
+**RED / GREEN 记录**：
+
+- 首次全量执行（修复 `SessionStartupReconciler` 的 `final` + `@Transactional` CGLIB 代理问题前）：`401 tests completed, 71 failed`，全部为上下文加载失败（`CglibAopProxy` / `Enhancer`），确认测试先于实现暴露启动缺陷。
+- 修复后全量复跑：仅剩 2 条失败——`SessionRepositoryIT.findsSessionsByStatusForRestartReconciliation`（两个 active 会话触发 `uq_sessions_task_active`）与 `ClassroomWebSocketIT.duplicateCommandIdAcksOnce`（start guard 在 actor 去重前拦截了重复命令）。
+- 两项修复后聚焦复跑 `*SessionRepositoryIT` + `*ClassroomWebSocketIT`：`BUILD SUCCESSFUL`；最终全量 clean run：**52 classes / 401 tests，0 failure / 0 error / 0 skipped**。
 
 ## 7. 覆盖与未覆盖
 
@@ -256,3 +307,10 @@ RESULT {"firstClose":1000,"secondClose":1000,"askAckOk":true}
 - `docs/team/evidence/2026-11-04-m3b-classroom-ws.md`
 - `docs/team/02-进度看板.md`（仅 M3B 行 blocker + 一条 §5 记录）
 - `server/README.md`（WS smoke 命令）
+
+最终审查修复（第 4 轮）新增 / 修改：
+
+- 新增生产类：`server/src/main/java/com/shijiangtai/m3classroom/application/SessionStartGuard.java`、`SessionStartupReconciler.java`。
+- 修改生产类：`SessionActor.java`（行为状态事件、空举手窗口、`endedAt` 钳制、`question_id`、内部异常日志）、`SessionApplicationServiceImpl.java`（start 前 guard）、`SessionRuntimeRegistry.java`（`eventStore.maxSeq` 续接 `lastSeq`）、`VirtualStudentDynamics.java`（行为状态转移 + `student.state_changed`）、`SessionContext.java`（持久化 `lastSeq` 构造器）、`SessionRepository.java` / `SessionJpaRepository.java` / `SessionRepositoryAdapter.java`（`findByStatusIn`）、`ClassroomWebSocketHandler.java`（start guard、持久化失败 error + 4002、`lastSeq` 单调、`endedAt` 钳制、异常日志）。
+- 新增测试：`server/src/test/java/com/shijiangtai/m3classroom/application/SessionStartupReconcilerTest.java`、`server/src/test/java/com/shijiangtai/m3classroom/infrastructure/ws/ClassroomWebSocketHandlerTest.java`。
+- 修改测试：`SessionActorTest.java`、`SessionApplicationServiceTest.java`、`SessionReconnectTest.java`、`VirtualStudentDynamicsTest.java`、`SessionRepositoryIT.java`、`InMemorySessionRepository.java`、`ClassroomWebSocketIT.java`。

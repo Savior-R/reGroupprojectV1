@@ -2,6 +2,7 @@ package com.shijiangtai.m3classroom.infrastructure.ws;
 
 import com.shijiangtai.m3classroom.application.SessionActor;
 import com.shijiangtai.m3classroom.application.SessionRuntimeRegistry;
+import com.shijiangtai.m3classroom.application.SessionStartGuard;
 import com.shijiangtai.m3classroom.application.port.SchedulerPort;
 import com.shijiangtai.m3classroom.domain.session.CommandResult;
 import com.shijiangtai.m3classroom.domain.session.SessionCommand;
@@ -64,6 +65,7 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
     private final SessionRuntimeRegistry runtimeRegistry;
     private final WsConnectionRegistry connectionRegistry;
     private final SessionRepository sessionRepository;
+    private final SessionStartGuard startGuard;
     private final WsCommandParser commandParser;
     private final ClockProvider clock;
     private final SchedulerPort scheduler;
@@ -74,6 +76,7 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
             SessionRuntimeRegistry runtimeRegistry,
             WsConnectionRegistry connectionRegistry,
             SessionRepository sessionRepository,
+            SessionStartGuard startGuard,
             WsCommandParser commandParser,
             ClockProvider clock,
             SchedulerPort scheduler,
@@ -82,6 +85,7 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
         this.connectionRegistry = Objects.requireNonNull(
                 connectionRegistry, "connectionRegistry");
         this.sessionRepository = Objects.requireNonNull(sessionRepository, "sessionRepository");
+        this.startGuard = Objects.requireNonNull(startGuard, "startGuard");
         this.commandParser = Objects.requireNonNull(commandParser, "commandParser");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
@@ -209,9 +213,31 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
                 connection.lastPongAt.set(clock.now().toEpochMilli());
             }
             SessionCommand command = commandParser.toCommand(envelope);
+            if (command instanceof SessionCommand.StartSession
+                    && actor.session().status() == SessionStatus.PREPARING) {
+                // The session may have been created before the course was archived/ended; the
+                // WS start path must re-check it before the actor mutates the aggregate. A
+                // duplicate start (already in_progress) must still reach the actor's command
+                // history so it returns the original ack instead of a state error.
+                startGuard.requireStartable(actor.session());
+            }
             CommandResult result = actor.handle(command);
             if (result.ok()) {
-                persistIfNeeded(actor, command);
+                try {
+                    persistIfNeeded(actor, command);
+                } catch (RuntimeException exception) {
+                    // Never acknowledge a start (or any command) whose session row was not made
+                    // durable: the client would believe the session is live while a restart /
+                    // reconnect would reload the previous status.
+                    LOG.error("Failed to persist session {} after WS command {} ({})",
+                            connection.sessionId == null
+                                    ? null : connection.sessionId.value(),
+                            envelope.type(), envelope.commandId(), exception);
+                    connection.sendError(ErrorCode.INTERNAL_ERROR,
+                            "会话状态持久化失败", envelope.commandId());
+                    connection.close(CLOSE_FAILED, "会话状态持久化失败");
+                    return;
+                }
                 if (command instanceof SessionCommand.TimeSync) {
                     connection.sendTimeSyncAck(envelope.commandId());
                 } else {
@@ -225,7 +251,11 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
             connection.sendError(exception.code(), exception.getMessage(),
                     envelope == null ? null : envelope.commandId());
         } catch (RuntimeException exception) {
-            LOG.error("Unexpected WebSocket command failure", exception);
+            LOG.error("Unexpected WebSocket command failure: session_id={}, command={}, "
+                            + "command_id={}",
+                    connection.sessionId == null ? null : connection.sessionId.value(),
+                    envelope == null ? null : envelope.type(),
+                    envelope == null ? null : envelope.commandId(), exception);
             connection.sendError(ErrorCode.INTERNAL_ERROR, "命令处理失败",
                     envelope == null ? null : envelope.commandId());
         }
@@ -256,17 +286,16 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * Persists the aggregate after a successful command. Failures propagate so the caller can
+     * send an error and close 4002 instead of a misleading {@code server.ack {ok:true}}.
+     */
     private void persistIfNeeded(SessionActor actor, SessionCommand command) {
         if (command instanceof SessionCommand.Pong
                 || command instanceof SessionCommand.TimeSync) {
             return;
         }
-        try {
-            sessionRepository.save(actor.session());
-        } catch (RuntimeException exception) {
-            LOG.error("Failed to persist session {} after WS command",
-                    actor.session().id().value(), exception);
-        }
+        sessionRepository.save(actor.session());
     }
 
     private void closeReplaced(Consumer<SessionEvent> previous) {
@@ -322,7 +351,9 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
         /** Single live push path: actor events become server envelopes. */
         private void sendEvent(SessionEvent event) {
             try {
-                lastSeq.set(event.seq());
+                // session.resume pushes session.resumed first and then a lower-seq replay tail;
+                // the connection sequence must never rewind.
+                lastSeq.accumulateAndGet(event.seq(), Math::max);
                 sender.send(ServerEventEnvelope.of(event));
             } catch (IOException exception) {
                 close(CLOSE_TOO_LARGE, "事件推送失败");
@@ -419,9 +450,12 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
         }
         synchronized (actor) {
             Instant startedAt = actor.session().startedAt();
-            return startedAt == null
-                    ? 0L
-                    : Math.max(0L, Duration.between(startedAt, now).toMillis());
+            if (startedAt == null) {
+                return 0L;
+            }
+            Instant endedAt = actor.session().endedAt();
+            Instant effectiveNow = endedAt != null && now.isAfter(endedAt) ? endedAt : now;
+            return Math.max(0L, Duration.between(startedAt, effectiveNow).toMillis());
         }
     }
 }

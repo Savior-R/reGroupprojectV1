@@ -24,9 +24,25 @@ public final class SessionContext {
 
     public SessionContext(SessionId sessionId, Supplier<UUID> eventIds,
                           Supplier<Instant> createdAt) {
+        this(sessionId, eventIds, createdAt, 0L);
+    }
+
+    /**
+     * Creates a context whose next sequence number is {@code persistedLastSeq + 1}.
+     *
+     * <p>Used when a Java restart rebuilds an actor from the durable event store: the in-memory
+     * context does not reload the historical events, but it must never rewind {@code seq} and
+     * collide with rows already persisted.
+     */
+    public SessionContext(SessionId sessionId, Supplier<UUID> eventIds,
+                          Supplier<Instant> createdAt, long persistedLastSeq) {
+        if (persistedLastSeq < 0) {
+            throw new IllegalArgumentException("persistedLastSeq must not be negative");
+        }
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId");
         this.eventIds = Objects.requireNonNull(eventIds, "eventIds");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt");
+        this.lastSeq = persistedLastSeq;
     }
 
     public SessionId sessionId() {

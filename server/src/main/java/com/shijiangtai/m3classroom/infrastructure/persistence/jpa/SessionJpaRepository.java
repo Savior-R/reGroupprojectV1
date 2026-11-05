@@ -13,5 +13,7 @@ public interface SessionJpaRepository extends JpaRepository<SessionEntity, UUID>
     List<SessionEntity> findByStudentAccountIdAndTaskIdAndStatusInOrderByAttemptNoDesc(
             UUID studentAccountId, UUID taskId, Collection<String> statuses);
 
+    List<SessionEntity> findByStatusIn(Collection<String> statuses);
+
     long countByStudentAccountIdAndTaskId(UUID studentAccountId, UUID taskId);
 }

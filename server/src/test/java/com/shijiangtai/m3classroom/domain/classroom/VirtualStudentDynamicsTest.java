@@ -218,6 +218,57 @@ class VirtualStudentDynamicsTest {
     }
 
     @Test
+    void interactionTransitionsEmitStudentStateChangedEvents() {
+        VirtualStudentDynamics dynamics = dynamics(config(1, "0.50", "0.0"));
+        VirtualStudentRuntime student = dynamics.find(studentId(1));
+
+        List<ClassroomEvent> raised = dynamics.applyHandRaised(
+                studentId(1), NOW, new ConstantRandom(0.5));
+        assertThat(student.behavior()).isEqualTo(VirtualStudentBehavior.HAND_RAISED);
+        assertThat(singleTransition(raised))
+                .containsEntry("from", "focused")
+                .containsEntry("to", "hand_raised")
+                .containsEntry("reason", "hand_raised");
+
+        List<ClassroomEvent> calledOn = dynamics.applyCalledOn(studentId(1));
+        assertThat(student.behavior()).isEqualTo(VirtualStudentBehavior.CALLED_ON);
+        assertThat(singleTransition(calledOn))
+                .containsEntry("from", "hand_raised")
+                .containsEntry("to", "called_on")
+                .containsEntry("reason", "called_on");
+
+        List<ClassroomEvent> answering = dynamics.applyAnswer(studentId(1));
+        assertThat(student.behavior()).isEqualTo(VirtualStudentBehavior.ANSWERING);
+        assertThat(singleTransition(answering))
+                .containsEntry("from", "called_on")
+                .containsEntry("to", "answering")
+                .containsEntry("reason", "answer_started");
+
+        List<ClassroomEvent> finished = dynamics.applyAnswerFinished(studentId(1));
+        assertThat(student.behavior()).isEqualTo(VirtualStudentBehavior.FOCUSED);
+        assertThat(singleTransition(finished))
+                .containsEntry("from", "answering")
+                .containsEntry("to", "focused")
+                .containsEntry("reason", "answer_finished");
+
+        dynamics.applyHandRaised(studentId(1), NOW, new ConstantRandom(0.5));
+        List<ClassroomEvent> lowered = dynamics.applyHandLowered(
+                studentId(1), "teacher_timeout");
+        assertThat(student.behavior()).isEqualTo(VirtualStudentBehavior.FOCUSED);
+        assertThat(singleTransition(lowered))
+                .containsEntry("from", "hand_raised")
+                .containsEntry("to", "focused")
+                .containsEntry("reason", "teacher_timeout");
+    }
+
+    private static java.util.Map<String, Object> singleTransition(
+            List<ClassroomEvent> events) {
+        assertThat(events).hasSize(1);
+        assertThat(events.get(0).type()).isEqualTo("student.state_changed");
+        return events.get(0).payload();
+    }
+
+    @Test
     void stateAndDisciplineEventsApplyDeltasToStudentAndNeighbours() {
         VirtualStudentDynamics dynamics = dynamics(
                 config(1, "0.50", "0.0"),
