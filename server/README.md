@@ -69,6 +69,73 @@ A full transcript, close-code checks, and the DB verification SQL are in
 > `allowedOrigins("*")` is dev-only until the M1 gateway/JWT layer lands; tighten it before
 > release.
 
+## Recording / replay smoke
+
+A session must be `in_progress` before it can be ended and submitted. Start it through the
+control WebSocket above: send `recording.ready` with camera/screen/audio `ready`, then
+`session.start`. Uploads then use only REST plus the presigned MinIO part URLs.
+
+```bash
+API=http://localhost:8080/api/v1
+TEACHER=(-H 'X-Account-Id: 00000000-0000-0000-0000-000000000010'
+         -H 'X-School-Id: 00000000-0000-0000-0000-000000000001'
+         -H 'X-Account-Type: TEACHER')
+STUDENT=(-H 'X-Account-Id: 00000000-0000-0000-0000-000000000020'
+         -H 'X-School-Id: 00000000-0000-0000-0000-000000000001'
+         -H 'X-Account-Type: STUDENT')
+
+# 1) Create/publish a free task with a parsed .txt material.
+cat > free.json <<'JSON'
+{"mode":"free","topic":"荷塘月色","textbook_version":"部编版",
+ "virtual_students":[{"name":"林小雨","avatar":"avatar-01","personality_text":"性格外向",
+ "activity":0.60,"question_rate":0.50,"ability":0.70,"attention_baseline":0.50,
+ "discipline_probability":0.40,"seat_no":1,"sort_order":1}]}
+JSON
+printf 'M3C recording smoke reference material.\n' > material.txt
+TASK=$(curl -fsS -X POST "$API/courses/00000000-0000-0000-0000-000000000100/tasks" \
+  "${TEACHER[@]}" -H 'Content-Type: application/json' -d @free.json | jq -r .task_id)
+curl -fsS -X POST "$API/tasks/$TASK/material" "${TEACHER[@]}" \
+  -F 'file=@material.txt;type=text/plain' >/dev/null
+curl -fsS -X POST "$API/tasks/$TASK/publish" "${TEACHER[@]}" >/dev/null
+
+# 2) Create the student's session, start it through the WS (recording.ready + session.start).
+SESSION=$(curl -fsS -X POST "$API/tasks/$TASK/sessions" "${STUDENT[@]}" | jq -r .session_id)
+
+# 3) For each stream: multipart start -> part-url -> PUT part -> complete.
+for stream in camera screen audio; do
+  START=$(curl -fsS -X POST \
+    "$API/sessions/$SESSION/recordings/$stream/multipart/start" "${STUDENT[@]}")
+  PART_URL=$(curl -fsS -X POST \
+    "$API/sessions/$SESSION/recordings/$stream/multipart/part-url" "${STUDENT[@]}" \
+    -H 'Content-Type: application/json' -d '{"part_number":1}' | jq -r .url)
+  printf 'M3C-%s' "$stream" > "/tmp/$stream.part"
+  SIZE=$(stat -c%s "/tmp/$stream.part")
+  ETAG=$(curl -fsS -X PUT "$PART_URL" --data-binary "@/tmp/$stream.part" \
+    -D - -o /dev/null | tr -d '\r"' | awk 'tolower($1) == "etag:" {print $2}')
+  MIME=video/webm; [ "$stream" = audio ] && MIME=audio/webm
+  curl -fsS -X POST \
+    "$API/sessions/$SESSION/recordings/$stream/multipart/complete" "${STUDENT[@]}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"parts\":[{\"part_number\":1,\"etag\":\"$ETAG\"}],\"duration_ms\":5000,\"size\":$SIZE,\"mime\":\"$MIME\"}" \
+    | jq '{stream_type,status,object_key,parts_uploaded,bytes_uploaded}'
+done
+
+# 4) End, fetch the replay manifest, then submit.
+curl -fsS -X POST "$API/sessions/$SESSION/end" "${STUDENT[@]}" | jq '{status,duration_ms}'
+curl -fsS "$API/sessions/$SESSION/replay" "${STUDENT[@]}" | jq
+curl -fsS -X POST "$API/sessions/$SESSION/submit" "${STUDENT[@]}" | jq
+```
+
+- Part URLs and replay URLs are presigned for 15 minutes (900 s). They carry
+  `X-Amz-Credential` (access key id + scope) and `X-Amz-Signature`; the secret is never in the URL.
+- Object keys follow `recordings/{school_id}/task/{task_id}/{session_id}/{stream_type}.webm`.
+  Check them in MinIO:
+  `docker compose exec minio mc alias set local http://127.0.0.1:9000 minioadmin minioadmin`
+  then `docker compose exec minio mc ls --recursive local/shijiangtai/recordings`.
+- Submission/stream rows are in `m3_classroom.submissions`, `m3_classroom.recordings` and
+  `m3_classroom.recording_streams`. A full transcript is in
+  `docs/team/evidence/2026-11-04-m3c-recording-replay.md` §5.
+
 ## Migration commands
 
 ```bash
