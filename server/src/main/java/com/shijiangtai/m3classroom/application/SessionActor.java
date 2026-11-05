@@ -74,7 +74,8 @@ import org.slf4j.LoggerFactory;
  * ({@link ClassroomStateMachine#answerFinished(UUID, boolean, Instant)} with {@code false} and
  * back to {@code waiting_hands}); a winning roll starts a dialogue ({@code dialogue.started} +
  * {@code student.follow_up}) and leaves the classroom in {@code qa.dialogue}. Teacher-response
- * driven continuation rounds and every dialogue termination path are handled by later slices.
+ * driven continuation rounds end the dialogue through the same {@code dialogue.ended} →
+ * student {@code focused} → caller transition order used by every termination path (05A §5.3).
  */
 public final class SessionActor {
 
@@ -198,6 +199,9 @@ public final class SessionActor {
         session.cancel(now);
         windowGeneration++;
         openHandRaises.clear();
+        dialogue = null;
+        dialogueAnswerId = null;
+        dialogueAwaitingSinceMs = 0L;
         cancelAllTasks();
         notifyStatusChanged();
     }
@@ -250,7 +254,7 @@ public final class SessionActor {
             return handleManageStudent(manage);
         }
         if (command instanceof SessionCommand.EndDialogue endDialogue) {
-            return handleEndDialogue();
+            return handleEndDialogue(endDialogue);
         }
         if (command instanceof SessionCommand.EndQa endQa) {
             return handleEndQa();
@@ -372,7 +376,8 @@ public final class SessionActor {
                 ? classroom.askStudentQuestion(now)
                 : classroom.askClass(now);
 
-        List<SessionEvent> events = new ArrayList<>(emitHandLowers("qa_ended", now));
+        List<SessionEvent> events = new ArrayList<>(endActiveDialogue("qa_restarted", now));
+        events.addAll(emitHandLowers("qa_ended", now));
         cancel(handRaiseTask);
         handRaiseTask = null;
         cancel(handWindowTask);
@@ -526,36 +531,60 @@ public final class SessionActor {
         return CommandResult.ok(events);
     }
 
-    private CommandResult handleEndDialogue() {
+    private CommandResult handleEndDialogue(SessionCommand.EndDialogue command) {
         requireInProgress("teacher.end_dialogue");
         requireClassroomMode("teacher.end_dialogue");
         Instant now = clock.now();
 
-        List<ClassroomEvent> domainEvents;
+        List<SessionEvent> events;
         boolean answerFinished = false;
         if (classroom.macroState() == ClassroomMacroState.QA
                 && classroom.qaPhase() == QaPhase.STUDENT_ANSWERING) {
             // P0: an explicit end_dialogue while the student is answering finishes the answer.
+            // No dialogue is active in this phase, so a supplied dialogue_id is ignored and the
+            // legacy finish-answer behavior is preserved.
             if (currentStudentId == null) {
                 throw stateInvalid("teacher.end_dialogue", "当前没有可结束的回答");
             }
-            domainEvents = classroom.answerFinished(currentStudentId, false, now);
+            List<ClassroomEvent> domainEvents =
+                    classroom.answerFinished(currentStudentId, false, now);
+            events = new ArrayList<>(appendClassroomEvents(domainEvents, now));
             answerFinished = true;
         } else {
-            domainEvents = classroom.endDialogue(now);
+            requireMatchingDialogueId(command);
+            if (classroom.macroState() == ClassroomMacroState.QA
+                    && classroom.qaPhase() == QaPhase.DIALOGUE) {
+                events = new ArrayList<>(endActiveDialogue("teacher", now));
+                events.addAll(appendClassroomEvents(classroom.endDialogue(
+                        ClassroomStateMachine.TRIGGER_END_DIALOGUE, now), now));
+            } else {
+                // Any other phase is rejected by the state machine without mutation.
+                events = new ArrayList<>(appendClassroomEvents(
+                        classroom.endDialogue(now), now));
+            }
         }
 
         windowGeneration++;
         cancel(handWindowTask);
         handWindowTask = null;
         openHandRaises.clear();
-        List<SessionEvent> events = new ArrayList<>(
-                appendClassroomEvents(domainEvents, now));
         if (answerFinished) {
             events.addAll(appendStudentEvents(
                     students.applyAnswerFinished(currentStudentId), now));
         }
         return CommandResult.ok(events);
+    }
+
+    /**
+     * Rejects {@code teacher.end_dialogue} carrying a stale {@code dialogue_id}: when the command
+     * supplies an id it must match the active dialogue. Nothing is mutated on rejection.
+     */
+    private void requireMatchingDialogueId(SessionCommand.EndDialogue command) {
+        if (command.dialogueId() != null
+                && (dialogue == null
+                || !dialogue.dialogueId().equals(command.dialogueId()))) {
+            throw stateInvalid("teacher.end_dialogue", "对话不存在或已结束");
+        }
     }
 
     private CommandResult handleEndQa() {
@@ -565,7 +594,8 @@ public final class SessionActor {
         List<ClassroomEvent> domainEvents = classroom.endQa("manual", now);
 
         windowGeneration++;
-        List<SessionEvent> events = new ArrayList<>(emitHandLowers("qa_ended", now));
+        List<SessionEvent> events = new ArrayList<>(endActiveDialogue("qa_ended", now));
+        events.addAll(emitHandLowers("qa_ended", now));
         cancel(handRaiseTask);
         handRaiseTask = null;
         cancel(handWindowTask);
@@ -588,7 +618,9 @@ public final class SessionActor {
         List<ClassroomEvent> domainEvents = classroom.endSession(now);
 
         windowGeneration++;
-        List<SessionEvent> events = new ArrayList<>(emitHandLowers("session_ended", now));
+        List<SessionEvent> events = new ArrayList<>(
+                endActiveDialogue("session_ended", now));
+        events.addAll(emitHandLowers("session_ended", now));
         events.addAll(appendClassroomEvents(domainEvents, now));
         session.end(now);
         events.add(append(SESSION_ENDED, sessionEndedPayload(reason), now));
@@ -681,6 +713,7 @@ public final class SessionActor {
         session.fail(reason, now);
         windowGeneration++;
         try {
+            endActiveDialogue("session_ended", now);
             emitHandLowers("session_failed", now);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("reason", reason.wireValue());

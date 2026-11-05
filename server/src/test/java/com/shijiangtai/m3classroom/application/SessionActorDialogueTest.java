@@ -9,6 +9,7 @@ import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentDynamics;
 import com.shijiangtai.m3classroom.domain.interview.InterviewStateMachine;
 import com.shijiangtai.m3classroom.domain.recording.StreamType;
 import com.shijiangtai.m3classroom.domain.session.CommandResult;
+import com.shijiangtai.m3classroom.domain.session.FailureReason;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionCommand;
 import com.shijiangtai.m3classroom.domain.session.SessionContext;
@@ -26,6 +27,7 @@ import com.shijiangtai.m3classroom.support.MutableRandom;
 import com.shijiangtai.shared.application.IdGenerator;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.CourseId;
+import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.math.BigDecimal;
@@ -224,6 +226,99 @@ class SessionActorDialogueTest {
     }
 
     // ---------------------------------------------------------------------
+    // Termination paths and dialogue-id validation (spec §5.3)
+    // ---------------------------------------------------------------------
+
+    @Test
+    void endDialogueWithMatchingIdEmitsTeacherReasonThenStateChange() {
+        Fixture f = dialogueFixture();
+        UUID dialogueId = f.activeDialogueId();
+        assertThat(f.actor().handle(
+                new SessionCommand.EndDialogue("end-1", dialogueId)).ok()).isTrue();
+
+        assertThat(f.context().after(0)).extracting(SessionEvent::type)
+                .containsSubsequence("dialogue.ended", "student.state_changed",
+                        "classroom.state_changed");
+        assertThat(f.lastEvent("dialogue.ended").payload().get("reason"))
+                .isEqualTo("teacher");
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+    }
+
+    @Test
+    void endDialogueWithStaleIdIsRejectedWithoutMutation() {
+        Fixture f = dialogueFixture();
+        int before = f.context().after(0).size();
+
+        CommandResult result = f.actor().handle(
+                new SessionCommand.EndDialogue("end-2", UUID.randomUUID()));
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.SESSION_STATE_INVALID);
+        assertThat(f.context().after(0)).hasSize(before);
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.DIALOGUE);
+    }
+
+    @Test
+    void endQaWhileInDialogueEmitsDialogueEndedFirst() {
+        Fixture f = dialogueFixture();
+        assertThat(f.actor().handle(new SessionCommand.EndQa("qa-1")).ok()).isTrue();
+
+        assertThat(f.context().after(0)).extracting(SessionEvent::type)
+                .containsSubsequence("dialogue.ended", "student.state_changed",
+                        "classroom.qa_ended", "classroom.state_changed");
+        assertThat(f.lastEvent("dialogue.ended").payload().get("reason"))
+                .isEqualTo("qa_ended");
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+    }
+
+    @Test
+    void askClassWhileInDialogueRestartsAfterDialogueEnded() {
+        Fixture f = dialogueFixture();
+        assertThat(f.actor().handle(new SessionCommand.AskClass("ask-2")).ok()).isTrue();
+
+        assertThat(f.context().after(0)).extracting(SessionEvent::type)
+                .containsSubsequence("dialogue.ended", "student.state_changed",
+                        "classroom.question_asked", "classroom.state_changed");
+        assertThat(f.lastEvent("dialogue.ended").payload().get("reason"))
+                .isEqualTo("qa_restarted");
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+    }
+
+    @Test
+    void endSessionWhileInDialogueEmitsDialogueEndedBeforeSessionEnded() {
+        Fixture f = dialogueFixture();
+        assertThat(f.actor().handle(new SessionCommand.EndSession("end-3")).ok()).isTrue();
+
+        assertThat(f.context().after(0)).extracting(SessionEvent::type)
+                .containsSubsequence("dialogue.ended", "student.state_changed",
+                        "session.ended");
+        assertThat(f.lastEvent("dialogue.ended").payload().get("reason"))
+                .isEqualTo("session_ended");
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+    }
+
+    @Test
+    void failWhileInDialogueEmitsDialogueEndedBeforeSessionFailed() {
+        Fixture f = dialogueFixture();
+        f.actor().fail(FailureReason.GRACE_TIMEOUT);
+
+        assertThat(f.context().after(0)).extracting(SessionEvent::type)
+                .containsSubsequence("dialogue.ended", "student.state_changed",
+                        "session.failed");
+        assertThat(f.lastEvent("dialogue.ended").payload().get("reason"))
+                .isEqualTo("session_ended");
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+    }
+
+    // ---------------------------------------------------------------------
     // Fixture
     // ---------------------------------------------------------------------
 
@@ -377,6 +472,11 @@ class SessionActorDialogueTest {
                     .map(event -> (UUID) event.payload().get("answer_id"))
                     .findFirst()
                     .orElseThrow();
+        }
+
+        /** The {@code dialogue_id} of the latest {@code dialogue.started} event. */
+        private UUID activeDialogueId() {
+            return (UUID) lastEvent("dialogue.started").payload().get("dialogue_id");
         }
 
         private int indexOf(List<SessionEvent> events, String type) {
