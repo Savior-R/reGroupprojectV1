@@ -73,7 +73,7 @@ com.shijiangtai
 | HandRaise | 一次举手窗口；1—3 人、30 秒超时 |
 | Dialogue | 教师与一个学生的问答回合；最多 3 轮 |
 | SessionContext | 课堂上下文：事件流 + 统一文本流；所有层读写的唯一黑板 |
-| ContextPersistenceWriter | 异步增量持久化 writer；按时间 / 内容量批量落库 |
+| ContextPersistenceWriter | 异步增量持久化 writer（已实现）；每 session 有序队列，按 1 秒 / 100 条 / 64 KB 批量落库 |
 | ContentClient | Java 调 Python 的 LLM / 云模型接口；无状态 |
 
 ### 3.2 课堂上下文
@@ -608,35 +608,37 @@ Prompt 返回 JSON：
 - 活跃课堂的课堂状态层、虚拟学生层、LLM 上下文构建都读内存，不等待 DB；
 - 事件 `seq` 在 actor 内分配；文本 `id` 在写入前生成；行为事件通过 `text_id` 引用文本；
 - 内存上下文只追加，历史不修改；当前状态只保存在 `SessionActor` 内存，不写回 `sessions` / `virtual_students` 行；30 秒 grace 依赖 actor 存活，Java 重启则不恢复。
+- 教师文本流常驻 `SessionContext` 内存（`texts("teacher")`）；LLM 内容请求直接读内存最近 20 条，不等待异步落库。actor 重建时从 `m3.session_texts` 回填教师文本，避免重连 / 重启后上下文缺句。
 
 ### 9.2 异步增量持久化
 
-- 每个 session 一个**有序持久化队列** + 单 writer；共享线程池消费；
+- **已实现**（`ContextPersistenceWriter` / `JpaContextPersistenceWriter`，2026-11-05）：每个 session 一个**有序持久化队列** + 单 writer；共享固定线程池消费（每 session 最多一个在途 flush）；同一 session 的入队顺序由 actor 串行保证。
 - 触发条件：
   - 时间：默认每 1 秒 flush；
   - 内容量：默认 100 条或 64 KB，先到先 flush；
-  - 关键事件强制 flush：`session.ended`、`submission.created`、`interview.ended`、`session.failed`。
-- 一批 `events` + `session_texts` + `frames` 在同一事务内批量写入：
-  - 事件按 `id` / `seq` 幂等 upsert；
+  - 关键事件强制 flush：`session.ended`、`interview.ended`、`session.failed`（`submission.created` 的提交前 flush 属 M3C 提交流程，本轮只提供 `forceFlush` 接缝）。
+- 一批 `events` + `session_texts` 在同一事务内批量写入（先 texts 后 events；事件通过 `text_id` 引用文本）：
+  - 事件按 `(session_id, seq)` 幂等 upsert；
   - 文本按 `id` 幂等 upsert；
-  - 帧按 `id` 幂等 upsert，`status` 从 pending 更新为 processed / failed；
+  - 批次使用 `REQUIRES_NEW` 独立事务提交，单批失败不会把调用方事务标记为 rollback-only，终态 flush 可在终态行保存前完成；
   - 单 session 单 writer，保证顺序。
+- **帧不进入异步队列**：`m3.frames` 仍由 `PerceptionApplicationService` 在感知线程同步写入 / 更新。OCR 成功更新依赖 pending 帧已存在的 read-after-write 语义；放入异步队列会在 pending 尚未落库时丢失 OCR 结果。帧写入本来就不在 actor 线程，不违反“活跃课堂不被 DB 阻塞”的目标。这是对原“events + texts + frames 同一批事务”措辞的显式偏差。
 - 活跃课堂读内存；回放 / M4 在 flush 后读 DB。
-- 队列有界；满时对 actor 施加背压，tick / 命令短暂排队；持续满则本次 session 失败。
+- 队列有界（10 000 条）；满时先同步 flush，仍满则抛持久化失败，按关键 flush 失败处理。
 - tick：
   - Java 每 1 秒更新注意力 / 纪律 / 计时；
-  - `session.time_tick` 每 1 秒推送；持久化跟随异步批次，默认每 5 秒或按内容量触发；
+  - `session.time_tick` 每 1 秒推送；持久化跟随异步批次（1 秒 / 100 条 / 64 KB 触发）；
   - 结束 / 失败时强制 flush。
 
 ### 9.3 flush 失败与结束边界
 
-- 结束、提交、面试结束、失败前执行**同步强制 flush**：
-  - 等待 pending frames 变为 processed / failed（OCR barrier，最多 5 秒）；
-  - 重试 3 次，指数退避；
-  - 仍失败 → `session.status = failed`，写 `session.failed` 事件，禁止提交；
-  - 学生可重做；M4 不会读取半份上下文或 pending 帧。
-- 提交顺序：结束采集 → 最后 part 上传完成 → 同步 flush 事件 / 文本 / 帧 → 校验 required_streams → 同一事务写 submission / session submitted / `submission.created` → commit → 触发 M4 / M7；flush 失败不生成 submission。
-- 普通异步 flush 失败：记录错误、保留内存数据、后台重试；不阻塞 tick。
+- **终态同步强制 flush（已实现）**：`session.ended`、`interview.ended`、`session.failed` 在 actor 线程入队后立即同步 flush；`session.ended` / `interview.ended` 仅在 flush 成功后才推送 WS 事件，否则命令返回失败：
+  - 失败批重试 3 次（50 / 100 / 200 ms 退避）；仍失败 → 抛出 `PersistenceFlushException`；
+  - 结束 / 面试结束的 flush 失败 → `session.status = failed`，追加并尽力 flush `session.failed`，命令返回 `SESSION_FAILED`（WS 关闭码 4002），不推送 `session.ended`，禁止提交；
+  - `session.failed` 自身 flush 失败 → 状态仍为 `failed`，清理定时器并通知 registry，异常向调用方抛出；
+  - 学生可重做；M4 不会读取半份上下文。
+- **提交流程（M3C）**：结束采集 → 最后 part 上传完成 → 同步 `forceFlush` 事件 / 文本 → 校验 required_streams → 同一事务写 submission / session submitted / `submission.created` → commit → 触发 M4 / M7；flush 失败不生成 submission。本轮 M3B 只提供 actor `forceFlush()` 接缝；submission 与 pending frame OCR barrier（最多 5 秒）由 M3C 提交流程实现。
+- 普通异步 flush 失败：记录错误、原批回队首、下一轮重试；不阻塞 tick。
 - Java 重启：`in_progress` session 标记 `failed`，未持久化尾部丢失；不做 session 恢复。
 
 ### 9.4 时间基准
@@ -840,7 +842,7 @@ flowchart TD
   Ok -->|no| Retry{retry < 3?}
   Retry -->|yes| Batch
   Retry -->|no| Fail[session failed, no submit]
-  Critical[session.ended / submission.created] --> Flush[sync force flush]
+  Critical[session.ended / interview.ended / session.failed] --> Flush[sync force flush]
   Flush --> Batch
 ```
 
