@@ -20,6 +20,7 @@ public final class SessionContext {
     private final Supplier<UUID> eventIds;
     private final Supplier<Instant> createdAt;
     private final List<SessionEvent> events = new ArrayList<>();
+    private final List<SessionText> texts = new ArrayList<>();
     private long lastSeq;
 
     public SessionContext(SessionId sessionId, Supplier<UUID> eventIds,
@@ -67,6 +68,21 @@ public final class SessionContext {
                 Objects.requireNonNull(createdAt.get(), "createdAt"));
         events.add(event);
         return event;
+    }
+
+    /** Keeps one text in the in-memory stream so content requests can read recent teacher text. */
+    public void addText(SessionText text) {
+        texts.add(Objects.requireNonNull(text, "text"));
+    }
+
+    /**
+     * Texts in insertion order, optionally filtered by speaker type; a copy is returned so
+     * callers cannot mutate the in-memory stream.
+     */
+    public List<SessionText> texts(String speakerType) {
+        return texts.stream()
+                .filter(text -> speakerType == null || speakerType.equals(text.speakerType()))
+                .toList();
     }
 
     /** Events with {@code seq > after}, in append order. */

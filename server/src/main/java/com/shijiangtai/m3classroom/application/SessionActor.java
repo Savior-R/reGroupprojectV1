@@ -2,6 +2,7 @@ package com.shijiangtai.m3classroom.application;
 
 import com.shijiangtai.m3classroom.application.port.ContentRequest;
 import com.shijiangtai.m3classroom.application.port.ContentResponse;
+import com.shijiangtai.m3classroom.application.port.ContextPersistenceWriter;
 import com.shijiangtai.m3classroom.application.port.SchedulerPort;
 import com.shijiangtai.m3classroom.application.port.SessionEventStore;
 import com.shijiangtai.m3classroom.application.port.SessionTextStore;
@@ -63,7 +64,7 @@ import org.slf4j.LoggerFactory;
  * <p>P0 semantics: every command is serialized by {@link #synchronized}; a duplicate
  * {@code command_id} returns the previous ack without re-executing; validation happens before
  * any state mutation; events are appended to {@link SessionContext}, persisted through
- * {@link SessionEventStore} and only then pushed to the optional event sink.
+ * {@link ContextPersistenceWriter} and only then pushed to the optional event sink.
  *
  * <p>Hand raises and the 30 s hand-window timeout run through {@link SchedulerPort}, so a
  * command never waits for the simulated classroom. The timeout starts when the first
@@ -121,8 +122,7 @@ public final class SessionActor {
     private final VirtualStudentDynamics students;
     private final InterviewStateMachine interview;
     private final ContentGenerationService content;
-    private final SessionEventStore eventStore;
-    private final SessionTextStore textStore;
+    private final ContextPersistenceWriter persistence;
     private final IdGenerator ids;
     private final ClockProvider clock;
     private final SchedulerPort scheduler;
@@ -162,8 +162,7 @@ public final class SessionActor {
             VirtualStudentDynamics students,
             InterviewStateMachine interview,
             ContentGenerationService content,
-            SessionEventStore eventStore,
-            SessionTextStore textStore,
+            ContextPersistenceWriter persistence,
             IdGenerator ids,
             ClockProvider clock,
             SchedulerPort scheduler,
@@ -175,13 +174,32 @@ public final class SessionActor {
         this.students = Objects.requireNonNull(students, "students");
         this.interview = Objects.requireNonNull(interview, "interview");
         this.content = Objects.requireNonNull(content, "content");
-        this.eventStore = Objects.requireNonNull(eventStore, "eventStore");
-        this.textStore = Objects.requireNonNull(textStore, "textStore");
+        this.persistence = Objects.requireNonNull(persistence, "persistence");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
         this.random = Objects.requireNonNull(random, "random");
         initializeStudentsIfNeeded();
+    }
+
+    /** Backwards-compatible constructor: synchronous persistence through the two stores. */
+    public SessionActor(
+            Session session,
+            TaskSnapshot taskSnapshot,
+            SessionContext context,
+            ClassroomStateMachine classroom,
+            VirtualStudentDynamics students,
+            InterviewStateMachine interview,
+            ContentGenerationService content,
+            SessionEventStore eventStore,
+            SessionTextStore textStore,
+            IdGenerator ids,
+            ClockProvider clock,
+            SchedulerPort scheduler,
+            RandomGenerator random) {
+        this(session, taskSnapshot, context, classroom, students, interview, content,
+                new DirectContextPersistenceWriter(eventStore, textStore), ids, clock,
+                scheduler, random);
     }
 
     // ------------------------------------------------------------------
@@ -779,7 +797,7 @@ public final class SessionActor {
         UUID textId = ids.nextId();
         Instant now = clock.now();
         long atMs = endMs != null ? Math.max(0L, endMs) : this.atMs(now);
-        textStore.save(new SessionText(
+        persistText(new SessionText(
                 textId, session.id(), speakerType, speakerRef, "asr",
                 "candidate".equals(speakerType) ? "answer" : "utterance",
                 text, startMs, endMs, atMs, confidence, null, null, "final"));
@@ -922,9 +940,14 @@ public final class SessionActor {
                 elapsedMs);
     }
 
-    /** Synchronous P0 persistence means there is nothing buffered; kept for the service layer. */
-    public void forceFlush() {
-        // no-op: events and texts are written synchronously in append(...)
+    /** Drains every pending event/text write for this session through the writer. */
+    public synchronized void forceFlush() {
+        persistence.flush(session.id());
+    }
+
+    /** Last sequence number allocated by the in-memory context. */
+    public synchronized long lastSeq() {
+        return context.lastSeq();
     }
 
     public void attachEventSink(Consumer<SessionEvent> sink) {
@@ -967,9 +990,18 @@ public final class SessionActor {
 
     private SessionEvent append(String type, Map<String, Object> payload, Instant now) {
         SessionEvent event = context.append(SessionEventDraft.of(type, payload), atMs(now));
-        eventStore.append(event);
+        persistence.appendEvent(event);
         push(event);
         return event;
+    }
+
+    /**
+     * Records one text in the in-memory stream (for subsequent content requests) and hands it to
+     * the persistence writer.
+     */
+    private void persistText(SessionText text) {
+        context.addText(text);
+        persistence.saveText(text);
     }
 
     /** Single live push path to the attached WS event sink; no-op before the handler attaches. */
@@ -1053,7 +1085,7 @@ public final class SessionActor {
         }
         Object questionId = event.payload().get("question_id");
         UUID speakerRef = questionId instanceof UUID id ? id : null;
-        textStore.save(new SessionText(
+        persistText(new SessionText(
                 ids.nextId(), session.id(), "examiner", speakerRef, "manual", "question",
                 value, null, null, atMs(now), null, null, null, "final"));
     }
@@ -1061,7 +1093,7 @@ public final class SessionActor {
     private List<SessionEvent> emitStudentQuestion(VirtualStudentRuntime student, Instant now) {
         ContentResponse response = content.questionOrFallback(contentRequest(student));
         UUID textId = ids.nextId();
-        textStore.save(new SessionText(
+        persistText(new SessionText(
                 textId, session.id(), "student", student.id(), "llm", "question",
                 response.text(), null, null, atMs(now),
                 BigDecimal.valueOf(response.confidence()),
@@ -1082,7 +1114,7 @@ public final class SessionActor {
                 student.config().ability().doubleValue(), 0.5, random);
         UUID textId = ids.nextId();
         UUID answerId = ids.nextId();
-        textStore.save(new SessionText(
+        persistText(new SessionText(
                 textId, session.id(), "student", student.id(), "llm", "answer",
                 response.text(), null, null, atMs(now),
                 BigDecimal.valueOf(response.confidence()),
@@ -1154,7 +1186,7 @@ public final class SessionActor {
             VirtualStudentRuntime student, Instant now, boolean applyAttention) {
         ContentResponse response = content.questionOrFallback(contentRequest(student));
         UUID textId = ids.nextId();
-        textStore.save(new SessionText(
+        persistText(new SessionText(
                 textId, session.id(), "student", student.id(), "llm", "follow_up",
                 response.text(), null, null, atMs(now),
                 BigDecimal.valueOf(response.confidence()),
@@ -1215,7 +1247,7 @@ public final class SessionActor {
     }
 
     private List<String> recentTeacherTexts() {
-        List<SessionText> teacherTexts = textStore.bySession(session.id(), "teacher");
+        List<SessionText> teacherTexts = context.texts("teacher");
         int from = Math.max(0, teacherTexts.size() - 20);
         return teacherTexts.subList(from, teacherTexts.size()).stream()
                 .map(SessionText::text)
