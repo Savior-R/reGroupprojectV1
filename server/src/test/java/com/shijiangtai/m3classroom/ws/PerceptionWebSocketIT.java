@@ -13,6 +13,7 @@ import com.shijiangtai.m3classroom.application.SessionRuntimeRegistry;
 import com.shijiangtai.m3classroom.application.TaskApplicationService;
 import com.shijiangtai.m3classroom.application.TaskMaterialService;
 import com.shijiangtai.m3classroom.application.TaskPublishService;
+import com.shijiangtai.m3classroom.application.command.CreateTaskCommand;
 import com.shijiangtai.m3classroom.application.port.AsrChunk;
 import com.shijiangtai.m3classroom.application.port.SessionEventStore;
 import com.shijiangtai.m3classroom.application.port.SessionTextStore;
@@ -24,10 +25,14 @@ import com.shijiangtai.m3classroom.domain.session.SessionEvent;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.session.SessionText;
+import com.shijiangtai.m3classroom.domain.task.QuestionConfig;
+import com.shijiangtai.m3classroom.domain.task.TaskMode;
+import com.shijiangtai.m3classroom.infrastructure.config.DevDataConfig;
 import com.shijiangtai.m3classroom.persistence.PostgresIntegrationTest;
 import com.shijiangtai.m3classroom.support.FakeAsrStreamClient;
 import com.shijiangtai.m3classroom.support.FakeTeacherSpeechClassifier;
 import com.shijiangtai.shared.application.ClockProvider;
+import com.shijiangtai.shared.domain.QuestionId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.io.IOException;
@@ -39,8 +44,11 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -212,12 +220,34 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
         assertThat(finalMessage.get("text_id").asString()).isNotBlank();
         assertThat(finalMessage.get("at_ms").asLong()).isGreaterThanOrEqualTo(1500L);
 
-        SessionText text = awaitTeacherText(id);
+        SessionText text = awaitText(id, "teacher");
         assertThat(text.text()).isEqualTo("这是最后一句");
         assertThat(text.kind()).isEqualTo("utterance");
         assertThat(text.speakerType()).isEqualTo("teacher");
         assertThat(text.source()).isEqualTo("asr");
         assertThat(text.status()).isEqualTo("final");
+    }
+
+    @Test
+    void binaryFramesAreForwardedToAsr() throws Exception {
+        SessionId id = createStartedSession();
+        Connection connection = connect(id);
+        send(connection, AUDIO_START);
+        FakeAsrStreamClient.FakeAsrSession asr = awaitAsrSession();
+
+        byte[][] frames = {{1, 2, 3}, {4, 5}, {6}};
+        for (byte[] frame : frames) {
+            connection.socket.sendMessage(new BinaryMessage(frame));
+        }
+
+        awaitSentFrames(asr, frames.length);
+        List<byte[]> sent = asr.sentFrames();
+        assertThat(sent).hasSize(frames.length);
+        for (int index = 0; index < frames.length; index++) {
+            assertThat(Arrays.equals(sent.get(index), frames[index]))
+                    .as("PCM frame %s forwarded unchanged", index)
+                    .isTrue();
+        }
     }
 
     @Test
@@ -274,6 +304,102 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
         assertThat(connection.awaitClose().getCode()).isEqualTo(CLOSE_NORMAL);
         assertThat(sessionRepository.findById(id).orElseThrow().status())
                 .isEqualTo(SessionStatus.IN_PROGRESS);
+    }
+
+    @Test
+    void audioStopAloneCloses1000AfterDrainTimeout() throws Exception {
+        SessionId id = createStartedSession();
+        Connection connection = connect(id);
+        send(connection, AUDIO_START);
+        FakeAsrStreamClient.FakeAsrSession asr = awaitAsrSession();
+
+        long startedAt = System.nanoTime();
+        send(connection, AUDIO_STOP);
+        CloseStatus closeStatus = connection.awaitClose();
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+
+        // No ASR "done" is emitted: only the 2 s drain timeout can close the socket.
+        assertThat(asr.finished()).isTrue();
+        assertThat(closeStatus.getCode()).isEqualTo(CLOSE_NORMAL);
+        assertThat(elapsedMs).isBetween(1_800L, 9_000L);
+        assertThat(sessionRepository.findById(id).orElseThrow().status())
+                .isEqualTo(SessionStatus.IN_PROGRESS);
+
+        // A late ASR callback after the drain close is ignored without persisting or throwing.
+        asr.emitFinal("迟到的最终结果", 0L, 500L, new BigDecimal("0.80"));
+        assertThat(textStore.bySession(id, "teacher")).isEmpty();
+        assertThat(asr.callbackErrors()).isEmpty();
+    }
+
+    @Test
+    void midStreamAsrErrorKeepsSocketOpenThenStopCloses1000() throws Exception {
+        SessionId id = createStartedSession();
+        Connection connection = connect(id);
+        send(connection, AUDIO_START);
+        FakeAsrStreamClient.FakeAsrSession asr = awaitAsrSession();
+
+        asr.emitError(new RuntimeException("ASR 连接中断"));
+
+        JsonNode error = connection.nextOfType("error");
+        assertThat(error.get("code").asString()).isEqualTo("SERVICE_UNAVAILABLE");
+        assertThat(connection.socket.isOpen()).isTrue();
+        assertThat(sessionRepository.findById(id).orElseThrow().status())
+                .isEqualTo(SessionStatus.IN_PROGRESS);
+
+        send(connection, AUDIO_STOP);
+
+        assertThat(connection.awaitClose().getCode()).isEqualTo(CLOSE_NORMAL);
+        assertThat(sessionRepository.findById(id).orElseThrow().status())
+                .isEqualTo(SessionStatus.IN_PROGRESS);
+        assertThat(eventStore.after(id, 0, 200))
+                .noneMatch(event -> "session.failed".equals(event.type()));
+    }
+
+    @Test
+    void unexpectedAsrCloseKeepsSocketOpenUntilStop() throws Exception {
+        SessionId id = createStartedSession();
+        Connection connection = connect(id);
+        send(connection, AUDIO_START);
+        FakeAsrStreamClient.FakeAsrSession asr = awaitAsrSession();
+
+        asr.emitClosed();
+
+        JsonNode error = connection.nextOfType("error");
+        assertThat(error.get("code").asString()).isEqualTo("SERVICE_UNAVAILABLE");
+        assertThat(connection.socket.isOpen()).isTrue();
+
+        send(connection, AUDIO_STOP);
+
+        assertThat(connection.awaitClose().getCode()).isEqualTo(CLOSE_NORMAL);
+        assertThat(sessionRepository.findById(id).orElseThrow().status())
+                .isEqualTo(SessionStatus.IN_PROGRESS);
+        assertThat(eventStore.after(id, 0, 200))
+                .noneMatch(event -> "session.failed".equals(event.type()));
+    }
+
+    @Test
+    void interviewFinalIsPersistedAsCandidateAnswer() throws Exception {
+        SessionId id = createStartedInterviewSession();
+        UUID answerId = runtimeRegistry.find(id).orElseThrow().currentAnswerId();
+        assertThat(answerId).isNotNull();
+
+        Connection connection = connect(id);
+        send(connection, AUDIO_START);
+        FakeAsrStreamClient.FakeAsrSession asr = awaitAsrSession();
+
+        asr.emitFinal("我的回答是……", 0L, 1200L, new BigDecimal("0.91"));
+
+        JsonNode finalMessage = connection.nextOfType("asr.final");
+        SessionText text = awaitText(id, "candidate");
+        assertThat(text.speakerType()).isEqualTo("candidate");
+        assertThat(text.kind()).isEqualTo("answer");
+        assertThat(text.speakerRef()).isEqualTo(answerId);
+        assertThat(text.text()).isEqualTo("我的回答是……");
+        assertThat(finalMessage.get("text_id").asString()).isEqualTo(text.id().toString());
+
+        // Classroom-only classification must not run for an interview candidate.
+        Thread.sleep(200L);
+        assertThat(classifier.calls()).isEmpty();
     }
 
     // ------------------------------------------------------------------
@@ -437,14 +563,42 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
 
     private SessionId createStartedSession() {
         SessionId id = createSession();
+        startSession(id, StreamType.CAMERA, StreamType.SCREEN, StreamType.AUDIO);
+        return id;
+    }
+
+    private SessionId createStartedInterviewSession() {
+        TaskId interviewTaskId = publishInterviewTask();
+        SessionView view = sessionApplicationService.createSession(
+                student(), interviewTaskId);
+        sessionId = new SessionId(view.sessionId());
+        startSession(sessionId, StreamType.CAMERA, StreamType.AUDIO);
+        return sessionId;
+    }
+
+    private void startSession(SessionId id, StreamType... requiredStreams) {
         SessionActor actor = runtimeRegistry.getOrCreate(id);
-        List<SessionCommand.RecordingReady.StreamStatus> streams = List.of(
-                new SessionCommand.RecordingReady.StreamStatus(StreamType.CAMERA, "ready"),
-                new SessionCommand.RecordingReady.StreamStatus(StreamType.SCREEN, "ready"),
-                new SessionCommand.RecordingReady.StreamStatus(StreamType.AUDIO, "ready"));
+        List<SessionCommand.RecordingReady.StreamStatus> streams =
+                Arrays.stream(requiredStreams)
+                        .map(type -> new SessionCommand.RecordingReady.StreamStatus(
+                                type, "ready"))
+                        .toList();
         assertThat(actor.handle(new SessionCommand.RecordingReady(
-                "ready-" + java.util.UUID.randomUUID(), streams)).ok()).isTrue();
+                "ready-" + UUID.randomUUID(), streams)).ok()).isTrue();
         sessionApplicationService.start(student(), id);
+    }
+
+    private TaskId publishInterviewTask() {
+        CreateTaskCommand command = new CreateTaskCommand(
+                TestFixtures.COURSE, TaskMode.INTERVIEW, "结构化面试", null,
+                300, 300, Map.of("content", 40, "expression", 30, "time", 30),
+                null, List.of(),
+                new QuestionConfig(List.of(
+                        new QuestionId(DevDataConfig.QUESTION1_ID),
+                        new QuestionId(DevDataConfig.QUESTION2_ID)), 300));
+        TaskView view = taskApplicationService.createDraft(teacher(), command);
+        TaskId id = new TaskId(view.taskId());
+        publishService.publish(teacher(), id);
         return id;
     }
 
@@ -494,8 +648,9 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
             throws InterruptedException {
         long deadline = System.nanoTime() + TIMEOUT.toNanos();
         while (System.nanoTime() < deadline) {
-            if (asrClient.openCount() >= minimumOpenCount) {
-                return asrClient.lastSession();
+            FakeAsrStreamClient.FakeAsrSession session = asrClient.lastSession();
+            if (session != null && asrClient.openCount() >= minimumOpenCount) {
+                return session;
             }
             Thread.sleep(10L);
         }
@@ -503,16 +658,31 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
                 "ASR session was not opened; openCount=" + asrClient.openCount());
     }
 
-    private SessionText awaitTeacherText(SessionId id) throws InterruptedException {
+    private void awaitSentFrames(FakeAsrStreamClient.FakeAsrSession asr, int expectedCount)
+            throws InterruptedException {
         long deadline = System.nanoTime() + TIMEOUT.toNanos();
         while (System.nanoTime() < deadline) {
-            List<SessionText> texts = textStore.bySession(id, "teacher");
+            if (asr.sentFrames().size() >= expectedCount) {
+                return;
+            }
+            Thread.sleep(10L);
+        }
+        throw new AssertionError("only " + asr.sentFrames().size()
+                + " PCM frames were forwarded to ASR");
+    }
+
+    private SessionText awaitText(SessionId id, String speakerType)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TIMEOUT.toNanos();
+        while (System.nanoTime() < deadline) {
+            List<SessionText> texts = textStore.bySession(id, speakerType);
             if (!texts.isEmpty()) {
                 return texts.get(0);
             }
             Thread.sleep(25L);
         }
-        throw new AssertionError("no teacher session_texts row persisted for " + id.value());
+        throw new AssertionError("no " + speakerType + " session_texts row persisted for "
+                + id.value());
     }
 
     private SessionEvent awaitEvent(SessionId id, String type) throws InterruptedException {

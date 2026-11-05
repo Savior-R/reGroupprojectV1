@@ -59,13 +59,16 @@ public final class FakeAsrStreamClient implements AsrStreamClient {
     @Override
     public AsrSession open(AsrRequest request) {
         Objects.requireNonNull(request, "request");
-        requests.add(request);
         RuntimeException failure = openFailure.get();
         if (failure != null) {
+            requests.add(request);
             throw failure;
         }
+        // Publish the new session before making the open observable through openCount()/requests,
+        // so a test that awaits openCount() always observes the matching lastSession.
         FakeAsrSession session = new FakeAsrSession();
         lastSession.set(session);
+        requests.add(request);
         return session;
     }
 
