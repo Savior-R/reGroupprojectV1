@@ -182,14 +182,22 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
         requireValidParts(command.parts());
         requireValidSize(command);
 
-        storage.completeMultipart(
-                stream.objectKey(), stream.uploadId(), command.parts());
         Instant now = clockProvider.now();
+        try {
+            storage.completeMultipart(
+                    stream.objectKey(), stream.uploadId(), command.parts());
+        } catch (RuntimeException exception) {
+            // MinIO may have consumed the multipart even when the response was lost; the upload
+            // must not stay retryable-looking. A redo needs a new recording/attempt.
+            markStreamFailed(sessionId, type, now);
+            throw exception;
+        }
         ObjectStat stat;
         try {
             stat = storage.stat(stream.objectKey());
         } catch (RuntimeException exception) {
-            // The multipart is already consumed; fail the stream so a fresh start is possible.
+            // The multipart was consumed; fail the stream so the attempt is redone as a new
+            // recording instead of remaining stuck in uploading.
             markStreamFailed(sessionId, type, now);
             throw exception;
         }

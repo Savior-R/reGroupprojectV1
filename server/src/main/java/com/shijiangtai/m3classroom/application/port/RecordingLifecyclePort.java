@@ -7,8 +7,8 @@ import com.shijiangtai.shared.domain.TaskId;
 /**
  * Recording-side effects of session lifecycle operations.
  *
- * <p>Plan 1 registers a no-op bean in {@code M3Config}; Plan 2 replaces it with the real
- * recording adapter that aborts multipart uploads and deletes superseded attempts.
+ * <p>Implemented by {@code RecordingLifecycleService}, which aborts multipart uploads and
+ * deletes superseded attempts on behalf of the session service.
  */
 public interface RecordingLifecyclePort {
 

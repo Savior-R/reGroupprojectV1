@@ -60,6 +60,7 @@ class RecordingApplicationServiceTest {
     private InMemorySessionRepository sessions;
     private InMemoryRecordingRepository recordings;
     private InMemoryRecordingObjectStorage storage;
+    private RecordingAccessPolicy accessPolicy;
     private RecordingApplicationService service;
     private TaskId taskId;
 
@@ -69,8 +70,7 @@ class RecordingApplicationServiceTest {
         sessions = new InMemorySessionRepository();
         recordings = new InMemoryRecordingRepository();
         storage = new InMemoryRecordingObjectStorage();
-        RecordingAccessPolicy accessPolicy =
-                new RecordingAccessPolicy(new SessionAccessPolicy(coursePort()));
+        accessPolicy = new RecordingAccessPolicy(new SessionAccessPolicy(coursePort()));
         service = new RecordingApplicationServiceImpl(
                 sessions, tasks, recordings, storage, accessPolicy,
                 UUID::randomUUID, () -> NOW);
@@ -225,6 +225,31 @@ class RecordingApplicationServiceTest {
     }
 
     @Test
+    void completeSaveFailureMarksStreamFailed() {
+        FailingUploadedSaveRecordingRepository failingRepository =
+                new FailingUploadedSaveRecordingRepository();
+        RecordingApplicationService failingService = new RecordingApplicationServiceImpl(
+                sessions, tasks, failingRepository, storage, accessPolicy,
+                UUID::randomUUID, () -> NOW);
+        SessionId sessionId = createSession(taskId, TaskMode.FREE, SessionStatus.PREPARING);
+        MultipartUploadView upload = failingService.start(
+                student(), sessionId, StreamType.CAMERA);
+        storage.recordObjectSize(upload.objectKey(), 1024);
+
+        assertThatThrownBy(() -> failingService.complete(
+                student(), sessionId, StreamType.CAMERA,
+                new CompletePartCommand(
+                        List.of(new PartEtag(1, "etag-1")), 5_000, 1024, "video/webm")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("recording row unavailable");
+
+        Recording stored = failingRepository.findBySession(sessionId).orElseThrow();
+        assertThat(stored.status()).isEqualTo(RecordingStatus.FAILED);
+        assertThat(stored.stream(StreamType.CAMERA).orElseThrow().status())
+                .isEqualTo(StreamStatus.FAILED);
+    }
+
+    @Test
     void startRejectsFailedRecording() {
         SessionId sessionId = createSession(taskId, TaskMode.FREE, SessionStatus.PREPARING);
         service.start(student(), sessionId, StreamType.CAMERA);
@@ -338,6 +363,57 @@ class RecordingApplicationServiceTest {
         @Override
         public void deleteBySession(SessionId sessionId) {
             bySession.remove(sessionId);
+        }
+    }
+
+    /**
+     * Stores rehydrated copies (like the JPA adapter) and fails the first save that carries an
+     * uploaded stream, simulating a commit-time persistence failure.
+     */
+    private static final class FailingUploadedSaveRecordingRepository
+            implements RecordingRepository {
+        private final Map<SessionId, Recording> bySession = new LinkedHashMap<>();
+        private boolean failedOnce;
+
+        @Override
+        public Recording save(Recording recording) {
+            boolean hasUploadedStream = recording.streams().stream()
+                    .anyMatch(stream -> stream.status() == StreamStatus.UPLOADED);
+            if (hasUploadedStream && !failedOnce) {
+                failedOnce = true;
+                throw new IllegalStateException("recording row unavailable");
+            }
+            bySession.put(recording.sessionId(), copy(recording));
+            return recording;
+        }
+
+        @Override
+        public Optional<Recording> findBySession(SessionId sessionId) {
+            return Optional.ofNullable(bySession.get(sessionId))
+                    .map(FailingUploadedSaveRecordingRepository::copy);
+        }
+
+        @Override
+        public Optional<Recording> findById(UUID id) {
+            return bySession.values().stream()
+                    .filter(recording -> recording.id().equals(id))
+                    .findFirst()
+                    .map(FailingUploadedSaveRecordingRepository::copy);
+        }
+
+        @Override
+        public void deleteBySession(SessionId sessionId) {
+            bySession.remove(sessionId);
+        }
+
+        private static Recording copy(Recording recording) {
+            return Recording.rehydrate(
+                    recording.id(),
+                    recording.sessionId(),
+                    recording.status(),
+                    recording.streams(),
+                    recording.createdAt(),
+                    recording.updatedAt());
         }
     }
 }

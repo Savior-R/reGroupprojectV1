@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -37,8 +38,13 @@ public class RecordingRepositoryAdapter implements RecordingRepository {
         this.streamRepository = streamRepository;
     }
 
+    /**
+     * Runs in its own transaction so a failed save (including a commit-time constraint failure)
+     * cannot mark the caller's transaction rollback-only. Callers that must persist a failure
+     * transition after a failed save (recording complete) depend on this isolation.
+     */
     @Override
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Recording save(Recording recording) {
         RecordingEntity entity = recordingRepository.findById(recording.id())
                 .orElseGet(RecordingEntity::new);

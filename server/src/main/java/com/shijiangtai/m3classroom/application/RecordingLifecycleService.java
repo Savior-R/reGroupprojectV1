@@ -25,8 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Recording side effects of session lifecycle operations (05B §6).
  *
- * <p>Replaces the no-op {@code RecordingLifecyclePort} bean from {@code M3Config}: because this
- * class is a component, the conditional fallback is suppressed. Object-store deletes are
+ * <p>This is the only {@link RecordingLifecyclePort} implementation. Object-store deletes are
  * scheduled after commit, while the recording/session rows are removed in the current
  * transaction and the database cascades {@code recording_streams}.
  */
