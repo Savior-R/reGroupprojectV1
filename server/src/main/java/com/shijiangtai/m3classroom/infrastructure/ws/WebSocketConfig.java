@@ -12,7 +12,10 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 
 /**
- * Registers the raw control WebSocket (02 §6.1).
+ * Registers the raw control WebSocket (02 §6.1) and the perception WebSocket (05A §6.2).
+ *
+ * <p>Both endpoints share {@link WsHandshakeInterceptor}, so a one-time ticket is validated the
+ * same way and the handlers map authentication failures to the M3 close codes.
  *
  * <p>Allowed origins are {@code *} for this dev slice only: M1's gateway/JWT layer is not wired
  * yet and native clients do not send a browser Origin. Tighten this to the frontend origin before
@@ -23,6 +26,7 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
 public class WebSocketConfig implements WebSocketConfigurer {
 
     public static final String CONTROL_PATH = "/ws/v1/sessions/{sessionId}";
+    public static final String PERCEPTION_PATH = "/ws/v1/sessions/{sessionId}/perception";
 
     /**
      * Container buffer above the 64 KB protocol limit: frames between 64 KB and this size must
@@ -32,18 +36,24 @@ public class WebSocketConfig implements WebSocketConfigurer {
     public static final int MAX_FRAME_BYTES = 256 * 1024;
 
     private final ClassroomWebSocketHandler handler;
+    private final PerceptionWebSocketHandler perceptionHandler;
     private final WsHandshakeInterceptor handshakeInterceptor;
 
     public WebSocketConfig(
             ClassroomWebSocketHandler handler,
+            PerceptionWebSocketHandler perceptionHandler,
             WsHandshakeInterceptor handshakeInterceptor) {
         this.handler = handler;
+        this.perceptionHandler = perceptionHandler;
         this.handshakeInterceptor = handshakeInterceptor;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(handler, CONTROL_PATH)
+                .addInterceptors(handshakeInterceptor)
+                .setAllowedOrigins("*");
+        registry.addHandler(perceptionHandler, PERCEPTION_PATH)
                 .addInterceptors(handshakeInterceptor)
                 .setAllowedOrigins("*");
     }
