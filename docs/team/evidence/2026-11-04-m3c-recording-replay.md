@@ -419,3 +419,27 @@ DOCKER="/mnt/c/Users/forever alone/AppData/Local/Programs/DockerDesktop/resource
 
 - 真实浏览器 E2E 仍未覆盖 offset 上报（MediaRecorder 实际启动时刻与 t0 的偏差）；前端单测使用注入时钟验证计算。
 - `offset_ms` 为客户端上报值，服务端仅校验非负；无法在服务端独立校验其与媒体实际启动时刻的一致性。
+
+## 12. 后端回放事件过滤（2026-11-06）
+
+### 12.1 授权与契约
+
+用户 2026-11-06 确认：当前 M3 Owner 代 Media/Training Owner 执行 `/events` 控制事件过滤。契约（`05B` §7.1）：`GET /sessions/{id}/events` 在应用 `limit` 前排除 `session.time_tick`、`session.resumed`、`ping`、`pong`、`time.sync`；`max_seq` 仍为会话总 seq，响应结构不变。
+
+### 12.2 实现
+
+- 新增领域常量 `ReplayEventTypes.NON_REPLAYABLE`，避免应用层与前端各自维护一份不同的集合（前端保留同集合作为兜底）。
+- `SessionEventStore` 新增 `afterReplayable(id, seq, limit)`：默认在内存结果上过滤；JPA 适配器用 `type NOT IN :excluded` 在 SQL 层先过滤再 limit，避免“整页都是 tick → 空页”导致客户端分页提前结束。
+- `ReplayQueryServiceImpl.events` 改用 `afterReplayable`；`maxSeq` 不变。
+- `InMemorySessionEventStore` 同步实现先过滤后 limit，供单测 / 控制器测试使用。
+
+### 12.3 测试
+
+- `ReplayControllerIT.replayEventsExcludeControlPlaneRowsBeforeApplyingLimit`：插入 3 条业务事件 + 4 条控制事件 + 1 条业务事件，断言 `/events` 只返回 4 条业务事件、最后一条 `seq=8`，且控制事件不在响应中。
+- 后端全量：`BUILD SUCCESSFUL in 4m 38s`；93 classes / 694 tests，0 failure / 0 error / 0 skipped。
+- 前端不修改；既有 15 files / 135 tests 与构建保持通过。
+
+### 12.4 剩余缺口
+
+- 前端仍保留同一组过滤作为向后兼容兜底；后端与前端集合若未来新增控制事件需同步。
+- 真实浏览器 E2E 未覆盖事件点击 seek 在过滤后的时间线行为。
