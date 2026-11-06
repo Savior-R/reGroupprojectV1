@@ -27,6 +27,21 @@ docker compose --profile test run --rm test \
 Dev headers are `X-Account-Id`, `X-School-Id`, `X-Account-Type` (for example
 `...0010` / `...0001` / `TEACHER`); they are placeholders until M1 JWT lands.
 
+## Frontend dev server
+
+The M3 frontend lives in `frontend/`. With the stack above running, start Vite from the
+repository root and open the student tasks page:
+
+```bash
+npm --prefix frontend install
+npm --prefix frontend run dev -- --host 127.0.0.1
+# http://127.0.0.1:5173/student/tasks?dev_role=teacher
+```
+
+Vite proxies `/api` and `/ws` to `http://localhost:8080`. Dev identity presets are
+`?dev_role=teacher` (`...0010`) or `?dev_role=student` (`...0020`, default); see
+`frontend/README.md` for tests and the production build.
+
 Smoke flow: create a free task, upload a `.txt` material, publish, then list
 student tasks. The full request sequence and expected responses are in
 `docs/team/evidence/2026-11-04-m3a-docker-postgres.md` §3.
