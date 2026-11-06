@@ -46,11 +46,12 @@ public interface SessionRepository {
      * {@code anchor + 24 hours <= now}. Only {@code ended}, {@code reviewing}, {@code failed},
      * and {@code cancelled} sessions are candidates.
      *
-     * <p>Defaults to an empty list so lightweight test fakes stay source-compatible; the JPA
+     * <p>Defaults to failing fast so any adapter or fake used for retention queries must opt in;
+     * a silent empty result would turn retention cleanup into a permanent no-op. The JPA
      * adapter and {@code InMemorySessionRepository} override it.
      */
     default List<Session> findExpiredTemporary(Instant now) {
-        return List.of();
+        throw new UnsupportedOperationException("findExpiredTemporary is not implemented");
     }
 
     /** Deletes a superseded attempt; recordings and derived rows cascade. */

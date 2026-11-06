@@ -23,11 +23,12 @@ public interface SubmissionRepository {
      * ({@code courses.end_at + INTERVAL '1 year' <= now}). A null course end is never a
      * candidate.
      *
-     * <p>Defaults to an empty list so lightweight test fakes stay source-compatible; the JPA
+     * <p>Defaults to failing fast so any adapter or fake used for retention queries must opt in;
+     * a silent empty result would make submitted-recording cleanup a permanent no-op. The JPA
      * adapter and {@code InMemorySubmissionRepository} override it.
      */
     default List<Submission> findExpiredForRetention(Instant now) {
-        return List.of();
+        throw new UnsupportedOperationException("findExpiredForRetention is not implemented");
     }
 
     /**

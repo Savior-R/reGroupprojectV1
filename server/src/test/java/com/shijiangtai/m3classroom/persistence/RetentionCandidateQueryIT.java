@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.submission.Submission;
 import com.shijiangtai.m3classroom.domain.submission.SubmissionRepository;
+import com.shijiangtai.shared.domain.SessionId;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
@@ -96,6 +97,32 @@ class RetentionCandidateQueryIT extends PostgresIntegrationTest {
         assertThat(submissionRepository.findExpiredForRetention(NOW))
                 .extracting(Submission::id)
                 .contains(boundarySubmissionId);
+    }
+
+    @Test
+    void deleteBySessionReleasesRestrictForeignKeyBeforeSessionDelete() {
+        UUID courseId = seedCourse(NOW.minus(Duration.ofDays(366)), "delete-contract");
+        UUID taskId = seedTask(courseId, null);
+        UUID sessionId = seedSession(taskId, courseId, "submitted",
+                NOW.minus(Duration.ofDays(400)), NOW.minus(Duration.ofDays(400)));
+        UUID submissionId = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO m3_classroom.submissions
+                    (id, task_id, student_account_id, session_id, status)
+                VALUES (?, ?, ?, ?, 'submitted')
+                """, submissionId, taskId, STUDENT_ID, sessionId);
+
+        submissionRepository.deleteBySession(new SessionId(sessionId));
+
+        assertThat(jdbc.queryForObject(
+                "select count(*) from m3_classroom.submissions where id = ?",
+                Long.class, submissionId)).isZero();
+        // This would fail on fk_submissions_session (ON DELETE RESTRICT) if the submission
+        // delete had not been flushed.
+        sessionRepository.deleteById(new SessionId(sessionId));
+        assertThat(jdbc.queryForObject(
+                "select count(*) from m3_classroom.sessions where id = ?",
+                Long.class, sessionId)).isZero();
     }
 
     private UUID seedCourse(Instant endAt, String label) {
