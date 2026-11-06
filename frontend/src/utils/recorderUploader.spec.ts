@@ -42,7 +42,9 @@ interface FetchHarness {
   urls: string[]
 }
 
-function createFetchHarness(options: { fail?: boolean } = {}): FetchHarness {
+function createFetchHarness(
+  options: { fail?: boolean; onPut?: (attempt: number) => void } = {},
+): FetchHarness {
   const calls: FetchHarness['calls'] = []
   const urls: string[] = []
   let attempt = 0
@@ -50,6 +52,7 @@ function createFetchHarness(options: { fail?: boolean } = {}): FetchHarness {
     attempt += 1
     calls.push({ url, method: String(init.method), body: init.body as Blob })
     urls.push(url)
+    options.onPut?.(attempt)
     if (options.fail) {
       return { ok: false, status: 500, headers: headerMap({}) }
     }
@@ -189,15 +192,39 @@ interface Harness {
   setNow(value: number): void
 }
 
-function setup(options: { fetchFail?: boolean; fixFails?: boolean } = {}): Harness {
-  const recorder = new FakeRecorder()
+interface SetupOptions {
+  fetchFail?: boolean
+  fixFails?: boolean
+  track?: FakeTrack
+  /** Simulates a slow PUT consuming wall-clock time. */
+  advanceClockOnPut?: number
+  /** Simulates a slow duration patch consuming wall-clock time. */
+  advanceClockOnFix?: number
+  onPut?: (attempt: number) => void
+}
+
+function setup(options: SetupOptions = {}): Harness {
+  let now = 0
+  const recorder = new FakeRecorder(options.track ? [options.track] : [])
   const api = createApiHarness()
-  const fetchHarness = createFetchHarness({ fail: options.fetchFail })
-  const fixWebmDuration = vi.fn<FixWebmDuration>(async (blob, _durationMs) => blob)
+  const fetchHarness = createFetchHarness({
+    fail: options.fetchFail,
+    onPut: (attempt) => {
+      if (options.advanceClockOnPut) {
+        now += options.advanceClockOnPut
+      }
+      options.onPut?.(attempt)
+    },
+  })
+  const fixWebmDuration = vi.fn<FixWebmDuration>(async (blob, _durationMs) => {
+    if (options.advanceClockOnFix) {
+      now += options.advanceClockOnFix
+    }
+    return blob
+  })
   if (options.fixFails) {
     fixWebmDuration.mockRejectedValue(new Error('patch failed'))
   }
-  let now = 0
   const progress: Harness['progress'] = []
   const errors: RecordingUploadError[] = []
 
@@ -225,7 +252,9 @@ function setup(options: { fetchFail?: boolean; fixFails?: boolean } = {}): Harne
 
 describe('RecorderUploader', () => {
   it('uploads 5MB parts and completes with all etags', async () => {
-    const harness = setup()
+    // Slow PUTs and a slow duration patch after stop must not inflate the
+    // recording duration written to part 1 or reported to the server.
+    const harness = setup({ advanceClockOnPut: 1_000, advanceClockOnFix: 5_000 })
     await harness.uploader.start()
 
     harness.recorder.emitData(blobOf(PART_SIZE, 1))
@@ -267,6 +296,11 @@ describe('RecorderUploader', () => {
     expect(completeBody.duration_ms).toBe(12_345)
     expect(completeBody.mime).toBe('video/webm;codecs=vp8')
 
+    // The duration patch sees the stop-time duration even though the PUTs and
+    // the patch itself advanced the fake clock afterwards.
+    expect(harness.fixWebmDuration).toHaveBeenCalledTimes(1)
+    expect(harness.fixWebmDuration.mock.calls[0]![1]).toBe(12_345)
+
     expect(harness.progress.at(-1)).toEqual({
       uploadedBytes: 11.5 * MB,
       totalBytes: 11.5 * MB,
@@ -306,6 +340,75 @@ describe('RecorderUploader', () => {
     expect(completeBody.parts.map((part) => part.part_number)).toEqual([1, 2])
     expect(completeBody.parts[0]!.etag).toBe('"etag-3"')
     expect(completeBody.size).toBe(PART_SIZE + 'patched:5242880'.length)
+  })
+
+  it('patches and uploads a single part when the recording is under 5MB', async () => {
+    const harness = setup()
+    await harness.uploader.start()
+
+    harness.recorder.emitData(blobOf(1 * MB))
+    harness.setNow(2_500)
+
+    await harness.uploader.stop()
+
+    expect(harness.api.partUrl.mock.calls.map((call) => call[2])).toEqual([1])
+    expect(harness.fetchHarness.calls).toHaveLength(1)
+    expect(harness.fetchHarness.calls[0]!.body.size).toBe(1 * MB)
+    expect(harness.fixWebmDuration).toHaveBeenCalledTimes(1)
+    expect((harness.fixWebmDuration.mock.calls[0]![0] as Blob).size).toBe(1 * MB)
+    expect(harness.fixWebmDuration.mock.calls[0]![1]).toBe(2_500)
+
+    const completeBody = harness.api.completeMultipart.mock.calls[0]![2] as {
+      parts: Array<{ part_number: number; etag: string }>
+      size: number
+      duration_ms: number
+    }
+    expect(completeBody.parts).toEqual([{ part_number: 1, etag: '"etag-1"' }])
+    expect(completeBody.size).toBe(1 * MB)
+    expect(completeBody.duration_ms).toBe(2_500)
+  })
+
+  it('ignores a late track-ended event after a successful complete', async () => {
+    const track = new FakeTrack()
+    const harness = setup({ track })
+    await harness.uploader.start()
+
+    harness.recorder.emitData(blobOf(1 * MB))
+    harness.setNow(1_000)
+    await harness.uploader.stop()
+
+    const abortCalls = harness.api.abortMultipart.mock.calls.length
+    track.end()
+
+    expect(harness.errors).toHaveLength(0)
+    expect(harness.api.abortMultipart).toHaveBeenCalledTimes(abortCalls)
+  })
+
+  it('does not complete when a track ends during the tail upload', async () => {
+    const track = new FakeTrack()
+    const harness = setup({
+      track,
+      onPut: (attempt) => {
+        if (attempt === 3) {
+          track.end()
+        }
+      },
+    })
+    await harness.uploader.start()
+
+    harness.recorder.emitData(blobOf(PART_SIZE, 1))
+    harness.recorder.emitData(blobOf(1 * MB, 2))
+    harness.setNow(4_000)
+
+    await expect(harness.uploader.stop()).rejects.toMatchObject({
+      name: 'RecordingUploadError',
+      reason: 'track_ended',
+    })
+
+    expect(harness.fetchHarness.calls).toHaveLength(3)
+    expect(harness.api.completeMultipart).not.toHaveBeenCalled()
+    expect(harness.api.abortMultipart).toHaveBeenCalledTimes(1)
+    expect(harness.errors.at(-1)?.reason).toBe('track_ended')
   })
 
   it(`retries a failed part ${MAX_PART_ATTEMPTS} times before reporting and never completes`, async () => {

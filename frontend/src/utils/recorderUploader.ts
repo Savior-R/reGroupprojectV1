@@ -158,6 +158,7 @@ export class RecorderUploader {
   private failure: RecordingUploadError | null = null
   private started = false
   private startedAt = 0
+  private stoppedAt: number | null = null
   private startPromise: Promise<void> | null = null
   private multipartPromise: Promise<MultipartStart> | null = null
   private partSize = DEFAULT_PART_SIZE
@@ -299,6 +300,11 @@ export class RecorderUploader {
   }
 
   private readonly handleRecorderStop = (): void => {
+    // The recording ends here. Upload latency from the final flush must not be
+    // counted as recording time, nor passed to `fix-webm-duration`.
+    if (this.stoppedAt === null) {
+      this.stoppedAt = this.now()
+    }
     this.stopSeen = true
     const resolve = this.resolveStopSignal
     this.resolveStopSignal = null
@@ -478,6 +484,9 @@ export class RecorderUploader {
     if (!this.stopSeen) {
       await this.stopSignal
     }
+    if (this.stoppedAt === null) {
+      this.stoppedAt = this.now()
+    }
   }
 
   private async finishInternal(): Promise<RecordingStreamView> {
@@ -490,6 +499,9 @@ export class RecorderUploader {
 
     this.state = 'stopping'
     await this.stopRecorder()
+    if (this.stoppedAt === null) {
+      this.stoppedAt = this.now()
+    }
     if (this.failure) {
       throw this.failure
     }
@@ -511,7 +523,10 @@ export class RecorderUploader {
       throw this.failure
     }
 
-    const durationMs = Math.max(1, Math.round(this.now() - this.startedAt))
+    // Use the recorder's stop timestamp, never the post-upload clock: a slow
+    // final flush must not inflate the duration written into part 1.
+    const stoppedAt = this.stoppedAt ?? this.now()
+    const durationMs = Math.max(1, Math.round(stoppedAt - this.startedAt))
 
     if (this.nextPartNumber === 1) {
       // The whole recording fits in part 1: patch it and upload it once.
@@ -536,6 +551,12 @@ export class RecorderUploader {
         this.nextPartNumber = tailPartNumber + 1
         await this.putPartGuarded(tailPartNumber, tail)
       }
+    }
+
+    // A track/recorder failure can arrive while the tail PUT is in flight.
+    // Never complete a stream that has already been marked failed.
+    if (this.failure) {
+      throw this.failure
     }
 
     const body: CompleteMultipartBody = {
@@ -585,6 +606,15 @@ export class RecorderUploader {
   ): RecordingUploadError {
     if (this.failure) {
       return this.failure
+    }
+    if (this.state === 'completed') {
+      // Events arriving after a successful complete (for example a late track
+      // `ended`) must not flip a finished stream to failed.
+      return new RecordingUploadError(
+        reason,
+        message,
+        cause === undefined ? undefined : { cause },
+      )
     }
     const failure = new RecordingUploadError(
       reason,
