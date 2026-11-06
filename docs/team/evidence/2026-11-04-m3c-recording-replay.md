@@ -334,7 +334,7 @@ events (seq): 1 recording.ready_ack, 2 session.started,
 
 用户 2026-11-06 确认：当前 M3 Owner 代 Media/Training Owner 执行 M3C 保留期实现（候选查询与仓储端口、对象优先删除、清理服务与调度器及其测试）。该确认仅覆盖本切片列出的 M3C 保留期文件，不授权其他模块。
 
-范围：`SessionRepository` / `SessionJpaRepository` / `SessionRepositoryAdapter` 的临时保留候选查询；`SubmissionRepository` / `SubmissionJpaRepository` / `SubmissionRepositoryAdapter` 的提交保留候选查询与按会话删除；`RecordingLifecyclePort` / `RecordingLifecycleService` 的临时与提交对象优先删除；`RecordingRetentionService`、`M3RetentionProperties`、`RecordingRetentionScheduler` 及对应测试 / 内存仓储。未改 schema / 迁移、`application*.yml`、`docker-compose.yml`、`ServerApplication`、`ops` schema、M2 Java、API / DTO / WS / 事件契约与权限。
+范围：`SessionRepository` / `SessionJpaRepository` / `SessionRepositoryAdapter` 的临时保留候选查询；`SubmissionRepository` / `SubmissionJpaRepository` / `SubmissionRepositoryAdapter` 的提交保留候选查询与按会话删除；`RecordingLifecyclePort` / `RecordingLifecycleService` 的临时与提交对象优先删除；`RecordingRetentionService`、`M3RetentionProperties`、`RecordingRetentionScheduler` 及对应测试 / 内存仓储。最终审查修复另在 M3B 提交路径 `SubmissionServiceImpl` 上增加 session 行锁（M3B 属当前 M3 Owner，非跨模块）。未改 schema / 迁移、`application*.yml`、`docker-compose.yml`、`ServerApplication`、`ops` schema、M2 Java、API / DTO / WS / 事件契约与权限。
 
 ### 10.2 语义
 
@@ -342,9 +342,9 @@ events (seq): 1 recording.ready_ack, 2 session.started,
 |---|---|
 | 临时候选 | `session_type = 'task'` 且状态为 `ended` / `reviewing` / `failed` / `cancelled`；锚点 `COALESCE(ended_at, updated_at)`，任务关闭更晚时取 `GREATEST(锚点, tasks.closed_at)`；`锚点 + 24h <= now`（含边界）。`submitted` / `preparing` / `in_progress` 永不入选。 |
 | 提交候选 | `courses.end_at IS NOT NULL` 且 `end_at + INTERVAL '1 year' <= now`（含边界）；`end_at` 为空永不清理。 |
-| 删除顺序 | 先同步删除所有非空 `objectKey` 的 MinIO 对象。临时：recording 行 → session 行；提交：submission 行（先释放 `ON DELETE RESTRICT` 外键并级联 M4 / M7 行）→ recording 行 → session 行。 |
+| 删除顺序 | 先对 UPLOADING / FAILED 流 best-effort `abortMultipart`（删除对象不会中止分片上传，行删除会丢失 uploadId），再同步删除所有非空 `objectKey` 的 MinIO 对象。临时：recording 行 → session 行；提交：submission 行（先释放 `ON DELETE RESTRICT` 外键并级联 M4 / M7 行）→ recording 行 → session 行。 |
 | 失败 / 重试 | 对象删除异常不捕获，事务回滚、行全部保留；单候选失败计入 `failed` 并继续后续候选，下次调度重试（对象删除幂等）。 |
-| 并发复核 | 两类删除都先 `findByIdForUpdate` 锁 session 行，再复核状态与到期；并发提交的会话不会被临时清理误删。 |
+| 并发复核 | 两类删除都先 `findByIdForUpdate` 锁 session 行；临时路径重算状态与到期，提交路径只重算状态（课程结束 +1 年由候选查询固定）。提交路径在 `forceFlush` 之后、写入 submission 之前取同一 session 行锁：清理先到时提交看到会话已删除，提交先到时清理复核到 `submitted` 并跳过；`RecordingConcurrencyIT` 的确定性交错用例覆盖对象删除窗口。 |
 | 调度器 | `@Component` + `@Profile("!test")`，单 daemon 线程 `scheduleWithFixedDelay`；默认 `m3.retention.enabled=true`、`initial-delay=1m`、`interval=1h`；无 `@EnableScheduling`，`runSafely` 吞异常避免停摆。训练保留（1 个月）不在本切片，临时查询只选 `session_type = 'task'`。 |
 
 本节取代 §6 T26 行与 §7 第 2 条中「保留期属后续」的状态。
@@ -353,11 +353,12 @@ events (seq): 1 recording.ready_ack, 2 session.started,
 
 | 测试类 | 用例数 | 覆盖 |
 |---|---:|---|
-| `RetentionCandidateQueryIT` | 3 | PostgreSQL 候选查询、24h / 1 年边界、`deleteBySession` 先释放 RESTRICT 外键 |
+| `RetentionCandidateQueryIT` | 3 | PostgreSQL 候选查询、24h / 1 年边界、`reviewing` / `failed` / 锚点优先级、training 行排除、`deleteBySession` 先释放 RESTRICT 外键 |
 | `RecordingRetentionServiceTest` | 3 | 删除 / 失败计数、单候选失败不阻塞后续、被生命周期跳过的候选不计数 |
 | `RecordingRetentionSchedulerTest` | 5 | 默认配置、禁用、`runSafely` 使用 `ClockProvider` 并吞异常、启用后按 initialDelay 执行 |
-| `RecordingLifecycleServiceTest`（新增 8 条，11 → 19） | 8 | 对象先于行删除、对象删除失败保留行、任务关闭延长窗口、拒绝 submitted、submission 先于 session、拒绝非 submitted |
-| **新增合计** | **3 类 / 19 条** | |
+| `RecordingLifecycleServiceTest`（新增 9 条，11 → 20） | 9 | 对象先于行删除、对象删除失败保留行、任务关闭延长窗口、拒绝 submitted、submission 先于 session、拒绝非 submitted、UPLOADING / FAILED 流先 abort multipart |
+| `RecordingConcurrencyIT`（新增 1 条，3 → 4） | 1 | 确定性 submit ↔ 临时清理交错：清理持有行锁并阻塞在对象删除时，提交必须等待；清理删除会话后提交失败且不产生 submission |
+| **新增合计** | **+21 条** | |
 
 全量：
 
@@ -366,10 +367,19 @@ DOCKER="/mnt/c/Users/forever alone/AppData/Local/Programs/DockerDesktop/resource
 "$DOCKER" compose --profile test run --rm test gradle test --no-daemon --console=plain
 ```
 
-结果：`BUILD SUCCESSFUL in 3m 18s`；**93 个测试类 / 691 条用例，0 failure / 0 error / 0 skipped**（解析 `server/build/test-results/test/TEST-*.xml` 汇总）。相对切片前基线 90 classes / 672 tests，新增 3 类 / 19 条。
+结果：`BUILD SUCCESSFUL in 3m 50s`；**93 个测试类 / 693 条用例，0 failure / 0 error / 0 skipped**（解析 `server/build/test-results/test/TEST-*.xml` 汇总）。相对切片前基线 90 classes / 672 tests，新增 3 类 / 21 条。
 
 ### 10.4 剩余缺口
 
-- 训练模式 1 个月保留属 M6，本切片未实现；临时查询只处理 `session_type = 'task'`。
+- 训练模式 1 个月保留属 M6，本切片未实现；临时查询与提交候选查询都只处理 `session_type = 'task'`。
 - 无 live MinIO 保留期 smoke：对象优先删除路径由 `RecordingLifecycleServiceTest` 使用内存存储覆盖；`RetentionCandidateQueryIT` 走真实 PostgreSQL，但不触碰 MinIO。
 - 调度器在 `test` profile 不启动（按设计），因此全量套件不验证后台线程；调度器行为由直接实例化的 `RecordingRetentionSchedulerTest` 覆盖。
+- 未单独增加 `RecordingRetentionService.cleanup` 的端到端 PostgreSQL IT；最风险的 submit ↔ 清理交错已由 `RecordingConcurrencyIT` 确定性覆盖，候选查询与生命周期删除分别有 IT / 单测。
+
+### 10.5 最终审查修复
+
+| 严重度 | 问题 | 修复 |
+|---|---|---|
+| Critical | 提交与临时清理的“对象已删、行未删”窗口可让提交在清理回滚后仍提交 `submitted`，回放指向已删除对象 | `SubmissionServiceImpl.submit` 在 `forceFlush` 之后取 session `findByIdForUpdate`，再复核状态并写入 submission；新增 `RecordingConcurrencyIT.temporaryCleanupAndConcurrentSubmitDoNotLoseSubmittedMedia` 确定性交错用例 |
+| Important | 保留期删除只删对象、不中止 multipart；FAILED / UPLOADING 流的 uploadId 随行删除丢失 | `deleteObjectsNow` 先 `abortStreamUpload`（best-effort，UPLOADED 流 no-op）再删对象；`RecordingLifecycleServiceTest` 增加 abort 顺序用例 |
+| Minor | 类注释、证据并发措辞、候选查询 training / status / 锚点覆盖、重复 info 日志、调度器 start 幂等与正间隔校验、文件尾换行 | 已同步修正；提交候选查询增加 `session_type = 'task'` 防御 |
