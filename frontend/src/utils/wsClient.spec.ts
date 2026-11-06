@@ -253,6 +253,59 @@ describe('wsClient', () => {
     expect(harness.statuses.some((status) => status.status === 'failed')).toBe(false)
   })
 
+  it('keeps the pre-disconnect cursor when the reconnect snapshot carries the head seq', async () => {
+    const harness = setup()
+    await harness.client.connect()
+    const first = harness.sockets[0]!
+    first.open()
+    for (let seq = 1; seq <= 5; seq += 1) {
+      first.receive(serverEvent('student.state_changed', seq, { student_id: 's1' }))
+    }
+    expect(harness.client.lastSeq()).toBe(5)
+
+    first.serverClose(1006)
+    await vi.advanceTimersByTimeAsync(0)
+
+    const second = harness.sockets[1]!
+    second.open()
+
+    expect(sentCommands(second)[0]).toEqual({
+      v: 1,
+      type: 'session.resume',
+      command_id: 'command-1',
+      payload: { last_seq: 5, recording_state: 'active' },
+    })
+
+    // Real server ordering: snapshot with the current head first, then
+    // session.resumed, then the replay tail, then live events.
+    second.receive(serverEvent('session.snapshot', 9, { last_seq: 9, state: 'in_progress' }))
+    second.receive(serverEvent('session.resumed', 10, { last_seq: 5, server_time_ms: 1 }))
+    for (let seq = 6; seq <= 9; seq += 1) {
+      second.receive(serverEvent('student.state_changed', seq, { student_id: 's1' }))
+    }
+    second.receive(serverEvent('student.state_changed', 10, { student_id: 's1' }))
+
+    const delivered = harness.events
+      .filter((event) => event.type === 'student.state_changed')
+      .map((event) => event.seq)
+    expect(delivered).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    expect(harness.client.lastSeq()).toBe(10)
+  })
+
+  it('seeds lastSeq from the first-connection snapshot', async () => {
+    const harness = setup()
+    await harness.client.connect()
+    const socket = harness.sockets[0]!
+    socket.open()
+
+    socket.receive(serverEvent('session.snapshot', 9, { last_seq: 9, state: 'in_progress' }))
+    expect(harness.client.lastSeq()).toBe(9)
+
+    socket.receive(serverEvent('student.state_changed', 8, { student_id: 's1' }))
+    socket.receive(serverEvent('student.state_changed', 10, { student_id: 's1' }))
+    expect(harness.client.lastSeq()).toBe(10)
+  })
+
   it('fails instead of reconnecting when recording_state is lost', async () => {
     const harness = setup({ recording: 'lost' })
     await harness.client.connect()

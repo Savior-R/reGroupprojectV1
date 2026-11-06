@@ -91,6 +91,149 @@ describe('classroomReducer', () => {
     expect(state.students.s1).not.toHaveProperty('personality')
     expect(state.students.s1).not.toHaveProperty('reference_material')
     expect(JSON.stringify(state)).not.toContain('secret')
+
+    // Transient fields keep their fresh defaults.
+    expect(state.handRaises).toEqual({})
+    expect(state.activeStudentId).toBeNull()
+    expect(state.marks).toEqual({})
+    expect(state.dialogue).toBeNull()
+  })
+
+  it('preserves event-derived fields when a reconnect snapshot omits them', () => {
+    let state = classroomReducer(
+      createInitialClassroomState(),
+      snapshotEvent({
+        virtual_students: [
+          {
+            virtual_student_id: 's1',
+            name: '小明',
+            state: 'focused',
+            attention: 0.8,
+            hand_raise_energy: 0.5,
+          },
+          {
+            virtual_student_id: 's2',
+            name: '小红',
+            state: 'focused',
+            attention: 0.7,
+            hand_raise_energy: 0.4,
+          },
+        ],
+      }),
+    )
+
+    state = classroomReducer(
+      state,
+      serverEvent('classroom.state_changed', 8, {
+        from: 'lecturing',
+        to: 'qa',
+        qa_phase: 'waiting_hands',
+        trigger: 'teacher.ask_class',
+      }),
+    )
+    state = classroomReducer(
+      state,
+      serverEvent('student.hand_raised', 9, { student_id: 's1', hand_raise_id: 'h1' }),
+    )
+    state = classroomReducer(
+      state,
+      serverEvent('teacher.called_on', 10, { student_id: 's2' }),
+    )
+    state = classroomReducer(
+      state,
+      serverEvent('dialogue.started', 11, { dialogue_id: 'd1', student_id: 's2' }),
+    )
+    state = classroomReducer(
+      state,
+      serverEvent('teacher.marked', 12, { answer_id: 'a1', correctness: 'correct' }),
+    )
+    state = classroomReducer(
+      state,
+      serverEvent('session.time_tick', 13, {
+        elapsed_ms: 30_000,
+        remaining_ms: 570_000,
+        discipline_level: 3,
+        states: [],
+      }),
+    )
+
+    expect(state.handRaises).toEqual({ h1: 's1' })
+    expect(state.activeStudentId).toBe('s2')
+    expect(state.marks).toEqual({ a1: 'correct' })
+    expect(state.disciplineLevel).toBe(3)
+    expect(state.classroom.macroState).toBe('qa')
+    expect(state.dialogue).toEqual({ dialogueId: 'd1', studentId: 's2' })
+
+    // Reconnect snapshot: it carries the durable view but none of the
+    // transient fields set above.
+    state = classroomReducer(
+      state,
+      snapshotEvent({
+        public_config: { topic: '新主题', max_seconds: 900 },
+        virtual_students: [
+          {
+            virtual_student_id: 's1',
+            name: '小明',
+            state: 'hand_raised',
+            attention: 0.6,
+            hand_raise_energy: 0.3,
+          },
+          {
+            virtual_student_id: 's2',
+            name: '小红',
+            state: 'dialogue',
+            attention: 0.6,
+            hand_raise_energy: 0.3,
+          },
+        ],
+        recording: {
+          required_streams: ['camera', 'screen', 'audio'],
+          streams: { camera: 'uploading' },
+          ready: true,
+        },
+        last_seq: 20,
+        elapsed_ms: 45_000,
+      }),
+    )
+
+    // Event-derived state survives the reconnect snapshot.
+    expect(state.handRaises).toEqual({ h1: 's1' })
+    expect(state.students.s1!.hand_raise_id).toBe('h1')
+    expect(state.activeStudentId).toBe('s2')
+    expect(state.marks).toEqual({ a1: 'correct' })
+    expect(state.disciplineLevel).toBe(3)
+    expect(state.classroom.macroState).toBe('qa')
+    expect(state.classroom.qaPhase).toBe('waiting_hands')
+    expect(state.dialogue).toEqual({ dialogueId: 'd1', studentId: 's2' })
+
+    // Snapshot-provided fields still update.
+    expect(state.publicConfig.topic).toBe('新主题')
+    expect(state.elapsedMs).toBe(45_000)
+    expect(state.lastSeq).toBe(20)
+    expect(state.recording?.ready).toBe(true)
+    expect(state.students.s1!.attention).toBe(0.6)
+  })
+
+  it('advances lastSeq as applied events arrive', () => {
+    let state = stateWithSnapshot()
+    expect(state.lastSeq).toBe(7)
+
+    state = classroomReducer(
+      state,
+      serverEvent('student.hand_raised', 9, { student_id: 's1', hand_raise_id: 'h1' }),
+    )
+    expect(state.lastSeq).toBe(9)
+
+    state = classroomReducer(
+      state,
+      serverEvent('session.time_tick', 12, {
+        elapsed_ms: 10_000,
+        remaining_ms: 590_000,
+        discipline_level: 0,
+        states: [],
+      }),
+    )
+    expect(state.lastSeq).toBe(12)
   })
 
   it('tracks hand raise and called-on states', () => {

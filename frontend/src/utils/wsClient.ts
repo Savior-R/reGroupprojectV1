@@ -205,7 +205,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     emitStatus({ status: 'failed', reason })
   }
 
-  function handleMessage(raw: unknown): void {
+  function handleMessage(raw: unknown, reconnecting: boolean): void {
     const event = parseEnvelope(raw)
     if (!event) {
       return
@@ -225,10 +225,16 @@ export function createWsClient(options: WsClientOptions): WsClient {
     }
 
     if (event.type === 'session.snapshot') {
-      const payload = isRecord(event.payload) ? event.payload : {}
-      const snapshotSeq = payload.last_seq
-      if (typeof snapshotSeq === 'number' && Number.isFinite(snapshotSeq) && snapshotSeq >= 0) {
-        lastSeenSeq = snapshotSeq
+      // On a reconnect the server sends its current snapshot *before* it
+      // processes `session.resume`. Seeding lastSeq from it would suppress the
+      // replay tail that follows, so only the first connection seeds the
+      // cursor; on reconnect the pre-disconnect cursor is kept.
+      if (!reconnecting) {
+        const payload = isRecord(event.payload) ? event.payload : {}
+        const snapshotSeq = payload.last_seq
+        if (typeof snapshotSeq === 'number' && Number.isFinite(snapshotSeq) && snapshotSeq >= 0) {
+          lastSeenSeq = snapshotSeq
+        }
       }
       onEvent(event)
       return
@@ -272,7 +278,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
     }
     next.onmessage = (message) => {
       if (socket === next) {
-        handleMessage(message.data)
+        handleMessage(message.data, resume)
       }
     }
     next.onclose = () => {

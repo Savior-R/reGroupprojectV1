@@ -313,15 +313,98 @@ function classroomRemaining(
   return maxSeconds === undefined ? null : Math.max(0, Math.round(maxSeconds * 1000 - elapsedMs))
 }
 
+function isInitialized(state: ClassroomState): boolean {
+  return (
+    state.sessionId !== null ||
+    state.status !== null ||
+    state.mode !== null ||
+    state.lastSeq > 0 ||
+    Object.keys(state.students).length > 0
+  )
+}
+
+/**
+ * Applies a snapshot. The backend snapshot carries the durable session view but
+ * not every transient classroom field (open hands, active student, marks,
+ * discipline level, dialogue, classroom phase). On a reconnect those fields are
+ * event-derived and must survive the snapshot; on a fresh state the defaults
+ * apply.
+ */
 function applySnapshot(state: ClassroomState, event: ServerEvent): ClassroomState {
   const payload = event.payload
+  const initialized = isInitialized(state)
   const publicConfig: PublicSessionConfig = isRecord(payload.public_config)
     ? { ...payload.public_config }
-    : {}
+    : initialized
+      ? state.publicConfig
+      : {}
   const mode = oneOf(payload.mode, SESSION_MODES) ?? state.mode
-  const interview = snapshotInterview(payload.interview)
-  const elapsedMs = numberValue(payload.elapsed_ms, 0)
+  const interview = isRecord(payload.interview)
+    ? snapshotInterview(payload.interview)
+    : initialized
+      ? state.interview
+      : snapshotInterview(undefined)
+  const recording = isRecord(payload.recording)
+    ? snapshotRecording(payload.recording)
+    : initialized
+      ? state.recording
+      : null
+  const elapsedMs = optionalNumber(payload.elapsed_ms) ?? (initialized ? state.elapsedMs : 0)
+
+  let students: Record<string, ClassroomStudentState> = Array.isArray(payload.virtual_students)
+    ? snapshotStudents(payload.virtual_students)
+    : initialized
+      ? state.students
+      : {}
+
+  // Reattach event-derived open hands that the snapshot does not carry, but
+  // only when the snapshot still shows the student with a raised hand.
+  const handRaises: Record<string, string> = {}
+  if (initialized) {
+    let patched: Record<string, ClassroomStudentState> | null = null
+    for (const [handRaiseId, studentId] of Object.entries(state.handRaises)) {
+      const student = students[studentId]
+      if (!student || student.state !== 'hand_raised') {
+        continue
+      }
+      if (!patched) {
+        patched = { ...students }
+      }
+      patched[studentId] = { ...student, hand_raise_id: handRaiseId }
+      handRaises[handRaiseId] = studentId
+    }
+    if (patched) {
+      students = patched
+    }
+  }
+
   const classroomRaw = isRecord(payload.classroom) ? payload.classroom : null
+  const classroom: ClassroomPhaseState = initialized
+    ? {
+        ...state.classroom,
+        ...(classroomRaw
+          ? {
+              macroState: nullableString(classroomRaw.state) ?? state.classroom.macroState,
+              qaPhase:
+                classroomRaw.qa_phase === null
+                  ? null
+                  : (nullableString(classroomRaw.qa_phase) ?? state.classroom.qaPhase),
+            }
+          : {}),
+      }
+    : {
+        macroState: classroomRaw ? nullableString(classroomRaw.state) : null,
+        qaPhase: classroomRaw ? nullableString(classroomRaw.qa_phase) : null,
+        questionIntent: null,
+        questionSource: null,
+        questionSuggestedConfidence: null,
+      }
+
+  const snapshotRemaining = isRecord(payload.interview)
+    ? (interview.remainingMs ?? classroomRemaining(publicConfig, mode, elapsedMs))
+    : initialized
+      ? (state.remainingMs ?? classroomRemaining(publicConfig, mode, elapsedMs))
+      : classroomRemaining(publicConfig, mode, elapsedMs)
 
   return {
     ...state,
@@ -330,30 +413,25 @@ function applySnapshot(state: ClassroomState, event: ServerEvent): ClassroomStat
     mode,
     publicConfig,
     elapsedMs,
-    remainingMs: interview.remainingMs ?? classroomRemaining(publicConfig, mode, elapsedMs),
-    disciplineLevel: 0,
-    students: snapshotStudents(payload.virtual_students),
-    handRaises: {},
-    activeStudentId: null,
-    classroom: {
-      macroState: classroomRaw ? nullableString(classroomRaw.state) : null,
-      qaPhase: classroomRaw ? nullableString(classroomRaw.qa_phase) : null,
-      questionIntent: null,
-      questionSource: null,
-      questionSuggestedConfidence: null,
-    },
-    dialogue: null,
+    remainingMs: snapshotRemaining,
+    disciplineLevel:
+      optionalNumber(payload.discipline_level) ?? (initialized ? state.disciplineLevel : 0),
+    students,
+    handRaises,
+    activeStudentId: initialized ? state.activeStudentId : null,
+    classroom,
+    dialogue: initialized ? state.dialogue : null,
     interview,
-    recording: snapshotRecording(payload.recording),
-    marks: {},
-    lastStudentActivity: null,
-    lastManagementAction: null,
-    lastDisciplineEvent: null,
-    lastError: null,
-    endedReason: null,
-    failureReason: null,
-    failureCode: null,
-    submissionId: null,
+    recording,
+    marks: initialized ? state.marks : {},
+    lastStudentActivity: initialized ? state.lastStudentActivity : null,
+    lastManagementAction: initialized ? state.lastManagementAction : null,
+    lastDisciplineEvent: initialized ? state.lastDisciplineEvent : null,
+    lastError: initialized ? state.lastError : null,
+    endedReason: initialized ? state.endedReason : null,
+    failureReason: initialized ? state.failureReason : null,
+    failureCode: initialized ? state.failureCode : null,
+    submissionId: initialized ? state.submissionId : null,
     lastSeq: optionalNumber(payload.last_seq) ?? state.lastSeq,
   }
 }
@@ -804,7 +882,7 @@ function applyControlEvent(state: ClassroomState, event: ServerEvent): Classroom
 // Public entry point
 // ---------------------------------------------------------------------------
 
-export function classroomReducer(state: ClassroomState, event: ServerEvent): ClassroomState {
+function reduceClassroomEvent(state: ClassroomState, event: ServerEvent): ClassroomState {
   switch (event.type) {
     case 'session.snapshot':
       return applySnapshot(state, event)
@@ -923,4 +1001,18 @@ export function classroomReducer(state: ClassroomState, event: ServerEvent): Cla
       // ignored by the classroom reducer.
       return state
   }
+}
+
+export function classroomReducer(state: ClassroomState, event: ServerEvent): ClassroomState {
+  const next = reduceClassroomEvent(state, event)
+  if (next === state || event.type === 'session.snapshot') {
+    return next
+  }
+  // Keep the reducer state in sync with the transport cursor. Replayed events
+  // below the snapshot head may apply their state without rewinding lastSeq.
+  const seq = typeof event.seq === 'number' && Number.isFinite(event.seq) ? event.seq : undefined
+  if (seq === undefined || seq <= next.lastSeq) {
+    return next
+  }
+  return { ...next, lastSeq: seq }
 }
