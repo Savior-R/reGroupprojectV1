@@ -86,6 +86,58 @@ class RecordingLifecycleServiceTest {
     }
 
     @Test
+    void abortAllAbortsMultipartOfFailedStream() {
+        SessionId sessionId = newSession();
+        String objectKey = "recordings/school/task/session/camera.webm";
+        String uploadId = storage.createMultipart(objectKey, "video/webm").uploadId();
+        recordingWithFailedStream(sessionId, objectKey, uploadId);
+
+        service.abortAll(sessionId);
+
+        assertThatThrownBy(() -> storage.presignPart(
+                objectKey, uploadId, 1, Duration.ofMinutes(1)))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+    }
+
+    @Test
+    void deleteAttemptAbortsMultipartOfFailedStream() {
+        SessionId sessionId = newSession(
+                new TaskId(UUID.randomUUID()), 1, SessionStatus.CANCELLED);
+        String objectKey = keyFor(sessionId);
+        String uploadId = storage.createMultipart(objectKey, "video/webm").uploadId();
+        recordingWithFailedStream(sessionId, objectKey, uploadId);
+
+        service.deleteAttempt(sessionId);
+
+        assertThat(sessions.findById(sessionId)).isEmpty();
+        assertThatThrownBy(() -> storage.presignPart(
+                objectKey, uploadId, 1, Duration.ofMinutes(1)))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+    }
+
+    @Test
+    void deleteOtherAttemptsAbortsMultipartOfFailedStream() {
+        TaskId taskId = new TaskId(UUID.randomUUID());
+        SessionId keep = newSession(taskId, 1);
+        SessionId other = newSession(taskId, 2, SessionStatus.CANCELLED);
+        String objectKey = keyFor(taskId, other);
+        String uploadId = storage.createMultipart(objectKey, "video/webm").uploadId();
+        recordingWithFailedStream(other, objectKey, uploadId);
+
+        service.deleteOtherAttempts(student().accountId(), taskId, keep);
+
+        assertThatThrownBy(() -> storage.presignPart(
+                objectKey, uploadId, 1, Duration.ofMinutes(1)))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+    }
+
+    @Test
     void abortAllWithoutRecordingIsNoOp() {
         SessionId sessionId = newSession();
 
@@ -216,6 +268,19 @@ class RecordingLifecycleServiceTest {
     private static String keyFor(TaskId taskId, SessionId sessionId) {
         return "recordings/school/task/" + taskId.value() + "/" + sessionId.value()
                 + "/camera.webm";
+    }
+
+    private static String keyFor(SessionId sessionId) {
+        return "recordings/school/task/task/" + sessionId.value() + "/camera.webm";
+    }
+
+    private void recordingWithFailedStream(
+            SessionId sessionId, String objectKey, String uploadId) {
+        Recording recording = Recording.create(UUID.randomUUID(), sessionId, NOW);
+        recording.startStream(UUID.randomUUID(), TaskMode.FREE, StreamType.CAMERA,
+                uploadId, objectKey, RecordingStream.DEFAULT_PART_SIZE, 0, "video/webm", NOW);
+        recording.abortStream(StreamType.CAMERA, NOW);
+        recordings.save(recording);
     }
 
     private void recordingWithUploadingStream(

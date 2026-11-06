@@ -37,6 +37,11 @@ public final class InMemorySessionRepository implements SessionRepository {
     }
 
     @Override
+    public Optional<Session> findByIdForUpdate(SessionId id) {
+        return findById(id);
+    }
+
+    @Override
     public Optional<Session> findActiveByStudentAndTask(AccountId studentAccountId, TaskId taskId) {
         return sessions.values().stream()
                 .filter(session -> belongsTo(session, studentAccountId, taskId))

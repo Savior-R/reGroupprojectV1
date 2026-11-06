@@ -44,6 +44,11 @@ public class SessionRepositoryAdapter implements SessionRepository {
     }
 
     @Override
+    public Optional<Session> findByIdForUpdate(SessionId id) {
+        return repository.findByIdForUpdate(id.value()).map(this::toDomain);
+    }
+
+    @Override
     public Optional<Session> findActiveByStudentAndTask(
             AccountId studentAccountId, TaskId taskId) {
         return repository.findByStudentAccountIdAndTaskIdAndStatusInOrderByAttemptNoDesc(

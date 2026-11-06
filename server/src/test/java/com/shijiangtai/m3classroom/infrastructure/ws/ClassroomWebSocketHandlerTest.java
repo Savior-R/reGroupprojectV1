@@ -194,6 +194,11 @@ class ClassroomWebSocketHandlerTest {
         }
 
         @Override
+        public Optional<Session> findByIdForUpdate(SessionId id) {
+            return delegate.findByIdForUpdate(id);
+        }
+
+        @Override
         public Optional<Session> findActiveByStudentAndTask(
                 AccountId studentAccountId, TaskId taskId) {
             return delegate.findActiveByStudentAndTask(studentAccountId, taskId);

@@ -6,7 +6,6 @@ import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage;
 import com.shijiangtai.m3classroom.domain.recording.Recording;
 import com.shijiangtai.m3classroom.domain.recording.RecordingRepository;
 import com.shijiangtai.m3classroom.domain.recording.RecordingStream;
-import com.shijiangtai.m3classroom.domain.recording.StreamStatus;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
@@ -69,7 +68,7 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
         }
         List<Runnable> objectDeletes = new ArrayList<>();
         for (RecordingStream stream : recording.streams()) {
-            abortUploadingStream(stream);
+            abortStreamUpload(stream);
             scheduleObjectDelete(stream, objectDeletes);
         }
         recording.markDeleted(clockProvider.now());
@@ -116,7 +115,7 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
         Recording recording = recordingRepository.findBySession(sessionId).orElse(null);
         if (recording != null) {
             for (RecordingStream stream : recording.streams()) {
-                abortUploadingStream(stream);
+                abortStreamUpload(stream);
                 scheduleObjectDelete(stream, objectDeletes);
             }
             recordingRepository.deleteBySession(sessionId);
@@ -125,8 +124,14 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
         return objectDeletes;
     }
 
-    private void abortUploadingStream(RecordingStream stream) {
-        if (stream.status() == StreamStatus.UPLOADING && stream.uploadId() != null) {
+    /**
+     * Aborts every stream that still carries an upload id, including streams already marked
+     * {@code failed}. A failed stream may leave the MinIO multipart open (for example when
+     * {@code completeMultipart} or a post-complete check failed), so cleanup must not rely on the
+     * aggregate status alone. Aborts are best effort and idempotent.
+     */
+    private void abortStreamUpload(RecordingStream stream) {
+        if (stream.uploadId() != null) {
             abortUpload(stream);
         }
     }

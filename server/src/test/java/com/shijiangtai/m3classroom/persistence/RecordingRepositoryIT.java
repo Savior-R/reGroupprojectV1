@@ -17,6 +17,7 @@ import com.shijiangtai.m3classroom.infrastructure.persistence.jpa.RecordingStrea
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -94,6 +95,28 @@ class RecordingRepositoryIT extends PostgresIntegrationTest {
         assertThat(loaded.status()).isEqualTo(RecordingStatus.RECORDING);
         assertThat(loaded.streams()).isEmpty();
         assertThat(streamRowCount(recording.id())).isZero();
+    }
+
+    @Test
+    void saveIsMergeOnlyAndNeverDeletesStreamsAbsentFromTheAggregate() {
+        SessionId sessionId = seedSession();
+        Recording recording = freeRecording(sessionId);
+        recordingRepository.save(recording);
+        assertThat(streamRowCount(recording.id())).isEqualTo(3);
+
+        // Simulates a stale aggregate read by a parallel start: a save must merge the camera
+        // stream but leave the sibling screen/audio rows untouched.
+        Recording stale = Recording.rehydrate(
+                recording.id(), sessionId, RecordingStatus.UPLOADING,
+                List.of(recording.stream(StreamType.CAMERA).orElseThrow()),
+                recording.createdAt(), recording.updatedAt());
+        recordingRepository.save(stale);
+
+        assertThat(streamRowCount(recording.id())).isEqualTo(3);
+        Recording loaded = recordingRepository.findById(recording.id()).orElseThrow();
+        assertThat(loaded.streams()).extracting(RecordingStream::type)
+                .containsExactlyInAnyOrder(
+                        StreamType.CAMERA, StreamType.SCREEN, StreamType.AUDIO);
     }
 
     @Test

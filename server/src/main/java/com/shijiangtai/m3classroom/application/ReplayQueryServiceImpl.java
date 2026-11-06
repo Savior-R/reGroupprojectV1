@@ -96,8 +96,12 @@ public class ReplayQueryServiceImpl implements ReplayQueryService {
             throw incomplete(missing);
         }
 
+        Set<StreamType> required = RequiredStreams.forMode(session.mode());
         List<ReplayStreamView> streams = recording.streams().stream()
                 .filter(stream -> stream.status() == StreamStatus.UPLOADED)
+                // An interview recording may still contain a stale screen stream from an earlier
+                // attempt or client; only the mode's required streams belong in the manifest.
+                .filter(stream -> required.contains(stream.type()))
                 .sorted(Comparator.comparingInt(
                         (RecordingStream stream) -> streamRank(session.mode(), stream.type())))
                 .map(this::toView)
@@ -114,6 +118,7 @@ public class ReplayQueryServiceImpl implements ReplayQueryService {
         Objects.requireNonNull(sessionId, "sessionId");
         Session session = findSession(sessionId);
         accessPolicy.requireRead(user, session);
+        requireValidAfterSeq(afterSeq);
         requireValidLimit(limit);
 
         List<SessionEventView> views = eventStore.after(sessionId, afterSeq, limit).stream()
@@ -156,6 +161,13 @@ public class ReplayQueryServiceImpl implements ReplayQueryService {
                 ? INTERVIEW_STREAM_ORDER : FREE_STREAM_ORDER;
         int index = order.indexOf(type);
         return index < 0 ? order.size() : index;
+    }
+
+    private static void requireValidAfterSeq(long afterSeq) {
+        if (afterSeq < 0) {
+            throw new DomainException(ErrorCode.VALIDATION_ERROR, "事件游标不能为负",
+                    Map.of("field", "after_seq", "value", afterSeq));
+        }
     }
 
     private static void requireValidLimit(int limit) {

@@ -21,7 +21,9 @@ import com.shijiangtai.m3classroom.application.port.RecordingLifecyclePort;
 import com.shijiangtai.m3classroom.application.view.SubmissionView;
 import com.shijiangtai.m3classroom.domain.recording.Recording;
 import com.shijiangtai.m3classroom.domain.recording.RecordingRepository;
+import com.shijiangtai.m3classroom.domain.recording.RecordingStatus;
 import com.shijiangtai.m3classroom.domain.recording.RecordingStream;
+import com.shijiangtai.m3classroom.domain.recording.StreamStatus;
 import com.shijiangtai.m3classroom.domain.recording.StreamType;
 import com.shijiangtai.m3classroom.domain.session.FailureReason;
 import com.shijiangtai.m3classroom.domain.session.Session;
@@ -141,6 +143,29 @@ class SubmissionServiceTest {
         assertThat(events.after(session.id(), 0, 100)).isEmpty();
         assertThat(publisher.events()).isEmpty();
         assertThat(lifecycle.cleanups()).isEmpty();
+    }
+
+    @Test
+    void submitRejectsUploadedButEmptyStream() {
+        TaskId taskId = createPublishedTask();
+        Session session = newSession(taskId, SessionStatus.ENDED);
+        UUID recordingId = UUID.randomUUID();
+        recordings.save(Recording.rehydrate(
+                recordingId, session.id(), RecordingStatus.UPLOADED, List.of(
+                        uploadedStream(recordingId, StreamType.CAMERA, 0L, 5_000L),
+                        uploadedStream(recordingId, StreamType.SCREEN, 1_024L, null),
+                        uploadedStream(recordingId, StreamType.AUDIO, 1_024L, 5_000L)),
+                NOW, NOW));
+
+        assertThatThrownBy(() -> service.submit(student(), session.id()))
+                .isInstanceOfSatisfying(DomainException.class, exception -> {
+                    assertThat(exception.code()).isEqualTo(ErrorCode.RECORDING_INCOMPLETE);
+                    assertThat(exception.details()).containsEntry(
+                            "invalid_streams", List.of("camera", "screen"));
+                });
+        assertThat(submissions.size()).isZero();
+        assertThat(sessions.findById(session.id()).orElseThrow().status())
+                .isEqualTo(SessionStatus.ENDED);
     }
 
     @Test
@@ -395,6 +420,16 @@ class SubmissionServiceTest {
 
     private static String mime(StreamType type) {
         return type == StreamType.AUDIO ? "audio/webm" : "video/webm";
+    }
+
+    private static RecordingStream uploadedStream(
+            UUID recordingId, StreamType type, long bytesUploaded, Long durationMs) {
+        return new RecordingStream(
+                UUID.randomUUID(), recordingId, type,
+                "upload-" + type.wireValue(),
+                "recordings/test/" + recordingId + "/" + type.wireValue() + ".webm",
+                RecordingStream.DEFAULT_PART_SIZE, 1, bytesUploaded, durationMs, 0L,
+                mime(type), StreamStatus.UPLOADED);
     }
 
     private static void assertCode(Runnable action, ErrorCode expected) {

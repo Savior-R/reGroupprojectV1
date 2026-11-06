@@ -4,6 +4,7 @@ import com.shijiangtai.m3classroom.application.command.CompletePartCommand;
 import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage;
 import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage.ObjectStat;
 import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage.PartEtag;
+import com.shijiangtai.m3classroom.application.port.SessionEventStore;
 import com.shijiangtai.m3classroom.application.view.MultipartUploadView;
 import com.shijiangtai.m3classroom.application.view.PartUrlView;
 import com.shijiangtai.m3classroom.application.view.RecordingStreamView;
@@ -15,7 +16,9 @@ import com.shijiangtai.m3classroom.domain.recording.RecordingStream;
 import com.shijiangtai.m3classroom.domain.recording.RequiredStreams;
 import com.shijiangtai.m3classroom.domain.recording.StreamStatus;
 import com.shijiangtai.m3classroom.domain.recording.StreamType;
+import com.shijiangtai.m3classroom.domain.session.FailureReason;
 import com.shijiangtai.m3classroom.domain.session.Session;
+import com.shijiangtai.m3classroom.domain.session.SessionEvent;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.task.Task;
@@ -30,6 +33,7 @@ import com.shijiangtai.shared.domain.SessionId;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -59,6 +63,8 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
     private final RecordingRepository recordingRepository;
     private final RecordingObjectStorage storage;
     private final RecordingAccessPolicy accessPolicy;
+    private final SessionRuntimeRegistry runtimeRegistry;
+    private final SessionEventStore eventStore;
     private final IdGenerator idGenerator;
     private final ClockProvider clockProvider;
     private final RecordingObjectKeyBuilder objectKeyBuilder = new RecordingObjectKeyBuilder();
@@ -69,6 +75,8 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
             RecordingRepository recordingRepository,
             RecordingObjectStorage storage,
             RecordingAccessPolicy accessPolicy,
+            SessionRuntimeRegistry runtimeRegistry,
+            SessionEventStore eventStore,
             IdGenerator idGenerator,
             ClockProvider clockProvider) {
         this.sessionRepository = Objects.requireNonNull(sessionRepository, "sessionRepository");
@@ -77,6 +85,8 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
                 recordingRepository, "recordingRepository");
         this.storage = Objects.requireNonNull(storage, "storage");
         this.accessPolicy = Objects.requireNonNull(accessPolicy, "accessPolicy");
+        this.runtimeRegistry = Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
+        this.eventStore = Objects.requireNonNull(eventStore, "eventStore");
         this.idGenerator = Objects.requireNonNull(idGenerator, "idGenerator");
         this.clockProvider = Objects.requireNonNull(clockProvider, "clockProvider");
     }
@@ -88,7 +98,7 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
         Objects.requireNonNull(student, "student");
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(type, "type");
-        Session session = findSession(sessionId);
+        Session session = findSessionForUpdate(sessionId);
         accessPolicy.requireUpload(student, session);
         requireRecordableStatus(session);
         requireRequiredStream(session, type);
@@ -170,7 +180,7 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(command, "command");
-        Session session = findSession(sessionId);
+        Session session = findSessionForUpdate(sessionId);
         accessPolicy.requireUpload(student, session);
         Recording recording = requireRecording(sessionId);
         RecordingStream stream = requireStream(recording, type);
@@ -189,7 +199,8 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
         } catch (RuntimeException exception) {
             // MinIO may have consumed the multipart even when the response was lost; the upload
             // must not stay retryable-looking. A redo needs a new recording/attempt.
-            markStreamFailed(sessionId, type, now);
+            abortMultipartBestEffort(stream);
+            failStreamAndSession(session, type, now);
             throw exception;
         }
         ObjectStat stat;
@@ -198,15 +209,24 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
         } catch (RuntimeException exception) {
             // The multipart was consumed; fail the stream so the attempt is redone as a new
             // recording instead of remaining stuck in uploading.
-            markStreamFailed(sessionId, type, now);
+            abortMultipartBestEffort(stream);
+            failStreamAndSession(session, type, now);
             throw exception;
         }
         if (stat.size() < command.size()) {
-            markStreamFailed(sessionId, type, now);
+            abortMultipartBestEffort(stream);
+            failStreamAndSession(session, type, now);
             throw new DomainException(ErrorCode.VALIDATION_ERROR, "上传对象大小不一致",
                     Map.of("object_key", stream.objectKey(),
                             "expected_size", command.size(),
                             "actual_size", stat.size()));
+        }
+        try {
+            requireCompatibleContentType(type, stat.contentType(), stream.objectKey());
+        } catch (DomainException exception) {
+            abortMultipartBestEffort(stream);
+            failStreamAndSession(session, type, now);
+            throw exception;
         }
 
         try {
@@ -215,7 +235,8 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
                     command.size(), command.durationMs(), command.mime(), now);
             recordingRepository.save(recording);
         } catch (RuntimeException exception) {
-            markStreamFailed(sessionId, type, now);
+            abortMultipartBestEffort(stream);
+            failStreamAndSession(session, type, now);
             throw exception;
         }
         return toView(recording.stream(type).orElseThrow());
@@ -227,7 +248,7 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
         Objects.requireNonNull(student, "student");
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(type, "type");
-        Session session = findSession(sessionId);
+        Session session = findSessionForUpdate(sessionId);
         accessPolicy.requireUpload(student, session);
         Recording recording = recordingRepository.findBySession(sessionId).orElse(null);
         if (recording == null) {
@@ -246,8 +267,15 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
             log.warn("Aborting recording multipart failed: session={}, stream={}",
                     sessionId.value(), type.wireValue(), exception);
         }
-        recording.abortStream(type, clockProvider.now());
-        recordingRepository.save(recording);
+        Instant now = clockProvider.now();
+        try {
+            recording.abortStream(type, now);
+            recordingRepository.save(recording);
+        } catch (RuntimeException exception) {
+            failSessionOnRecordingLoss(session, now);
+            throw exception;
+        }
+        failSessionOnRecordingLoss(session, now);
     }
 
     @Override
@@ -266,6 +294,17 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
 
     private Session findSession(SessionId sessionId) {
         return sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new DomainException(ErrorCode.RESOURCE_NOT_FOUND,
+                        "会话不存在", Map.of("session_id", sessionId.value())));
+    }
+
+    /**
+     * Loads the session under the recording-mutation lock. Every start/complete/abort call takes
+     * this lock before reading the recording aggregate, so parallel streams serialize instead of
+     * creating duplicate recordings or overwriting sibling streams.
+     */
+    private Session findSessionForUpdate(SessionId sessionId) {
+        return sessionRepository.findByIdForUpdate(sessionId)
                 .orElseThrow(() -> new DomainException(ErrorCode.RESOURCE_NOT_FOUND,
                         "会话不存在", Map.of("session_id", sessionId.value())));
     }
@@ -307,6 +346,16 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
         }
     }
 
+    /**
+     * Marks the stream failed and fails the owning session. The stream has already been consumed
+     * or lost, so the attempt can no longer be submitted; a terminal session records that fact
+     * even when the failure happened after {@code ended}.
+     */
+    private void failStreamAndSession(Session session, StreamType type, Instant now) {
+        markStreamFailed(session.id(), type, now);
+        failSessionOnRecordingLoss(session, now);
+    }
+
     private void markStreamFailed(SessionId sessionId, StreamType type, Instant now) {
         Recording current = recordingRepository.findBySession(sessionId).orElse(null);
         if (current == null) {
@@ -322,6 +371,68 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
         } catch (RuntimeException exception) {
             log.warn("Marking failed recording stream could not be saved: session={}, stream={}",
                     sessionId.value(), type.wireValue(), exception);
+        }
+    }
+
+    /**
+     * Fails the session with {@link FailureReason#RECORDING_LOST}. The live actor, when present,
+     * appends {@code session.failed} and persists the terminal state through its status listener;
+     * without an actor this method saves the session and appends the event itself.
+     *
+     * <p>{@code submitted}/{@code cancelled}/{@code failed} sessions are never changed.
+     */
+    private void failSessionOnRecordingLoss(Session session, Instant now) {
+        if (isTerminalForRecordingFailure(session.status())) {
+            return;
+        }
+        SessionActor actor = runtimeRegistry.find(session.id()).orElse(null);
+        if (actor != null) {
+            try {
+                actor.fail(FailureReason.RECORDING_LOST);
+                return;
+            } catch (RuntimeException exception) {
+                log.warn("Live actor could not fail session {}; persisting directly",
+                        session.id().value(), exception);
+            }
+        }
+        try {
+            session.fail(FailureReason.RECORDING_LOST, now);
+            sessionRepository.save(session);
+            appendSessionFailed(session, now);
+        } catch (RuntimeException exception) {
+            log.warn("Recording failure could not fail session {}", session.id().value(),
+                    exception);
+        }
+    }
+
+    private void appendSessionFailed(Session session, Instant now) {
+        long seq = eventStore.maxSeq(session.id()) + 1;
+        long atMs = session.durationMs() == null ? 0L : session.durationMs();
+        eventStore.append(new SessionEvent(
+                idGenerator.nextId(),
+                session.id(),
+                seq,
+                "session.failed",
+                atMs,
+                Map.of("reason", FailureReason.RECORDING_LOST.wireValue()),
+                now));
+    }
+
+    private static boolean isTerminalForRecordingFailure(SessionStatus status) {
+        return status == SessionStatus.SUBMITTED
+                || status == SessionStatus.CANCELLED
+                || status == SessionStatus.FAILED;
+    }
+
+    private void abortMultipartBestEffort(RecordingStream stream) {
+        if (stream.uploadId() == null) {
+            return;
+        }
+        try {
+            storage.abortMultipart(stream.objectKey(), stream.uploadId());
+        } catch (RuntimeException exception) {
+            log.warn("Aborting failed recording multipart was best-effort: objectKey={}",
+                    stream.objectKey(), exception);
         }
     }
 
@@ -368,13 +479,34 @@ public class RecordingApplicationServiceImpl implements RecordingApplicationServ
     }
 
     private static void requireValidSize(CompletePartCommand command) {
-        if (command.size() < 0) {
-            throw new DomainException(ErrorCode.VALIDATION_ERROR, "录制大小不能为负",
+        if (command.size() <= 0) {
+            throw new DomainException(ErrorCode.VALIDATION_ERROR, "录制大小必须大于 0",
                     Map.of("field", "size", "value", command.size()));
         }
-        if (command.durationMs() < 0) {
-            throw new DomainException(ErrorCode.VALIDATION_ERROR, "录制时长不能为负",
+        if (command.durationMs() <= 0) {
+            throw new DomainException(ErrorCode.VALIDATION_ERROR, "录制时长必须大于 0",
                     Map.of("field", "duration_ms", "value", command.durationMs()));
+        }
+    }
+
+    /**
+     * Rejects an object whose stored content type does not match the stream. MIME parameters such
+     * as {@code audio/webm; codecs=opus} are accepted.
+     */
+    private static void requireCompatibleContentType(
+            StreamType type, String contentType, String objectKey) {
+        String expected = mimeFor(type);
+        String actual = contentType == null ? "" : contentType.trim();
+        int parameter = actual.indexOf(';');
+        String mediaType = (parameter < 0 ? actual : actual.substring(0, parameter))
+                .trim()
+                .toLowerCase(Locale.ROOT);
+        if (!mediaType.startsWith(expected)) {
+            throw new DomainException(ErrorCode.VALIDATION_ERROR, "录制对象内容类型不匹配",
+                    Map.of("stream_type", type.wireValue(),
+                            "expected_content_type", expected,
+                            "actual_content_type", contentType == null ? "" : contentType,
+                            "object_key", objectKey));
         }
     }
 

@@ -139,6 +139,25 @@ class AttemptCleanupTest {
     }
 
     @Test
+    void overLimitTemporaryRowsConvergeToFive() {
+        List<SessionId> attempts = new ArrayList<>();
+        for (int attemptNo = 1; attemptNo <= 7; attemptNo++) {
+            attempts.add(seedAttempt(attemptNo, SessionStatus.CANCELLED));
+        }
+
+        SessionView created = service.createSession(student(), taskId);
+
+        assertThat(created.attemptNo()).isEqualTo(8);
+        assertThat(sessions.countByStudentAndTask(STUDENT, taskId)).isEqualTo(5);
+        assertThat(sessions.findById(attempts.get(0))).isEmpty();
+        assertThat(sessions.findById(attempts.get(1))).isEmpty();
+        assertThat(sessions.findById(attempts.get(2))).isEmpty();
+        for (int index = 3; index < 7; index++) {
+            assertThat(sessions.findById(attempts.get(index))).isPresent();
+        }
+    }
+
+    @Test
     void submittedAttemptIsNeverDeleted() {
         SessionId submitted = seedAttempt(1, SessionStatus.SUBMITTED);
         String submittedKey = objectKey(submitted);

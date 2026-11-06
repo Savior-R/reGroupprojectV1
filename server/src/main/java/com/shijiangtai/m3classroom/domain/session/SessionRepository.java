@@ -19,6 +19,15 @@ public interface SessionRepository {
 
     Optional<Session> findById(SessionId id);
 
+    /**
+     * Loads the session while holding a non-key-update row lock ({@code FOR NO KEY UPDATE}).
+     *
+     * <p>Recording multipart mutations serialize on this lock so parallel stream starts cannot
+     * read the same recording aggregate and overwrite each other. The lock deliberately does not
+     * block the foreign-key key-share lock taken by the recording stream inserts.
+     */
+    Optional<Session> findByIdForUpdate(SessionId id);
+
     Optional<Session> findActiveByStudentAndTask(AccountId studentAccountId, TaskId taskId);
 
     List<Session> findByStudentAndTask(AccountId studentAccountId, TaskId taskId);

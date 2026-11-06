@@ -8,12 +8,9 @@ import com.shijiangtai.m3classroom.domain.recording.RecordingStreamRepository;
 import com.shijiangtai.shared.domain.SessionId;
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,7 +18,13 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Persists the {@link Recording} aggregate: the recording row is upserted and each stream is
  * merged by its stable id, so a status update never duplicates the unique
- * {@code (recording_id, stream_type)} row. Streams removed from the aggregate are deleted.
+ * {@code (recording_id, stream_type)} row.
+ *
+ * <p>The save is merge-only: streams missing from the passed aggregate are left untouched. The
+ * domain never removes streams, and a concurrent start may have committed a sibling stream after
+ * the caller read the aggregate, so deleting absent rows here would corrupt parallel recordings.
+ * Explicit deletion goes through {@link RecordingRepository#deleteBySession} or
+ * {@link RecordingStreamRepository}.
  */
 @Repository
 public class RecordingRepositoryAdapter implements RecordingRepository {
@@ -59,18 +62,6 @@ public class RecordingRepositoryAdapter implements RecordingRepository {
         for (RecordingStreamEntity streamEntity
                 : streamEntityRepository.findByRecordingId(recording.id())) {
             existing.put(streamEntity.getId(), streamEntity);
-        }
-        Set<UUID> aggregateIds = recording.streams().stream()
-                .map(RecordingStream::id)
-                .collect(Collectors.toSet());
-        List<RecordingStreamEntity> stale = existing.values().stream()
-                .filter(streamEntity -> !aggregateIds.contains(streamEntity.getId()))
-                .toList();
-        if (!stale.isEmpty()) {
-            streamEntityRepository.deleteAll(stale);
-            // Flush the deletes before inserting replacements so the unique
-            // (recording_id, stream_type) constraint is never checked against a doomed row.
-            streamEntityRepository.flush();
         }
         for (RecordingStream stream : recording.streams()) {
             RecordingStreamEntity streamEntity = existing.get(stream.id());

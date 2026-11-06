@@ -26,6 +26,7 @@ import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -135,7 +136,7 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
                 // Number before cleanup: deleting the oldest attempt must not make the new
                 // attempt reuse a number that survives in another row.
                 int attemptNo = nextAttemptNo(attempts);
-                deleteOldestTemporaryAttemptIfAtLimit(attempts, taskId);
+                deleteTemporaryAttemptsToLimit(attempts, taskId);
                 Session session = Session.createPreparing(
                         new SessionId(idGenerator.nextId()),
                         TASK_SESSION,
@@ -186,23 +187,25 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
      * each priority group is the oldest attempt. Submitted attempts are never candidates; an
      * active attempt cannot reach this point because the active-session check runs first.
      */
-    private void deleteOldestTemporaryAttemptIfAtLimit(List<Session> attempts, TaskId taskId) {
-        long temporary = attempts.stream()
+    private void deleteTemporaryAttemptsToLimit(List<Session> attempts, TaskId taskId) {
+        // Work on a copy: the repository list is immutable, and a dev database may already hold
+        // more than the cap from an earlier run. Delete until a new attempt leaves exactly five.
+        List<Session> candidates = new ArrayList<>(attempts);
+        while (candidates.stream()
                 .filter(attempt -> attempt.status() != SessionStatus.SUBMITTED)
-                .count();
-        if (temporary < MAX_TEMPORARY_ATTEMPTS) {
-            return;
+                .count() >= MAX_TEMPORARY_ATTEMPTS) {
+            Session oldest = oldestDeletable(
+                    candidates, SessionStatus.CANCELLED, SessionStatus.FAILED);
+            if (oldest == null) {
+                oldest = oldestDeletable(
+                        candidates, SessionStatus.ENDED, SessionStatus.REVIEWING);
+            }
+            if (oldest == null) {
+                throw activeSessionExists(taskId);
+            }
+            recordingLifecyclePort.deleteAttempt(oldest.id());
+            candidates.remove(oldest);
         }
-        Session oldest = oldestDeletable(
-                attempts, SessionStatus.CANCELLED, SessionStatus.FAILED);
-        if (oldest == null) {
-            oldest = oldestDeletable(
-                    attempts, SessionStatus.ENDED, SessionStatus.REVIEWING);
-        }
-        if (oldest == null) {
-            throw activeSessionExists(taskId);
-        }
-        recordingLifecyclePort.deleteAttempt(oldest.id());
     }
 
     private static Session oldestDeletable(

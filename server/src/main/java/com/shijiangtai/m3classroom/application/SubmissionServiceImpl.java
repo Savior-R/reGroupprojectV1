@@ -31,7 +31,9 @@ import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -113,12 +115,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         // Everything the live actor buffered must be durable before the submission references it.
         runtimeRegistry.find(sessionId).ifPresent(SessionActor::forceFlush);
 
-        List<StreamType> missing = missingStreams(sessionId, session);
-        if (!missing.isEmpty()) {
-            throw new DomainException(ErrorCode.RECORDING_INCOMPLETE, "录制不完整",
-                    Map.of("missing_streams",
-                            missing.stream().map(StreamType::wireValue).toList()));
-        }
+        requireCompleteStreams(sessionId, session);
 
         Task task = taskRepository.findById(session.taskId())
                 .orElseThrow(() -> notFound("任务不存在", "task_id", session.taskId().value()));
@@ -180,17 +177,44 @@ public class SubmissionServiceImpl implements SubmissionService {
         }
     }
 
-    private List<StreamType> missingStreams(SessionId sessionId, Session session) {
+    /**
+     * A submit needs every required stream uploaded with real media: the object must contain
+     * bytes and the client must have declared a positive duration. Status alone is not enough,
+     * because a zero-byte or duration-less stream would produce an unusable replay.
+     */
+    private void requireCompleteStreams(SessionId sessionId, Session session) {
+        Set<StreamType> required = RequiredStreams.forMode(session.mode());
         Set<StreamType> uploaded = EnumSet.noneOf(StreamType.class);
+        List<StreamType> invalid = new ArrayList<>();
         Recording recording = recordingRepository.findBySession(sessionId).orElse(null);
         if (recording != null) {
             for (RecordingStream stream : recording.streams()) {
-                if (stream.status() == StreamStatus.UPLOADED) {
-                    uploaded.add(stream.type());
+                if (stream.status() != StreamStatus.UPLOADED) {
+                    continue;
+                }
+                uploaded.add(stream.type());
+                if (required.contains(stream.type())
+                        && (stream.bytesUploaded() <= 0
+                        || stream.durationMs() == null
+                        || stream.durationMs() <= 0)) {
+                    invalid.add(stream.type());
                 }
             }
         }
-        return RequiredStreams.missing(uploaded, session.mode());
+        List<StreamType> missing = RequiredStreams.missing(uploaded, session.mode());
+        if (missing.isEmpty() && invalid.isEmpty()) {
+            return;
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        if (!missing.isEmpty()) {
+            details.put("missing_streams",
+                    missing.stream().map(StreamType::wireValue).toList());
+        }
+        if (!invalid.isEmpty()) {
+            details.put("invalid_streams",
+                    invalid.stream().map(StreamType::wireValue).toList());
+        }
+        throw new DomainException(ErrorCode.RECORDING_INCOMPLETE, "录制不完整", details);
     }
 
     private void appendSubmissionCreated(Session session, Submission submission, Instant now) {

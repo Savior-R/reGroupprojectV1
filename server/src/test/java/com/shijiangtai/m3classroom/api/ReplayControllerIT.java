@@ -143,6 +143,25 @@ class ReplayControllerIT extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.total").value(3))
                 .andExpect(jsonPath("$.size").value(1));
 
+        mockMvc.perform(asStudent(get("/api/v1/sessions/{sessionId}/events", sessionId))
+                        .param("limit", "500"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(3))
+                .andExpect(jsonPath("$.size").value(500));
+
+        mockMvc.perform(asStudent(get("/api/v1/sessions/{sessionId}/events", sessionId))
+                        .param("after_seq", "99")
+                        .param("limit", "500"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(0))
+                .andExpect(jsonPath("$.total").value(3))
+                .andExpect(jsonPath("$.size").value(500));
+
+        mockMvc.perform(asStudent(get("/api/v1/sessions/{sessionId}/events", sessionId))
+                        .param("after_seq", "-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
         mockMvc.perform(asStudent(get("/api/v1/sessions/{sessionId}/texts", sessionId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))

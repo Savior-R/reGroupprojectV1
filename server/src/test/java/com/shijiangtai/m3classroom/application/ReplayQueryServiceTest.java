@@ -108,11 +108,12 @@ class ReplayQueryServiceTest {
     }
 
     @Test
-    void interviewReplayOrdersCameraThenAudio() {
+    void interviewReplayOrdersCameraThenAudioAndNeverLeaksScreen() {
         Session session = createSession(TaskMode.INTERVIEW, SessionStatus.IN_PROGRESS);
         recordingWith(session.id(),
                 new StreamSpec(StreamType.AUDIO, 0, 4_000L, "audio/webm"),
-                new StreamSpec(StreamType.CAMERA, 0, 5_000L, "video/webm"));
+                new StreamSpec(StreamType.CAMERA, 0, 5_000L, "video/webm"),
+                new StreamSpec(StreamType.SCREEN, 0, 5_000L, "video/webm"));
 
         ReplayView view = service.replay(student(), session.id());
 
@@ -253,7 +254,7 @@ class ReplayQueryServiceTest {
     }
 
     @Test
-    void invalidSpeakerTypeAndLimitAreRejected() {
+    void invalidSpeakerTypeLimitAndCursorAreRejected() {
         Session session = createSession(TaskMode.FREE, SessionStatus.PREPARING);
 
         assertCode(() -> service.texts(student(), session.id(), "principal"),
@@ -262,6 +263,27 @@ class ReplayQueryServiceTest {
                 ErrorCode.VALIDATION_ERROR);
         assertCode(() -> service.events(student(), session.id(), 0, 501),
                 ErrorCode.VALIDATION_ERROR);
+        assertCode(() -> service.events(student(), session.id(), -1, 100),
+                ErrorCode.VALIDATION_ERROR);
+    }
+
+    @Test
+    void maximumLimitAndEmptyPageAreSupported() {
+        Session session = createSession(TaskMode.FREE, SessionStatus.PREPARING);
+        events.append(event(session.id(), 1));
+        events.append(event(session.id(), 2));
+
+        PageResult<SessionEventView> maximum = service.events(
+                student(), session.id(), 0, 500);
+        assertThat(maximum.items()).hasSize(2);
+        assertThat(maximum.total()).isEqualTo(2);
+        assertThat(maximum.size()).isEqualTo(500);
+
+        PageResult<SessionEventView> empty = service.events(
+                student(), session.id(), 2, 500);
+        assertThat(empty.items()).isEmpty();
+        assertThat(empty.total()).isEqualTo(2);
+        assertThat(empty.size()).isEqualTo(500);
     }
 
     @Test
