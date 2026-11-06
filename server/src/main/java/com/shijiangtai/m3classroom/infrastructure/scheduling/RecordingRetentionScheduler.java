@@ -40,10 +40,19 @@ public class RecordingRetentionScheduler implements AutoCloseable {
         this.service = Objects.requireNonNull(service, "service");
         this.clockProvider = Objects.requireNonNull(clockProvider, "clockProvider");
         this.properties = Objects.requireNonNull(properties, "properties");
+        if (properties.interval().isNegative() || properties.interval().isZero()) {
+            throw new IllegalArgumentException("m3.retention.interval must be positive");
+        }
+        if (properties.initialDelay().isNegative()) {
+            throw new IllegalArgumentException("m3.retention.initial-delay must not be negative");
+        }
     }
 
     @PostConstruct
-    public void start() {
+    public synchronized void start() {
+        if (executor != null) {
+            return;
+        }
         if (!properties.enabled()) {
             log.info("Recording retention scheduler disabled");
             return;

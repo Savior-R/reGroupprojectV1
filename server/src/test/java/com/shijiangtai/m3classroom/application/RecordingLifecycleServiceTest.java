@@ -334,6 +334,29 @@ class RecordingLifecycleServiceTest {
     }
 
     @Test
+    void deleteExpiredTemporaryAbortsMultipartBeforeDeletingObject() {
+        TaskId taskId = newOpenTask();
+        SessionId sessionId = newEndedSession(taskId, NOW.minus(Duration.ofHours(25)));
+        String objectKey = keyFor(taskId, sessionId);
+        String uploadId = storage.createMultipart(objectKey, "video/webm").uploadId();
+        recordingWithFailedStream(sessionId, objectKey, uploadId);
+
+        assertThat(service.deleteExpiredTemporary(sessionId)).isTrue();
+
+        assertThat(storage.abortCalls()).isEqualTo(1);
+        assertThat(calls).containsSubsequence(
+                "storage.abort:" + objectKey,
+                "storage.delete:" + objectKey,
+                "recording.delete",
+                "session.delete");
+        assertThatThrownBy(() -> storage.presignPart(
+                objectKey, uploadId, 1, Duration.ofMinutes(1)))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+    }
+
+    @Test
     void deleteExpiredTemporaryKeepsRowsWhenObjectDeleteFails() {
         TaskId taskId = newOpenTask();
         SessionId sessionId = newEndedSession(taskId, NOW.minus(Duration.ofHours(25)));
@@ -605,6 +628,7 @@ class RecordingLifecycleServiceTest {
         @Override
         public void abortMultipart(String objectKey, String uploadId) {
             abortCalls++;
+            calls.add("storage.abort:" + objectKey);
             super.abortMultipart(objectKey, uploadId);
         }
 

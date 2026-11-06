@@ -79,9 +79,6 @@ public class RecordingRetentionService {
             }
         }
 
-        log.info("Recording retention cleanup finished: temporaryDeleted={}, submittedDeleted={}, "
-                        + "failed={}",
-                temporaryDeleted, submittedDeleted, failed);
         return new RetentionRun(temporaryDeleted, submittedDeleted, failed);
     }
 

@@ -14,6 +14,7 @@ import com.shijiangtai.m3classroom.application.TaskApplicationService;
 import com.shijiangtai.m3classroom.application.TaskMaterialService;
 import com.shijiangtai.m3classroom.application.TaskPublishService;
 import com.shijiangtai.m3classroom.application.command.CompletePartCommand;
+import com.shijiangtai.m3classroom.application.port.RecordingLifecyclePort;
 import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage;
 import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage.MultipartUpload;
 import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage.ObjectStat;
@@ -37,7 +38,9 @@ import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -103,6 +106,9 @@ class RecordingConcurrencyIT extends PostgresIntegrationTest {
 
     @Autowired
     private RecordingApplicationService recordingApplicationService;
+
+    @Autowired
+    private RecordingLifecyclePort recordingLifecyclePort;
 
     @Autowired
     private RecordingRepository recordingRepository;
@@ -260,6 +266,79 @@ class RecordingConcurrencyIT extends PostgresIntegrationTest {
         assertThat(failedEvents).hasSize(1);
     }
 
+    /**
+     * Deterministic submit-vs-cleanup race. Cleanup takes the session row lock and is blocked
+     * inside the first object delete; submit then blocks acquiring the same lock. Releasing the
+     * delete lets cleanup remove the session and commit. Submit must observe the deleted session
+     * and fail, rather than committing a submission whose media was deleted.
+     */
+    @Test
+    void temporaryCleanupAndConcurrentSubmitDoNotLoseSubmittedMedia() throws Exception {
+        SessionId sessionId = createStartedSession();
+        completeStream(sessionId, StreamType.CAMERA, "video/webm");
+        completeStream(sessionId, StreamType.SCREEN, "video/webm");
+        completeStream(sessionId, StreamType.AUDIO, "audio/webm");
+        sessionApplicationService.end(student(), sessionId);
+        Timestamp expiredAt = Timestamp.from(Instant.now().minus(Duration.ofHours(25)));
+        Timestamp startedAt = Timestamp.from(Instant.now().minus(Duration.ofHours(26)));
+        jdbc.update("""
+                UPDATE m3_classroom.sessions
+                SET started_at = ?, ended_at = ?, updated_at = ?
+                WHERE id = ?
+                """, startedAt, expiredAt, expiredAt, sessionId.value());
+        Recording stored = recordingRepository.findBySession(sessionId).orElseThrow();
+        assertThat(stored.streams()).hasSize(3)
+                .allSatisfy(stream -> assertThat(stream.objectKey()).isNotBlank());
+
+        storage.blockNextDelete();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Boolean> cleanup = pool.submit(
+                    () -> recordingLifecyclePort.deleteExpiredTemporary(sessionId));
+            boolean deleteReached = storage.awaitDeleteReached(10, TimeUnit.SECONDS);
+            if (!deleteReached) {
+                // Surface the cleanup failure instead of only the latch timeout.
+                cleanup.get(5, TimeUnit.SECONDS);
+            }
+            assertThat(deleteReached).isTrue();
+
+            Future<Void> submit = pool.submit(() -> {
+                try {
+                    sessionApplicationService.submit(student(), sessionId);
+                } catch (DomainException expectedRace) {
+                    assertThat(expectedRace.code()).isIn(
+                            ErrorCode.RESOURCE_NOT_FOUND, ErrorCode.SESSION_STATE_INVALID);
+                }
+                return null;
+            });
+            // Let submit reach findByIdForUpdate and block behind cleanup's row lock.
+            Thread.sleep(500);
+            storage.releaseDelete();
+
+            assertThat(cleanup.get(ASYNC_TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            submit.get(ASYNC_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+            storage.releaseDelete();
+        }
+
+        Integer submissions = jdbc.queryForObject(
+                "SELECT count(*) FROM m3_classroom.submissions WHERE session_id = ?",
+                Integer.class, sessionId.value());
+        assertThat(submissions).isZero();
+        assertThat(sessionRepository.findById(sessionId)).isEmpty();
+        assertThat(recordingRepository.findBySession(sessionId)).isEmpty();
+    }
+
+    private void completeStream(SessionId sessionId, StreamType type, String mime) {
+        MultipartUploadView upload = recordingApplicationService.start(student(), sessionId, type);
+        storage.recordObjectSize(upload.objectKey(), 1024);
+        recordingApplicationService.complete(
+                student(), sessionId, type,
+                new CompletePartCommand(
+                        List.of(new PartEtag(1, "etag-1")), 5_000, 1024, mime));
+    }
+
     private TaskId publishFreeTask() {
         TaskView view = taskApplicationService.createDraft(
                 teacher(), freeCommandWithStudent());
@@ -301,7 +380,10 @@ class RecordingConcurrencyIT extends PostgresIntegrationTest {
         private final RecordingObjectStorage delegate;
         private final CountDownLatch abortReached = new CountDownLatch(1);
         private final CountDownLatch releaseAbort = new CountDownLatch(1);
+        private final CountDownLatch deleteReached = new CountDownLatch(1);
+        private final CountDownLatch releaseDelete = new CountDownLatch(1);
         private volatile boolean blockAbort;
+        private volatile boolean blockDelete;
         private volatile boolean failNextComplete;
 
         ControllableRecordingObjectStorage(RecordingObjectStorage delegate) {
@@ -310,6 +392,23 @@ class RecordingConcurrencyIT extends PostgresIntegrationTest {
 
         void blockNextAbort() {
             blockAbort = true;
+        }
+
+        void blockNextDelete() {
+            blockDelete = true;
+        }
+
+        boolean awaitDeleteReached(long timeout, TimeUnit unit) throws InterruptedException {
+            return deleteReached.await(timeout, unit);
+        }
+
+        void releaseDelete() {
+            blockDelete = false;
+            releaseDelete.countDown();
+        }
+
+        void recordObjectSize(String objectKey, long size) {
+            ((InMemoryRecordingObjectStorage) delegate).recordObjectSize(objectKey, size);
         }
 
         boolean awaitAbortReached(long timeout, TimeUnit unit) throws InterruptedException {
@@ -374,6 +473,17 @@ class RecordingConcurrencyIT extends PostgresIntegrationTest {
 
         @Override
         public void delete(String objectKey) {
+            if (blockDelete) {
+                deleteReached.countDown();
+                try {
+                    if (!releaseDelete.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("delete block release timed out");
+                    }
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("delete block interrupted", exception);
+                }
+            }
             delegate.delete(objectKey);
         }
     }

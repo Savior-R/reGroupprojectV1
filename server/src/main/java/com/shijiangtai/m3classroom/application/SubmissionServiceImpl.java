@@ -107,13 +107,24 @@ public class SubmissionServiceImpl implements SubmissionService {
         Objects.requireNonNull(student, "student");
         Objects.requireNonNull(sessionId, "sessionId");
 
-        Session session = sessionRepository.findById(sessionId)
+        Session initial = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> notFound("会话不存在", "session_id", sessionId.value()));
+        accessPolicy.requireOwner(student, initial);
+
+        // Flush the live actor before taking the session row lock: forceFlush is synchronized on
+        // the actor, and holding the row lock while waiting for that monitor re-introduces the
+        // actor-monitor vs. row-lock deadlock fixed in RecordingMutationService. The flush must
+        // still precede the submission reference, but it does not need the row lock.
+        runtimeRegistry.find(sessionId).ifPresent(SessionActor::forceFlush);
+
+        // Serialize submit with retention cleanup: cleanup deletes objects while holding this
+        // lock, so either it deletes the session before submit (submit then sees it missing), or
+        // submit commits SUBMITTED first and cleanup re-reads the status and skips it. This closes
+        // the window where a submission could commit after cleanup had already deleted its media.
+        Session session = sessionRepository.findByIdForUpdate(sessionId)
                 .orElseThrow(() -> notFound("会话不存在", "session_id", sessionId.value()));
         accessPolicy.requireOwner(student, session);
         requireSubmittable(session);
-
-        // Everything the live actor buffered must be durable before the submission references it.
-        runtimeRegistry.find(sessionId).ifPresent(SessionActor::forceFlush);
 
         requireCompleteStreams(sessionId, session);
 

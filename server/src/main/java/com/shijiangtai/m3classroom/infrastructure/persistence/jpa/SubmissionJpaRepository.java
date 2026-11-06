@@ -21,7 +21,8 @@ public interface SubmissionJpaRepository extends JpaRepository<SubmissionEntity,
             SELECT sub.* FROM m3_classroom.submissions sub
             JOIN m3_classroom.sessions s ON s.id = sub.session_id
             JOIN m2_course.courses c ON c.id = s.course_id
-            WHERE c.end_at IS NOT NULL
+            WHERE s.session_type = 'task'
+              AND c.end_at IS NOT NULL
               AND c.end_at + INTERVAL '1 year' <= :now
             ORDER BY sub.id
             """, nativeQuery = true)

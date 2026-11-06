@@ -30,9 +30,11 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Recording side effects of session lifecycle operations (05B §6).
  *
- * <p>This is the only {@link RecordingLifecyclePort} implementation. Object-store deletes are
- * scheduled after commit, while the recording/session rows are removed in the current
- * transaction and the database cascades {@code recording_streams}.
+ * <p>This is the only {@link RecordingLifecyclePort} implementation. Session-lifecycle and
+ * attempt operations schedule object-store deletes after commit, while their recording/session
+ * rows are removed in the current transaction (the database cascades {@code recording_streams}).
+ * Retention deletions are the exception: they delete objects synchronously before any row so a
+ * failed object delete can roll back and be retried by the next sweep.
  */
 @Service
 public class RecordingLifecycleService implements RecordingLifecyclePort {
@@ -183,6 +185,10 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
             return;
         }
         for (RecordingStream stream : recording.streams()) {
+            // DeleteObject does not abort an in-flight multipart upload, and deleting the rows
+            // below discards the only uploadId. Abort first (best effort) so retention does not
+            // leak parts from FAILED/UPLOADING streams; abortStreamUpload no-ops for UPLOADED.
+            abortStreamUpload(stream);
             if (stream.objectKey() != null) {
                 storage.delete(stream.objectKey());
             }

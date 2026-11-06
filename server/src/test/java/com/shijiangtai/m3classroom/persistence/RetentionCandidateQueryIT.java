@@ -55,12 +55,25 @@ class RetentionCandidateQueryIT extends PostgresIntegrationTest {
         // Ending 48h ago plus a task closed 25h ago is still expired.
         UUID taskClosedExpiredId = seedSession(oldCloseTaskId, COURSE_ID, "ended",
                 NOW.minus(Duration.ofHours(48)), NOW.minus(Duration.ofHours(48)));
+        // Reviewing and failed are terminal candidates too.
+        UUID expiredReviewingId = seedSession(openTaskId, COURSE_ID, "reviewing",
+                NOW.minus(Duration.ofHours(25)), NOW.minus(Duration.ofHours(25)));
+        UUID expiredFailedId = seedSession(openTaskId, COURSE_ID, "failed",
+                NOW.minus(Duration.ofHours(25)), NOW.minus(Duration.ofHours(25)));
+        // ended_at wins over a later updated_at: 25h-old end is expired even though updated 1h ago.
+        UUID anchorPrecedenceId = seedSession(openTaskId, COURSE_ID, "ended",
+                NOW.minus(Duration.ofHours(25)), NOW.minus(Duration.ofHours(1)));
         // Submitted sessions are never temporary candidates.
         seedSession(openTaskId, COURSE_ID, "submitted",
                 NOW.minus(Duration.ofHours(48)), NOW.minus(Duration.ofHours(48)));
 
         UUID expiredCourseId = seedCourse(NOW.minus(Duration.ofDays(366)), "expired");
         UUID expiredSubmissionId = seedSubmission(expiredCourseId);
+        // Training submissions are M6 retention; the M3C query must ignore them.
+        UUID trainingTaskId = seedTask(expiredCourseId, null);
+        UUID trainingSessionId = seedSession("training", null, expiredCourseId, "selected",
+                NOW.minus(Duration.ofDays(400)), NOW.minus(Duration.ofDays(400)));
+        seedSubmission(trainingTaskId, trainingSessionId);
 
         UUID retainedCourseId = seedCourse(NOW.minus(Duration.ofDays(364)), "retained");
         seedSubmission(retainedCourseId);
@@ -71,7 +84,8 @@ class RetentionCandidateQueryIT extends PostgresIntegrationTest {
         assertThat(sessionRepository.findExpiredTemporary(NOW))
                 .extracting(session -> session.id().value())
                 .containsExactlyInAnyOrder(
-                        expiredEndedId, expiredCancelledId, taskClosedExpiredId);
+                        expiredEndedId, expiredCancelledId, taskClosedExpiredId,
+                        expiredReviewingId, expiredFailedId, anchorPrecedenceId);
         assertThat(sessionRepository.findExpiredTemporary(NOW))
                 .extracting(session -> session.id().value())
                 .doesNotContain(retainedEndedId, taskCloseExtendsId);
@@ -149,13 +163,19 @@ class RetentionCandidateQueryIT extends PostgresIntegrationTest {
 
     private UUID seedSession(
             UUID taskId, UUID courseId, String status, Instant endedAt, Instant updatedAt) {
+        return seedSession("task", taskId, courseId, status, endedAt, updatedAt);
+    }
+
+    private UUID seedSession(
+            String sessionType, UUID taskId, UUID courseId, String status,
+            Instant endedAt, Instant updatedAt) {
         UUID sessionId = UUID.randomUUID();
         jdbc.update("""
                 INSERT INTO m3_classroom.sessions
                     (id, session_type, task_id, course_id, student_account_id, mode, status,
                      attempt_no, ended_at, updated_at)
-                VALUES (?, 'task', ?, ?, ?, 'free', ?, 1, ?, ?)
-                """, sessionId, taskId, courseId, STUDENT_ID, status,
+                VALUES (?, ?, ?, ?, ?, 'free', ?, 1, ?, ?)
+                """, sessionId, sessionType, taskId, courseId, STUDENT_ID, status,
                 timestamp(endedAt), timestamp(updatedAt));
         return sessionId;
     }
@@ -164,6 +184,10 @@ class RetentionCandidateQueryIT extends PostgresIntegrationTest {
         UUID taskId = seedTask(courseId, null);
         UUID sessionId = seedSession(taskId, courseId, "submitted",
                 NOW.minus(Duration.ofDays(400)), NOW.minus(Duration.ofDays(400)));
+        return seedSubmission(taskId, sessionId);
+    }
+
+    private UUID seedSubmission(UUID taskId, UUID sessionId) {
         UUID submissionId = UUID.randomUUID();
         jdbc.update("""
                 INSERT INTO m3_classroom.submissions
