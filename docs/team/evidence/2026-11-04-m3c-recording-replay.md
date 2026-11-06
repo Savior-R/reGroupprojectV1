@@ -291,7 +291,7 @@ events (seq): 1 recording.ready_ack, 2 session.started,
 6. **提交后清理事务**：`SessionApplicationServiceImpl.submit` 先提交 submission（独立事务），再清理其他 attempt；若清理失败，submission 已提交但接口可能返回 5xx（Task 6 note）。
 7. **构建环境**：`docker compose up -d --build` 首次因 Docker credential helper 与 Maven Central 临时拒绝失败；使用临时空 Docker config、重试构建成功。该问题为 WSL / 网络环境，不是代码回归。
 8. 全量测试仍输出既有的 JPA / Hikari shutdown INFO 与异步 flush 重试日志，0 failure / 0 error / 0 skipped。
-9. **回放 `offset_ms` 契约缺口（Important，本波不实现）**：生产 API 不填充 per-stream offset，manifest 的 `offset_ms` 当前恒为 0。offset 的传输方式（在 `complete` 请求中新增 `offset_ms`，还是新增独立命令）属于契约变更，必须先与 Media/Training / Foundation owner 达成一致并更新 `02` / `05B`，之后才能实现；本波明确不实现。
+9. **回放 `offset_ms` 契约缺口（Important，本波不实现；已于 §11 实现）**：生产 API 不填充 per-stream offset，manifest 的 `offset_ms` 当前恒为 0。offset 的传输方式（在 `complete` 请求中新增 `offset_ms`，还是新增独立命令）属于契约变更，必须先与 Media/Training / Foundation owner 达成一致并更新 `02` / `05B`，之后才能实现；本波明确不实现。2026-11-06 经用户确认，采用 `complete` 新增可选 `offset_ms`，详见 §11。
 10. **全量测试连接数**：测试套件会缓存多个 Spring 上下文（每个 Hikari 池默认最多 10 连接）；若 Docker `app` 容器同时运行，可能与 PostgreSQL 默认 `max_connections=100` 叠加。§9 的并发 IT 因新增可控存储 `@TestConfiguration` 拥有独立上下文，已用 `@DirtiesContext(AFTER_CLASS)` 在该类结束后释放连接；最后一次全量运行仅启动 `postgres`，`90 classes / 672 tests` 通过。该问题属测试环境隔离，不影响生产代码。
 
 ## 8. 结论
@@ -384,3 +384,38 @@ DOCKER="/mnt/c/Users/forever alone/AppData/Local/Programs/DockerDesktop/resource
 | Critical | 提交与临时清理的“对象已删、行未删”窗口可让提交在清理回滚后仍提交 `submitted`，回放指向已删除对象 | `SubmissionServiceImpl.submit` 在 `forceFlush` 之后取 session `findByIdForUpdate`，再复核状态并写入 submission；新增 `RecordingConcurrencyIT.temporaryCleanupAndConcurrentSubmitDoNotLoseSubmittedMedia` 确定性交错用例 |
 | Important | 保留期删除只删对象、不中止 multipart；FAILED / UPLOADING 流的 uploadId 随行删除丢失 | `deleteObjectsNow` 先 `abortStreamUpload`（best-effort，UPLOADED 流 no-op）再删对象；`RecordingLifecycleServiceTest` 增加 abort 顺序用例 |
 | Minor | 类注释、证据并发措辞、候选查询 training / status / 锚点覆盖、重复 info 日志、调度器 start 幂等与正间隔校验、文件尾换行 | 已同步修正；提交候选查询增加 `session_type = 'task'` 防御 |
+
+## 11. 回放 offset_ms 生产填充（2026-11-06）
+
+### 11.1 授权与契约
+
+用户 2026-11-06 确认：当前 M3 Owner 代 Media/Training Owner（05B / M3C）、Foundation Owner（02）与架构 owner 执行 `offset_ms` 契约变更与实现。确认仅覆盖 `offset_ms` 传输契约及本节列出的文件。
+
+契约（`02` §4.3、`05B` §3/§4.1）：
+
+- `POST /api/v1/sessions/{session_id}/recordings/{stream_type}/multipart/complete` 请求体新增可选 `offset_ms`（整数 ≥ 0，缺省 0，向后兼容）。
+- 语义：该路录制开始相对本轮 t0（最早启动的录制流）的毫秒偏移；录制先于 `session.start` 时仍从 0 起，不得为负。
+- 服务端在 complete 时写入 `sessions.stream_offsets[stream_type]` 与 `recording_streams.offset_ms`；回放 manifest 原样返回。
+- 无 schema / 迁移变更（两处字段已存在）。
+
+### 11.2 实现
+
+| 层 | 文件 | 变更 |
+|---|---|---|
+| 契约 | `docs/design/02-API与实时协议.md`、`docs/design/05B-M3-录制上传与回放.md` | complete 请求字段与 t0 语义 |
+| 后端 DTO | `CompletePartCommand`、`RecordingRequestMapper.CompleteRequest` | 新增 `offsetMs`，4 参构造器保留为 0 缺省；负数映射为 `VALIDATION_ERROR` |
+| 后端领域 | `Recording.updateStreamOffset`、`RecordingStream.withOffset` | 更新流偏移；负值拒绝 |
+| 后端编排 | `RecordingMutationService.complete` | 校验偏移，成功后更新 recording 与 session 的 offset 并持久化 |
+| 前端 | `types/recording.ts`、`utils/recorderUploader.ts`、课堂 / 面试页 | 以本轮 t0 计算并上报 `offset_ms` |
+| 测试 | `RecordingContractTest`、`RecordingControllerIT`、`ReplayControllerIT`、`recorderUploader.spec.ts` | 缺省 0、非零值传输、complete 写入后回放读取、前端 offset 计算 |
+
+### 11.3 测试
+
+- 后端全量：`BUILD SUCCESSFUL in 4m 11s`；93 classes / 693 tests，0 failure / 0 error / 0 skipped。
+- 前端：15 test files / 135 tests 通过；`npm run build` 通过（仅既有 Element Plus chunk 体积警告）。
+- 定向：`RecordingControllerIT`、`ReplayControllerIT`、`RecordingContractTest`、`RecordingApplicationServiceTest` 通过。
+
+### 11.4 剩余缺口
+
+- 真实浏览器 E2E 仍未覆盖 offset 上报（MediaRecorder 实际启动时刻与 t0 的偏差）；前端单测使用注入时钟验证计算。
+- `offset_ms` 为客户端上报值，服务端仅校验非负；无法在服务端独立校验其与媒体实际启动时刻的一致性。
