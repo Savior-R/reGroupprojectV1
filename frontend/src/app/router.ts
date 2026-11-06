@@ -5,8 +5,8 @@ import type { RouteRecordRaw } from 'vue-router'
  * Minimal router shell for the M3 frontend slice (09 §4.1).
  *
  * Task 1 added the root redirect and the shared error pages; Task 2 adds the
- * student task list/detail routes. Tasks 5/6/7 append the classroom, interview
- * and review routes.
+ * student task list/detail routes. Tasks 5/6 add the classroom and interview
+ * routes; Task 7 appends the review route.
  */
 
 export const routes: RouteRecordRaw[] = [
@@ -28,6 +28,11 @@ export const routes: RouteRecordRaw[] = [
     path: '/student/sessions/:sessionId/classroom',
     name: 'student-classroom',
     component: () => import('../views/classroom/ClassroomPage.vue'),
+  },
+  {
+    path: '/student/sessions/:sessionId/interview',
+    name: 'student-interview',
+    component: () => import('../views/classroom/InterviewPage.vue'),
   },
   {
     path: '/403',
