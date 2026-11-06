@@ -16,7 +16,12 @@ import { STREAM_MIME } from './media'
  * failure state machine can be unit-tested without a browser.
  *
  * Flow:
- * 1. `multipart/start` returns the 5 MB part size.
+ * 0. The recorder is already running when the uploader is constructed, so
+ *    recorder/track listeners are attached immediately and `startedAt` is
+ *    sampled there; early `dataavailable` blobs are buffered and must survive
+ *    the `recording.ready_ack` round trip.
+ * 1. `multipart/start` returns the 5 MB part size; buffered full parts are
+ *    flushed as soon as multipart exists.
  * 2. `dataavailable` blobs accumulate; every full part is PUT to its presigned
  *    URL (each part is retried up to `MAX_PART_ATTEMPTS` times).
  * 3. Part 1 is retained. On stop it is patched with `fix-webm-duration` and
@@ -199,6 +204,16 @@ export class RecorderUploader {
     if (options.onError) {
       this.onError(options.onError)
     }
+
+    // The MediaRecorder is already running when the uploader is constructed
+    // (see `createRecorder`). Attach listeners and sample `startedAt` here so
+    // the first 5 s `dataavailable` blob is never dropped while the page waits
+    // for `recording.ready_ack`.
+    this.startedAt = this.now()
+    this.stopSignal = new Promise<void>((resolve) => {
+      this.resolveStopSignal = resolve
+    })
+    this.attachListeners()
   }
 
   /** Starts multipart upload. The recorder must already be recording. */
@@ -246,21 +261,12 @@ export class RecorderUploader {
 
   private async begin(): Promise<void> {
     this.started = true
-    this.state = 'recording'
-    this.startedAt = this.now()
-    this.stopSignal = new Promise<void>((resolve) => {
-      this.resolveStopSignal = resolve
-    })
-
-    this.recorder.addEventListener('dataavailable', this.handleDataAvailable)
-    this.recorder.addEventListener('stop', this.handleRecorderStop)
-    this.recorder.addEventListener('error', this.handleRecorderError)
-    this.attachTrackListeners()
-    this.emitProgress('uploading')
-
     if (this.failure) {
       throw this.failure
     }
+
+    this.state = 'recording'
+    this.emitProgress('uploading')
 
     this.multipartPromise = this.api.startMultipart(this.sessionId, this.streamType)
     try {
@@ -271,6 +277,10 @@ export class RecorderUploader {
     } catch (error) {
       throw this.fail('start_failed', '无法开始分片上传', error)
     }
+
+    // Blobs emitted between construction and start() are already buffered;
+    // flush any complete parts now that multipart exists.
+    void this.flushBuffer()
   }
 
   private readonly handleDataAvailable = (event: any): void => {
@@ -296,7 +306,11 @@ export class RecorderUploader {
       return
     }
 
-    void this.flushBuffer()
+    // Before start() there is no multipart upload to put parts into; the
+    // buffer is flushed once multipart starts (or on stop()).
+    if (this.started) {
+      void this.flushBuffer()
+    }
   }
 
   private readonly handleRecorderStop = (): void => {
@@ -317,6 +331,13 @@ export class RecorderUploader {
 
   private readonly handleTrackEnded = (): void => {
     this.fail('track_ended', '媒体轨道已结束，录制失败')
+  }
+
+  private attachListeners(): void {
+    this.recorder.addEventListener('dataavailable', this.handleDataAvailable)
+    this.recorder.addEventListener('stop', this.handleRecorderStop)
+    this.recorder.addEventListener('error', this.handleRecorderError)
+    this.attachTrackListeners()
   }
 
   private attachTrackListeners(): void {

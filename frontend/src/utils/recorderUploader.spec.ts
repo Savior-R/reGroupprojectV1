@@ -308,6 +308,73 @@ describe('RecorderUploader', () => {
     })
   })
 
+  it('buffers dataavailable emitted before start() and uploads it', async () => {
+    const harness = setup()
+    const early = blobOf(1 * MB, 7)
+    harness.recorder.emitData(early)
+
+    expect(harness.api.startMultipart).not.toHaveBeenCalled()
+    harness.setNow(2_000)
+    await harness.uploader.start()
+    harness.setNow(3_000)
+
+    await harness.uploader.stop()
+
+    expect(harness.fetchHarness.calls).toHaveLength(1)
+    expect(harness.fetchHarness.calls[0]!.body.size).toBe(1 * MB)
+    const uploaded = new Uint8Array(
+      await harness.fetchHarness.calls[0]!.body.arrayBuffer(),
+    )
+    expect(uploaded[0]).toBe(7)
+
+    const completeBody = harness.api.completeMultipart.mock.calls[0]![2] as {
+      duration_ms: number
+    }
+    expect(completeBody.duration_ms).toBe(3_000)
+  })
+
+  it('flushes pre-start data as a full part once multipart begins', async () => {
+    const harness = setup()
+    harness.recorder.emitData(blobOf(PART_SIZE, 3))
+    await harness.uploader.start()
+    harness.recorder.emitData(blobOf(1 * MB, 4))
+    harness.setNow(1_000)
+
+    await harness.uploader.stop()
+
+    expect(harness.api.partUrl.mock.calls.map((call) => call[2])).toEqual([1, 1, 2])
+    expect(harness.fetchHarness.calls.map((call) => call.body.size)).toEqual([
+      PART_SIZE,
+      PART_SIZE,
+      1 * MB,
+    ])
+  })
+
+  it('rejects stop() before start() and aborts exactly once', async () => {
+    const harness = setup()
+
+    await expect(harness.uploader.stop()).rejects.toMatchObject({
+      name: 'RecordingUploadError',
+      reason: 'start_failed',
+    })
+
+    expect(harness.api.startMultipart).not.toHaveBeenCalled()
+    expect(harness.api.abortMultipart).toHaveBeenCalledTimes(1)
+  })
+
+  it('attaches recorder listeners once when start() is called twice', async () => {
+    const harness = setup()
+    await harness.uploader.start()
+    await harness.uploader.start()
+
+    harness.recorder.emitData(blobOf(1 * MB))
+    harness.setNow(1_000)
+    await harness.uploader.stop()
+
+    expect(harness.fetchHarness.calls).toHaveLength(1)
+    expect(harness.fetchHarness.calls[0]!.body.size).toBe(1 * MB)
+  })
+
   it('retains part 1 and re-uploads it after the duration patch', async () => {
     const harness = setup()
     harness.fixWebmDuration.mockImplementation(async (blob: Blob, _durationMs: number) => {

@@ -334,6 +334,43 @@ describe('ClassroomPage', () => {
     }
   })
 
+  it('retries session.start once the connection returns', async () => {
+    const { wrapper } = await mountPage()
+
+    let startAttempts = 0
+    harness.fakeWs.send.mockImplementation((type: string) => {
+      if (type !== 'session.start') {
+        return true
+      }
+      startAttempts += 1
+      return startAttempts > 1
+    })
+
+    const options = harness.state.options as {
+      onStatus: (status: unknown) => void
+      onEvent: (event: ServerEvent) => void
+    }
+    options.onEvent(snapshotEvent('preparing'))
+    await flushPromises()
+    options.onEvent(
+      serverEvent('recording.ready_ack', {
+        required_streams: ['camera', 'screen', 'audio'],
+        ok: true,
+      }),
+    )
+    await flushPromises()
+
+    // The first send returned false and the page is waiting for the channel.
+    expect(startAttempts).toBe(1)
+    expect(wrapper.text()).not.toContain('无法开始试讲')
+
+    options.onStatus({ status: 'connected' })
+    await flushPromises()
+
+    expect(startAttempts).toBe(2)
+    expect(wrapper.text()).not.toContain('无法开始试讲')
+  })
+
   it('waits for a reconnecting control channel before sending the end command', async () => {
     const { wrapper } = await mountPage()
 
@@ -358,6 +395,11 @@ describe('ClassroomPage', () => {
     await flushPromises()
 
     expect(harness.fakeWs.send).toHaveBeenCalledWith('teacher.end_session', {})
+
+    // Clear the 10 s end watchdog: the session ends before it fires.
+    options.onEvent(serverEvent('session.ended', { reason: 'manual', duration_ms: 1_000 }))
+    await flushPromises()
+    wrapper.unmount()
   })
 
   it('keeps the page with an error when the end command is rejected', async () => {

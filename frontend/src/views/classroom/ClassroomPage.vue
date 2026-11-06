@@ -201,7 +201,27 @@ async function beginRecordingStart(): Promise<void> {
   if (failure.value) {
     return
   }
-  sendCommand('session.start')
+
+  if (sendCommand('session.start')) {
+    return
+  }
+
+  // The control channel may have dropped while multipart uploads were
+  // starting. Wait inside the reconnect grace and retry once before failing.
+  const connected = await waitForConnection(WS_GRACE_MS)
+  if (disposed) {
+    for (const uploader of uploaders.values()) {
+      void uploader.abort()
+    }
+    media.value?.stop()
+    return
+  }
+  if (failure.value) {
+    return
+  }
+  if (!connected || !sendCommand('session.start')) {
+    handleRecordingFailure('无法开始试讲：与课堂服务的连接已断开。')
+  }
 }
 
 function handleSnapshot(): void {
