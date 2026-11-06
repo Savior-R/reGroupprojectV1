@@ -53,6 +53,18 @@ function replayView(overrides: Partial<ReplayView> = {}): ReplayView {
   }
 }
 
+/** Simulate a fresh manifest whose presigned URLs changed. */
+function replayVersion(version: string): ReplayView {
+  const base = replayView()
+  return {
+    ...base,
+    streams: base.streams.map((stream) => ({
+      ...stream,
+      url: `${stream.url}?v=${version}`,
+    })),
+  }
+}
+
 function event(
   eventId: string,
   type: string,
@@ -67,7 +79,10 @@ function media<T extends HTMLMediaElement>(wrapper: VueWrapper, testId: string):
 
 function fakeTimers(): void {
   vi.useFakeTimers({
-    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'],
+    // `Date` is faked so the refresh rate-limit and backoff advance together
+    // with `advanceTimersByTimeAsync`; `setImmediate` stays real for
+    // `flushPromises`.
+    toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
   })
 }
 
@@ -188,5 +203,104 @@ describe('ReplayPlayer', () => {
       wrapper.get('[data-testid="replay-player"]').find('.replay-player__stage--interview').exists(),
     ).toBe(true)
     wrapper.unmount()
+  })
+
+  it('bounds refreshes when one stream keeps erroring while the others load', async () => {
+    fakeTimers()
+    let wrapper: VueWrapper | null = null
+    try {
+      wrapper = mount(ReplayPlayer, { props: { replay: replayVersion('1') } })
+      await nextTick()
+
+      const healthyLoadsAndCameraError = async (): Promise<void> => {
+        media<HTMLAudioElement>(wrapper!, 'replay-audio').dispatchEvent(
+          new Event('loadedmetadata'),
+        )
+        media<HTMLVideoElement>(wrapper!, 'replay-screen').dispatchEvent(
+          new Event('loadedmetadata'),
+        )
+        media<HTMLVideoElement>(wrapper!, 'replay-camera').dispatchEvent(new Event('error'))
+        await nextTick()
+      }
+
+      await healthyLoadsAndCameraError()
+      expect(wrapper.emitted('refresh')).toHaveLength(1)
+
+      // The parent delivers a fresh manifest; the healthy streams load again,
+      // but the camera errors again. The retry budget must not reset.
+      await wrapper.setProps({ replay: replayVersion('2') })
+      await nextTick()
+      await healthyLoadsAndCameraError()
+      // Rate-limited: no immediate second refresh.
+      expect(wrapper.emitted('refresh')).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(wrapper.emitted('refresh')).toHaveLength(2)
+
+      await wrapper.setProps({ replay: replayVersion('3') })
+      await nextTick()
+      await healthyLoadsAndCameraError()
+      await vi.advanceTimersByTimeAsync(2_000)
+
+      // Two attempts is the hard bound; the player stops looping and warns.
+      expect(wrapper.emitted('refresh')).toHaveLength(2)
+      expect(wrapper.find('[data-testid="replay-expired"]').exists()).toBe(true)
+      expect(wrapper.get('[data-testid="replay-toggle"]').text()).toBe('播放')
+    } finally {
+      wrapper?.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('resumes playback after a manifest reload and stops at the master end', async () => {
+    fakeTimers()
+    let wrapper: VueWrapper | null = null
+    try {
+      wrapper = mount(ReplayPlayer, { props: { replay: replayVersion('1') } })
+      await nextTick()
+
+      await wrapper.get('[data-testid="replay-toggle"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(wrapper.get('[data-testid="replay-toggle"]').text()).toBe('暂停')
+
+      media<HTMLAudioElement>(wrapper, 'replay-audio').currentTime = 10
+      await vi.advanceTimersByTimeAsync(500)
+      expect(wrapper.get('[data-testid="replay-time"]').text()).toContain('00:10')
+
+      playSpy.mockClear()
+      await wrapper.setProps({ replay: replayVersion('2') })
+      await nextTick()
+      await vi.advanceTimersByTimeAsync(0)
+
+      // A source reload must not leave the UI saying "pause" while media stopped.
+      expect(wrapper.get('[data-testid="replay-toggle"]').text()).toBe('暂停')
+      expect(playSpy).toHaveBeenCalled()
+
+      const reloadedAudio = media<HTMLAudioElement>(wrapper, 'replay-audio')
+      reloadedAudio.dispatchEvent(new Event('ended'))
+      await nextTick()
+
+      expect(wrapper.get('[data-testid="replay-toggle"]').text()).toBe('播放')
+      expect(wrapper.get('[data-testid="replay-time"]').text()).toContain('01:00')
+    } finally {
+      wrapper?.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('requests a fresh manifest when the presigned URL window elapses', async () => {
+    fakeTimers()
+    let wrapper: VueWrapper | null = null
+    try {
+      wrapper = mount(ReplayPlayer, { props: { replay: replayView() } })
+      await nextTick()
+      expect(wrapper.emitted('refresh')).toBeUndefined()
+
+      await vi.advanceTimersByTimeAsync(14 * 60 * 1000)
+
+      expect(wrapper.emitted('refresh')).toHaveLength(1)
+    } finally {
+      wrapper?.unmount()
+      vi.useRealTimers()
+    }
   })
 })

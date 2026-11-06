@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { ComponentPublicInstance } from 'vue'
 import EventTimeline from './EventTimeline.vue'
 import ReplayControls from './ReplayControls.vue'
 import type { ReplayEvent } from '../../api/replay'
@@ -18,8 +17,11 @@ import type { ReplaySyncPlayer } from '../../utils/replaySync'
  * interview mode renders camera main.
  *
  * The manifest contains short-lived presigned URLs. On a media error or after
- * 14 minutes the player emits `refresh` so the parent can refetch the manifest;
- * consecutive failures are bounded to avoid an infinite reload loop.
+ * 14 minutes the player emits `refresh` so the parent can refetch the manifest.
+ * Refreshes are rate-limited and bounded: a successful reload does not reset
+ * the retry budget until every stream has loaded and stayed healthy for a
+ * sustained window, so one permanently broken stream cannot cause an infinite
+ * reload loop.
  */
 
 const props = withDefaults(
@@ -42,6 +44,10 @@ const SYNC_INTERVAL_MS = 500
 const DRIFT_THRESHOLD_MS = 200
 const MAX_REFRESH_ATTEMPTS = 2
 const PRESIGNED_REFRESH_MS = 14 * 60 * 1000
+/** Never reload the manifest more than once per 2 s. */
+const MIN_REFRESH_INTERVAL_MS = 2_000
+/** Reset the retry budget only after every stream stayed healthy this long. */
+const HEALTHY_WINDOW_MS = 30_000
 
 const isInterview = computed(() => props.replay.mode === 'interview')
 
@@ -67,7 +73,9 @@ const masterStream = computed(() =>
 )
 
 const stage = ref<HTMLElement | null>(null)
-const mediaEls = new Map<StreamType, HTMLMediaElement>()
+const screenEl = ref<HTMLVideoElement | null>(null)
+const cameraEl = ref<HTMLVideoElement | null>(null)
+const audioEl = ref<HTMLAudioElement | null>(null)
 
 const playing = ref(false)
 const currentTimeMs = ref(0)
@@ -82,23 +90,45 @@ const durationMs = computed(() => {
 
 let syncTimer: ReturnType<typeof setInterval> | null = null
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
+let backoffTimer: ReturnType<typeof setTimeout> | null = null
+let healthyTimer: ReturnType<typeof setTimeout> | null = null
 let refreshAttempts = 0
+let lastRefreshAt = 0
 let resumeMs: number | null = null
 let initialApplied = false
 
-function setMediaRef(
-  type: StreamType,
-  value: Element | ComponentPublicInstance | null,
-): void {
-  if (value instanceof HTMLMediaElement) {
-    mediaEls.set(type, value)
-  } else {
-    mediaEls.delete(type)
+/**
+ * Per-manifest health tracking. The retry budget is only reset after every
+ * stream of the *current* manifest has loaded and no stream errored during the
+ * healthy window; one failing stream therefore cannot reset it via its healthy
+ * siblings' `loadedmetadata` events.
+ */
+let loadedStreams = new Set<StreamType>()
+let erroredStreams = new Set<StreamType>()
+
+function mediaElement(type: StreamType): HTMLMediaElement | null {
+  if (type === 'screen') {
+    return screenEl.value
   }
+  if (type === 'camera') {
+    return cameraEl.value
+  }
+  return audioEl.value
+}
+
+function mediaEntries(): Array<[StreamType, HTMLMediaElement]> {
+  const entries: Array<[StreamType, HTMLMediaElement]> = []
+  for (const type of ['screen', 'camera', 'audio'] as const) {
+    const element = mediaElement(type)
+    if (element) {
+      entries.push([type, element])
+    }
+  }
+  return entries
 }
 
 function masterElement(): HTMLMediaElement | null {
-  return masterType.value ? (mediaEls.get(masterType.value) ?? null) : null
+  return masterType.value ? mediaElement(masterType.value) : null
 }
 
 function mediaDuration(element: HTMLMediaElement): number {
@@ -115,7 +145,7 @@ function currentSessionMs(): number {
 }
 
 function targetOf(stream: ReplayStreamView): ReplaySyncPlayer | null {
-  const element = mediaEls.get(stream.stream_type)
+  const element = mediaElement(stream.stream_type)
   if (!element) {
     return null
   }
@@ -159,7 +189,7 @@ function syncOnce(): void {
     if (stream.stream_type === masterType.value) {
       continue
     }
-    const element = mediaEls.get(stream.stream_type)
+    const element = mediaElement(stream.stream_type)
     if (!element) {
       continue
     }
@@ -181,7 +211,8 @@ function seekToSessionMs(sessionMs: number): void {
   seekAll(targets, boundedMs)
 }
 
-async function play(): Promise<void> {
+/** Start (or restart) every element from the master's current position. */
+async function playAll(): Promise<void> {
   const master = masterElement()
   if (!master) {
     return
@@ -191,11 +222,11 @@ async function play(): Promise<void> {
     await master.play()
   } catch {
     playing.value = false
+    stopSync()
     return
   }
-  playing.value = true
   startSync()
-  for (const [type, element] of mediaEls) {
+  for (const [type, element] of mediaEntries()) {
     if (type === masterType.value) {
       continue
     }
@@ -209,10 +240,18 @@ async function play(): Promise<void> {
   }
 }
 
+async function play(): Promise<void> {
+  if (!masterElement()) {
+    return
+  }
+  playing.value = true
+  await playAll()
+}
+
 function pause(): void {
   playing.value = false
   stopSync()
-  for (const element of mediaEls.values()) {
+  for (const [, element] of mediaEntries()) {
     try {
       element.pause()
     } catch {
@@ -231,14 +270,14 @@ function togglePlay(): void {
 
 function setRate(value: number): void {
   rate.value = value
-  for (const element of mediaEls.values()) {
+  for (const [, element] of mediaEntries()) {
     element.playbackRate = value
   }
 }
 
 function setVolume(value: number): void {
   volume.value = value
-  const audio = mediaEls.get('audio')
+  const audio = mediaElement('audio')
   if (audio) {
     audio.volume = value
   }
@@ -272,19 +311,90 @@ function applyInitialSeek(): void {
   seekToSessionMs(props.initialTimeMs)
 }
 
-function onMediaLoaded(): void {
-  refreshAttempts = 0
+function applyPendingResume(): void {
   if (resumeMs !== null) {
-    const target = resumeMs
-    resumeMs = null
-    seekToSessionMs(target)
-    return
+    seekToSessionMs(resumeMs)
   }
-  applyInitialSeek()
 }
 
-function onMediaError(): void {
+function resumeIfPlaying(): void {
+  if (playing.value) {
+    void playAll()
+  }
+}
+
+function allStreamsLoaded(): boolean {
+  const types = [...streamsByType.value.keys()]
+  return types.length > 0 && types.every((type) => loadedStreams.has(type))
+}
+
+function clearHealthyTimer(): void {
+  if (healthyTimer !== null) {
+    clearTimeout(healthyTimer)
+    healthyTimer = null
+  }
+}
+
+function clearBackoffTimer(): void {
+  if (backoffTimer !== null) {
+    clearTimeout(backoffTimer)
+    backoffTimer = null
+  }
+}
+
+function resetHealthTracking(): void {
+  loadedStreams = new Set()
+  erroredStreams = new Set()
+  clearHealthyTimer()
+}
+
+/**
+ * Only a fully loaded, error-free manifest that stays healthy for a sustained
+ * window restores the retry budget. Merely receiving `loadedmetadata` from the
+ * healthy streams must not reset it while a sibling keeps failing.
+ */
+function noteHealthy(): void {
+  if (erroredStreams.size > 0 || !allStreamsLoaded()) {
+    clearHealthyTimer()
+    return
+  }
+  if (healthyTimer !== null) {
+    return
+  }
+  healthyTimer = setTimeout(() => {
+    healthyTimer = null
+    if (erroredStreams.size === 0 && allStreamsLoaded()) {
+      refreshAttempts = 0
+    }
+  }, HEALTHY_WINDOW_MS)
+}
+
+function onMediaLoaded(type: StreamType): void {
+  loadedStreams.add(type)
+  applyPendingResume()
+  if (allStreamsLoaded()) {
+    resumeMs = null
+  }
+  noteHealthy()
+  // A manifest reload replaces the media sources; the UI stays in the playing
+  // state, so playback must be restarted once the new elements have loaded.
+  resumeIfPlaying()
+}
+
+function onMediaError(type: StreamType): void {
+  erroredStreams.add(type)
+  clearHealthyTimer()
   requestRefresh()
+}
+
+function onEnded(type: StreamType): void {
+  if (type !== masterType.value) {
+    return
+  }
+  pause()
+  if (durationMs.value > 0) {
+    currentTimeMs.value = durationMs.value
+  }
 }
 
 function scheduleExpiryRefresh(): void {
@@ -303,19 +413,45 @@ function requestRefresh(): void {
   }
   if (refreshAttempts >= MAX_REFRESH_ATTEMPTS) {
     refreshExhausted.value = true
+    clearBackoffTimer()
+    return
+  }
+  const elapsed = Date.now() - lastRefreshAt
+  if (elapsed < MIN_REFRESH_INTERVAL_MS) {
+    if (backoffTimer === null) {
+      backoffTimer = setTimeout(() => {
+        backoffTimer = null
+        requestRefresh()
+      }, MIN_REFRESH_INTERVAL_MS - elapsed)
+    }
     return
   }
   refreshAttempts += 1
+  lastRefreshAt = Date.now()
   resumeMs = currentSessionMs()
   emit('refresh')
   scheduleExpiryRefresh()
 }
 
+/** Capture the current position before the parent fetches a fresh manifest. */
+function beginReload(): void {
+  resumeMs = currentSessionMs()
+}
+
+defineExpose({ beginReload })
+
 watch(
   () => props.replay,
-  () => {
+  async () => {
+    resetHealthTracking()
+    clearBackoffTimer()
     refreshExhausted.value = false
     scheduleExpiryRefresh()
+    // Same-URL reloads may not remount the elements; restore the position and
+    // playback as soon as Vue has applied the new sources.
+    await nextTick()
+    applyPendingResume()
+    resumeIfPlaying()
   },
 )
 
@@ -326,6 +462,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopSync()
+  clearHealthyTimer()
+  clearBackoffTimer()
   if (refreshTimer !== null) {
     clearTimeout(refreshTimer)
     refreshTimer = null
@@ -345,15 +483,16 @@ onBeforeUnmount(() => {
         <video
           v-if="cameraStream"
           :key="`camera-${cameraStream.url}`"
-          :ref="(element) => setMediaRef('camera', element)"
+          ref="cameraEl"
           class="replay-player__media replay-player__media--main"
           :src="cameraStream.url"
           muted
           playsinline
           preload="auto"
           data-testid="replay-camera"
-          @loadedmetadata="onMediaLoaded"
-          @error="onMediaError"
+          @loadedmetadata="onMediaLoaded('camera')"
+          @error="onMediaError('camera')"
+          @ended="onEnded('camera')"
         />
         <p v-else class="replay-player__missing" data-testid="replay-missing-camera">
           摄像头录像不可用
@@ -364,15 +503,16 @@ onBeforeUnmount(() => {
         <video
           v-if="screenStream"
           :key="`screen-${screenStream.url}`"
-          :ref="(element) => setMediaRef('screen', element)"
+          ref="screenEl"
           class="replay-player__media replay-player__media--main"
           :src="screenStream.url"
           muted
           playsinline
           preload="auto"
           data-testid="replay-screen"
-          @loadedmetadata="onMediaLoaded"
-          @error="onMediaError"
+          @loadedmetadata="onMediaLoaded('screen')"
+          @error="onMediaError('screen')"
+          @ended="onEnded('screen')"
         />
         <p v-else class="replay-player__missing" data-testid="replay-missing-screen">
           屏幕录像不可用
@@ -381,28 +521,30 @@ onBeforeUnmount(() => {
         <video
           v-if="cameraStream"
           :key="`camera-${cameraStream.url}`"
-          :ref="(element) => setMediaRef('camera', element)"
+          ref="cameraEl"
           class="replay-player__media replay-player__media--thumb"
           :src="cameraStream.url"
           muted
           playsinline
           preload="auto"
           data-testid="replay-camera"
-          @loadedmetadata="onMediaLoaded"
-          @error="onMediaError"
+          @loadedmetadata="onMediaLoaded('camera')"
+          @error="onMediaError('camera')"
+          @ended="onEnded('camera')"
         />
       </template>
 
       <audio
         v-if="audioStream"
         :key="`audio-${audioStream.url}`"
-        :ref="(element) => setMediaRef('audio', element)"
+        ref="audioEl"
         class="replay-player__audio"
         :src="audioStream.url"
         preload="auto"
         data-testid="replay-audio"
-        @loadedmetadata="onMediaLoaded"
-        @error="onMediaError"
+        @loadedmetadata="onMediaLoaded('audio')"
+        @error="onMediaError('audio')"
+        @ended="onEnded('audio')"
       />
 
       <p v-if="refreshExhausted" class="replay-player__notice" data-testid="replay-expired">

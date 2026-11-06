@@ -10,6 +10,7 @@ import { getSession } from '../../api/sessions'
 import { ApiError } from '../../types/api'
 import type { RecordingStreamView, StreamType } from '../../types/recording'
 import type { SessionMode, SessionStatus, SessionView } from '../../types/session'
+import { messageOf } from '../../utils/message'
 
 /**
  * Review / submit page (05B §7.3, 09 §6.6/§10.4).
@@ -87,10 +88,6 @@ const replayPageRef = ref<InstanceType<typeof ReplayPage> | null>(null)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let disposed = false
-
-function messageOf(value: unknown, fallback: string): string {
-  return value instanceof Error && value.message ? value.message : fallback
-}
 
 const requiredTypes = computed<readonly StreamType[]>(() =>
   session.value ? REQUIRED_STREAMS[session.value.mode] : [],
@@ -278,8 +275,8 @@ async function submit(): Promise<void> {
       session.value = { ...session.value, status: 'submitted' }
     }
     // Presigned URLs may have expired while the student watched; reload the
-    // manifest and keep the same player component in its read-only state.
-    await replayPageRef.value?.reload()
+    // manifest and keep both the player state and its current position.
+    await replayPageRef.value?.reload({ preservePosition: true })
   } catch (value) {
     if (disposed) {
       return

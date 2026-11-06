@@ -141,11 +141,26 @@ async function mountPage(path = '/student/sessions/session-1/review') {
   return { wrapper, router }
 }
 
+let replayLoadCount = 0
+
 beforeEach(() => {
   vi.clearAllMocks()
+  replayLoadCount = 0
   vi.mocked(getSession).mockReset().mockResolvedValue(sessionView())
   vi.mocked(getRecordings).mockReset()
-  vi.mocked(getReplay).mockReset().mockResolvedValue(replayView())
+  // Every fetch returns fresh URLs, like the real backend's presigned links,
+  // so the player must remount its media elements on reload.
+  vi.mocked(getReplay).mockReset().mockImplementation(async () => {
+    replayLoadCount += 1
+    const base = replayView()
+    return {
+      ...base,
+      streams: base.streams.map((stream) => ({
+        ...stream,
+        url: `${stream.url}?v=${replayLoadCount}`,
+      })),
+    }
+  })
   vi.mocked(getEvents).mockReset().mockResolvedValue(eventPage())
   vi.mocked(submitSession).mockReset()
 })
@@ -262,6 +277,57 @@ describe('ReviewPage', () => {
 
     const audio = wrapper.get('[data-testid="replay-audio"]').element as HTMLAudioElement
     expect(audio.currentTime).toBeCloseTo(5)
+    wrapper.unmount()
+  })
+
+  it('preserves the replay position across the post-submit reload', async () => {
+    vi.mocked(getRecordings).mockResolvedValue(uploadedFreeStreams())
+    vi.mocked(submitSession).mockResolvedValue({
+      submission_id: 'submission-1',
+      task_id: 'task-1',
+      session_id: 'session-1',
+      student_account_id: 'student-1',
+      status: 'pending_ai',
+      submitted_at: '2026-11-06T10:00:00Z',
+    })
+
+    const { wrapper } = await mountPage()
+    const before = wrapper.get('[data-testid="replay-audio"]').element as HTMLAudioElement
+    before.currentTime = 12
+
+    await wrapper.get('[data-testid="submit-session"]').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    const after = wrapper.get('[data-testid="replay-audio"]').element as HTMLAudioElement
+    // Fresh presigned URLs remount the element; the position must survive.
+    expect(after).not.toBe(before)
+    expect(after.currentTime).toBeCloseTo(12)
+    wrapper.unmount()
+  })
+
+  it('does not offer submission before the session has ended', async () => {
+    vi.mocked(getSession).mockResolvedValue(sessionView({ status: 'in_progress' }))
+
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.get('[data-testid="review-load-error"]').text()).toContain('尚未结束')
+    expect(wrapper.find('[data-testid="submit-session"]').exists()).toBe(false)
+    expect(getRecordings).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps the player when only the event history request fails', async () => {
+    vi.mocked(getRecordings).mockResolvedValue(uploadedFreeStreams())
+    vi.mocked(getEvents).mockRejectedValue(new Error('事件服务不可用'))
+
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.find('[data-testid="replay-player"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="replay-events-error"]').text()).toContain(
+      '事件服务不可用',
+    )
+    expect(wrapper.find('[data-testid="replay-load-error"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

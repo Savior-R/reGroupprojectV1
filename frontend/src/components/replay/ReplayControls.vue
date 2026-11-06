@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatClock } from '../../utils/replayFormat'
+
 /**
  * Replay transport controls (05B §7.3, 09 §10.4).
  *
@@ -30,13 +32,6 @@ const emit = defineEmits<{
 
 const RATES = [0.5, 1, 1.5, 2] as const
 
-function formatTime(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-}
-
 function onSeek(event: Event): void {
   emit('seek', Number((event.target as HTMLInputElement).value))
 }
@@ -63,7 +58,7 @@ function onVolume(event: Event): void {
     </button>
 
     <span class="replay-controls__time" data-testid="replay-time">
-      {{ formatTime(currentTimeMs) }} / {{ formatTime(durationMs) }}
+      {{ formatClock(currentTimeMs) }} / {{ formatClock(durationMs) }}
     </span>
 
     <input

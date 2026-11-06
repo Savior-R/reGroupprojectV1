@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { ReplayEvent } from '../../api/replay'
+import { formatClock } from '../../utils/replayFormat'
 
 /**
  * Replay event timeline (05B §7.3, 09 §10.4).
@@ -87,13 +88,6 @@ const visibleEvents = computed(() =>
 function typeLabel(type: string): string {
   return TYPE_LABELS[type] ?? type
 }
-
-function formatTime(atMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(atMs / 1000))
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-}
 </script>
 
 <template>
@@ -125,10 +119,10 @@ function formatTime(atMs: number): string {
           type="button"
           class="event-timeline__item"
           :data-testid="`event-item-${event.event_id}`"
-          :title="`跳转到 ${formatTime(event.at_ms)}`"
+          :title="`跳转到 ${formatClock(event.at_ms)}`"
           @click="emit('seek', event.at_ms)"
         >
-          <span class="event-timeline__time">{{ formatTime(event.at_ms) }}</span>
+          <span class="event-timeline__time">{{ formatClock(event.at_ms) }}</span>
           <span class="event-timeline__type">{{ typeLabel(event.type) }}</span>
         </button>
       </li>
