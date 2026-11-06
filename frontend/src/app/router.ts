@@ -4,14 +4,25 @@ import type { RouteRecordRaw } from 'vue-router'
 /**
  * Minimal router shell for the M3 frontend slice (09 §4.1).
  *
- * Only the root redirect and the shared error pages live here in Task 1.
- * Tasks 2/5/6/7 append the task, classroom, interview and review routes.
+ * Task 1 added the root redirect and the shared error pages; Task 2 adds the
+ * student task list/detail routes. Tasks 5/6/7 append the classroom, interview
+ * and review routes.
  */
 
 export const routes: RouteRecordRaw[] = [
   {
     path: '/',
     redirect: '/student/tasks',
+  },
+  {
+    path: '/student/tasks',
+    name: 'student-tasks',
+    component: () => import('../views/task/StudentTasksPage.vue'),
+  },
+  {
+    path: '/student/tasks/:taskId',
+    name: 'student-task-detail',
+    component: () => import('../views/task/StudentTaskDetailPage.vue'),
   },
   {
     path: '/403',
