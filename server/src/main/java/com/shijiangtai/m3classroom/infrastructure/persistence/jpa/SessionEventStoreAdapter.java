@@ -1,6 +1,7 @@
 package com.shijiangtai.m3classroom.infrastructure.persistence.jpa;
 
 import com.shijiangtai.m3classroom.application.port.SessionEventStore;
+import com.shijiangtai.m3classroom.domain.session.ReplayEventTypes;
 import com.shijiangtai.m3classroom.domain.session.SessionEvent;
 import com.shijiangtai.shared.domain.SessionId;
 import java.sql.PreparedStatement;
@@ -83,6 +84,18 @@ public class SessionEventStoreAdapter implements SessionEventStore {
         }
         return repository.findBySessionIdAndSeqGreaterThanOrderBySeqAsc(
                         id.value(), seq, PageRequest.of(0, limit)).stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
+    public List<SessionEvent> afterReplayable(SessionId id, long seq, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        return repository.findReplayable(
+                        id.value(), seq, ReplayEventTypes.NON_REPLAYABLE,
+                        PageRequest.of(0, limit)).stream()
                 .map(this::toDomain)
                 .toList();
     }

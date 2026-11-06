@@ -1,5 +1,6 @@
 package com.shijiangtai.m3classroom.infrastructure.persistence.jpa;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
@@ -11,6 +12,19 @@ public interface SessionEventJpaRepository extends JpaRepository<SessionEventEnt
 
     List<SessionEventEntity> findBySessionIdAndSeqGreaterThanOrderBySeqAsc(
             UUID sessionId, long seq, Pageable pageable);
+
+    @Query("""
+            SELECT e FROM SessionEventEntity e
+            WHERE e.sessionId = :sessionId
+              AND e.seq > :seq
+              AND e.type NOT IN :excluded
+            ORDER BY e.seq ASC
+            """)
+    List<SessionEventEntity> findReplayable(
+            @Param("sessionId") UUID sessionId,
+            @Param("seq") long seq,
+            @Param("excluded") Collection<String> excluded,
+            Pageable pageable);
 
     @Query(value = "select coalesce(max(seq), 0) from m3_classroom.events"
             + " where session_id = :sessionId", nativeQuery = true)

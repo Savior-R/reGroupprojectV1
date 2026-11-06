@@ -1,5 +1,6 @@
 package com.shijiangtai.m3classroom.application.port;
 
+import com.shijiangtai.m3classroom.domain.session.ReplayEventTypes;
 import com.shijiangtai.m3classroom.domain.session.SessionEvent;
 import com.shijiangtai.shared.domain.SessionId;
 import java.util.List;
@@ -26,6 +27,17 @@ public interface SessionEventStore {
     }
 
     List<SessionEvent> after(SessionId id, long seq, int limit);
+
+    /**
+     * Reads replayable events after {@code seq}, excluding control-plane rows before applying
+     * {@code limit}. Adapters should override this with a filtered query so pagination never
+     * returns an empty page merely because a batch consisted only of ticks.
+     */
+    default List<SessionEvent> afterReplayable(SessionId id, long seq, int limit) {
+        return after(id, seq, limit).stream()
+                .filter(event -> !ReplayEventTypes.NON_REPLAYABLE.contains(event.type()))
+                .toList();
+    }
 
     long maxSeq(SessionId id);
 }

@@ -1,6 +1,7 @@
 package com.shijiangtai.m3classroom.support;
 
 import com.shijiangtai.m3classroom.application.port.SessionEventStore;
+import com.shijiangtai.m3classroom.domain.session.ReplayEventTypes;
 import com.shijiangtai.m3classroom.domain.session.SessionEvent;
 import com.shijiangtai.shared.domain.SessionId;
 import java.util.ArrayList;
@@ -22,6 +23,17 @@ public class InMemorySessionEventStore implements SessionEventStore {
         return events.stream()
                 .filter(event -> event.sessionId().equals(id))
                 .filter(event -> event.seq() > seq)
+                .sorted(Comparator.comparingLong(SessionEvent::seq))
+                .limit(limit)
+                .toList();
+    }
+
+    @Override
+    public synchronized List<SessionEvent> afterReplayable(SessionId id, long seq, int limit) {
+        return events.stream()
+                .filter(event -> event.sessionId().equals(id))
+                .filter(event -> event.seq() > seq)
+                .filter(event -> !ReplayEventTypes.NON_REPLAYABLE.contains(event.type()))
                 .sorted(Comparator.comparingLong(SessionEvent::seq))
                 .limit(limit)
                 .toList();

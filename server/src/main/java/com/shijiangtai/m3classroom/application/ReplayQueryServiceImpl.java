@@ -121,7 +121,8 @@ public class ReplayQueryServiceImpl implements ReplayQueryService {
         requireValidAfterSeq(afterSeq);
         requireValidLimit(limit);
 
-        List<SessionEventView> views = eventStore.after(sessionId, afterSeq, limit).stream()
+        List<SessionEventView> views = eventStore.afterReplayable(sessionId, afterSeq, limit)
+                .stream()
                 .map(event -> new SessionEventView(
                         event.eventId(), event.seq(), event.type(), event.atMs(),
                         event.payload()))

@@ -202,6 +202,35 @@ class ReplayControllerIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void replayEventsExcludeControlPlaneRowsBeforeApplyingLimit() throws Exception {
+        String sessionId = createSession();
+        uploadAllStreams(sessionId);
+        SessionId id = sessionId(sessionId);
+        appendEvents(id);
+        eventStore.append(new SessionEvent(
+                UUID.randomUUID(), id, 4, "session.time_tick", 4_000, Map.of(), NOW));
+        eventStore.append(new SessionEvent(
+                UUID.randomUUID(), id, 5, "ping", 4_100, Map.of(), NOW));
+        eventStore.append(new SessionEvent(
+                UUID.randomUUID(), id, 6, "session.resumed", 4_200, Map.of(), NOW));
+        eventStore.append(new SessionEvent(
+                UUID.randomUUID(), id, 7, "time.sync", 4_300, Map.of(), NOW));
+        eventStore.append(new SessionEvent(
+                UUID.randomUUID(), id, 8, "student.answer", 4_400, Map.of(), NOW));
+
+        mockMvc.perform(asStudent(get("/api/v1/sessions/{sessionId}/events", sessionId))
+                        .param("after_seq", "0")
+                        .param("limit", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.length()").value(4))
+                .andExpect(jsonPath("$.items[0].type").value("session.started"))
+                .andExpect(jsonPath("$.items[1].type").value("teacher.speech"))
+                .andExpect(jsonPath("$.items[2].type").value("session.ended"))
+                .andExpect(jsonPath("$.items[3].type").value("student.answer"))
+                .andExpect(jsonPath("$.items[3].seq").value(8));
+    }
+
+    @Test
     void incompleteRecordingReturnsMissingStreams() throws Exception {
         String sessionId = createSession();
 
