@@ -88,7 +88,8 @@ class AttemptCleanupTest {
         storage = new InMemoryRecordingObjectStorage();
         afterCommitActions = new ArrayList<>();
         lifecycle = new RecordingLifecycleService(
-                recordings, sessions, storage, afterCommitActions::add, () -> NOW);
+                recordings, sessions, tasks, submissions, storage,
+                afterCommitActions::add, () -> NOW);
 
         SessionRuntimeRegistry registry = new SessionRuntimeRegistry(
                 sessions, tasks, events, texts, UUID::randomUUID, () -> NOW, scheduler,

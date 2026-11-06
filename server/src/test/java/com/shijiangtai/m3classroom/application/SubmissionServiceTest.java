@@ -457,6 +457,16 @@ class SubmissionServiceTest {
             cleanups.add(new CleanupCall(student, task, keep));
         }
 
+        @Override
+        public boolean deleteExpiredTemporary(SessionId sessionId) {
+            return false;
+        }
+
+        @Override
+        public boolean deleteSubmittedSession(SessionId sessionId) {
+            return false;
+        }
+
         List<CleanupCall> cleanups() {
             return List.copyOf(cleanups);
         }

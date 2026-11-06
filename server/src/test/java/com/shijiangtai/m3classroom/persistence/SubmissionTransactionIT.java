@@ -282,6 +282,16 @@ class SubmissionTransactionIT extends PostgresIntegrationTest {
                     probe.record(TransactionSynchronizationManager.isSynchronizationActive());
                     delegate.deleteOtherAttempts(student, task, keep);
                 }
+
+                @Override
+                public boolean deleteExpiredTemporary(SessionId sessionId) {
+                    return delegate.deleteExpiredTemporary(sessionId);
+                }
+
+                @Override
+                public boolean deleteSubmittedSession(SessionId sessionId) {
+                    return delegate.deleteSubmittedSession(sessionId);
+                }
             };
         }
 

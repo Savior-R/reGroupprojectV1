@@ -23,4 +23,21 @@ public interface RecordingLifecyclePort {
 
     /** Deletes recordings/texts of earlier attempts, keeping the given session intact. */
     void deleteOtherAttempts(AccountId student, TaskId task, SessionId keep);
+
+    /**
+     * Deletes a temporary task session whose 24-hour retention has expired. Objects are deleted
+     * before the recording and session rows; a failed object delete propagates and leaves every
+     * row intact for the next cleanup run.
+     *
+     * @return {@code true} only when this call deleted the session
+     */
+    boolean deleteExpiredTemporary(SessionId sessionId);
+
+    /**
+     * Deletes a submitted session after its course retention expired: objects first, then the
+     * submission, recording, and session rows.
+     *
+     * @return {@code true} only when this call deleted the submission/session
+     */
+    boolean deleteSubmittedSession(SessionId sessionId);
 }

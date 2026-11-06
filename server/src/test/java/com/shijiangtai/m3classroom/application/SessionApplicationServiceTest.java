@@ -470,6 +470,16 @@ class SessionApplicationServiceTest {
             // no-op
         }
 
+        @Override
+        public boolean deleteExpiredTemporary(SessionId sessionId) {
+            return false;
+        }
+
+        @Override
+        public boolean deleteSubmittedSession(SessionId sessionId) {
+            return false;
+        }
+
         List<SessionId> aborted() {
             return List.copyOf(aborted);
         }

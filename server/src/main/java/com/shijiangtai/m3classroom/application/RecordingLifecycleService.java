@@ -10,10 +10,15 @@ import com.shijiangtai.m3classroom.domain.recording.StreamStatus;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
+import com.shijiangtai.m3classroom.domain.submission.SubmissionRepository;
+import com.shijiangtai.m3classroom.domain.task.Task;
+import com.shijiangtai.m3classroom.domain.task.TaskRepository;
 import com.shijiangtai.shared.application.ClockProvider;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -33,9 +38,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class RecordingLifecycleService implements RecordingLifecyclePort {
 
     private static final Logger log = LoggerFactory.getLogger(RecordingLifecycleService.class);
+    private static final Duration TEMPORARY_RETENTION = Duration.ofHours(24);
 
     private final RecordingRepository recordingRepository;
     private final SessionRepository sessionRepository;
+    private final TaskRepository taskRepository;
+    private final SubmissionRepository submissionRepository;
     private final RecordingObjectStorage storage;
     private final AfterCommitPort afterCommitPort;
     private final ClockProvider clockProvider;
@@ -43,12 +51,17 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
     public RecordingLifecycleService(
             RecordingRepository recordingRepository,
             SessionRepository sessionRepository,
+            TaskRepository taskRepository,
+            SubmissionRepository submissionRepository,
             RecordingObjectStorage storage,
             AfterCommitPort afterCommitPort,
             ClockProvider clockProvider) {
         this.recordingRepository = Objects.requireNonNull(
                 recordingRepository, "recordingRepository");
         this.sessionRepository = Objects.requireNonNull(sessionRepository, "sessionRepository");
+        this.taskRepository = Objects.requireNonNull(taskRepository, "taskRepository");
+        this.submissionRepository = Objects.requireNonNull(
+                submissionRepository, "submissionRepository");
         this.storage = Objects.requireNonNull(storage, "storage");
         this.afterCommitPort = Objects.requireNonNull(afterCommitPort, "afterCommitPort");
         this.clockProvider = Objects.requireNonNull(clockProvider, "clockProvider");
@@ -104,6 +117,93 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
             objectDeletes.addAll(removeAttemptRows(session.id()));
         }
         scheduleAfterCommit(objectDeletes);
+    }
+
+    /**
+     * Deletes a temporary task session whose 24-hour retention expired. The expiry is recomputed
+     * under the session lock because the task may have closed after the candidate query ran:
+     * the anchor is {@code max(endedAt != null ? endedAt : updatedAt, task.closedAt)}.
+     *
+     * <p>Objects are deleted synchronously before any row. A {@link RuntimeException} from the
+     * object store is not caught, so the transaction rolls back and the next cleanup run retries
+     * the idempotent object deletes.
+     */
+    @Override
+    @Transactional
+    public boolean deleteExpiredTemporary(SessionId sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId");
+        Session locked = sessionRepository.findByIdForUpdate(sessionId).orElse(null);
+        if (locked == null || !isDeletable(locked.status())) {
+            return false;
+        }
+        if (!isTemporaryRetentionExpired(locked)) {
+            return false;
+        }
+        Recording recording = recordingRepository.findBySession(sessionId).orElse(null);
+        deleteObjectsNow(recording);
+        if (recording != null) {
+            recordingRepository.deleteBySession(sessionId);
+        }
+        sessionRepository.deleteById(sessionId);
+        return true;
+    }
+
+    /**
+     * Deletes a submitted session whose course retention expired. Objects are deleted before the
+     * submission row, which must go before the session row to release the
+     * {@code ON DELETE RESTRICT} submission-to-session foreign key.
+     *
+     * <p>Object-delete failures propagate unchanged so the transaction rolls back and the rows
+     * stay available for the next cleanup run.
+     */
+    @Override
+    @Transactional
+    public boolean deleteSubmittedSession(SessionId sessionId) {
+        Objects.requireNonNull(sessionId, "sessionId");
+        Session locked = sessionRepository.findByIdForUpdate(sessionId).orElse(null);
+        if (locked == null || locked.status() != SessionStatus.SUBMITTED) {
+            return false;
+        }
+        Recording recording = recordingRepository.findBySession(sessionId).orElse(null);
+        deleteObjectsNow(recording);
+        submissionRepository.deleteBySession(sessionId);
+        if (recording != null) {
+            recordingRepository.deleteBySession(sessionId);
+        }
+        sessionRepository.deleteById(sessionId);
+        return true;
+    }
+
+    /**
+     * Deletes every recording object synchronously. Deliberately does not catch failures: the
+     * caller's transaction must roll back before any row is removed.
+     */
+    private void deleteObjectsNow(Recording recording) {
+        if (recording == null) {
+            return;
+        }
+        for (RecordingStream stream : recording.streams()) {
+            if (stream.objectKey() != null) {
+                storage.delete(stream.objectKey());
+            }
+        }
+    }
+
+    /**
+     * Recomputes temporary retention under the lock: {@code anchor + 24h <= now} deletes, with
+     * the anchor extended to the task close time when the task closed later.
+     */
+    private boolean isTemporaryRetentionExpired(Session session) {
+        Instant anchor = session.endedAt() != null ? session.endedAt() : session.updatedAt();
+        if (session.taskId() != null) {
+            Instant closedAt = taskRepository.findById(session.taskId())
+                    .map(Task::closedAt)
+                    .orElse(null);
+            if (closedAt != null && closedAt.isAfter(anchor)) {
+                anchor = closedAt;
+            }
+        }
+        return !anchor.plus(TEMPORARY_RETENTION).isAfter(clockProvider.now());
     }
 
     /**
