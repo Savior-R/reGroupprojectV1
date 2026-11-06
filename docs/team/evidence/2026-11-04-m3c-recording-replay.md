@@ -4,7 +4,7 @@
 > 计划：`docs/superpowers/plans/2026-11-04-m3c-recording-backend.md`（Task 1–8）
 > 执行人：M3 Owner（当前使用者，经用户确认）
 > 环境：Docker Engine 29.6.2 / Compose v5.3.1 / PostgreSQL 18.6 / Spring Boot 4.1.2 / Java 21 / MinIO / Redis 8
-> 结论：M3C 录制 / 回放后端 P0（Task 1–7）完成；Task 8 契约测试、全量套件、Docker 全栈 smoke 通过。G2 设计冻结未关闭，G3—G8 均未标记，模块完成度保持 10%；测试完成度按 UT / IT / 契约 3 个层级记 60%，E2E / 性能安全待续。
+> 结论：M3C 录制 / 回放后端 P0（Task 1–7）完成；Task 8 契约测试、全量套件、Docker 全栈 smoke 通过。最终审查修复了并行录制启动的会话级并发缺陷，并补齐失败会话、上传清理与内容校验；修复后全量 90 classes / 663 tests 通过。G2 设计冻结未关闭，G3—G8 均未标记，模块完成度保持 10%；测试完成度按 UT / IT / 契约 3 个层级记 60%，E2E / 性能安全待续。
 
 ## 1. 范围与授权
 
@@ -31,7 +31,7 @@
 
 Task 6 为提交接通了 M3B 的 `SessionController` / `SessionApplicationService` 提交入口；Task 7 在 `SessionApplicationServiceImpl.createSession` 中加入 attempt 上限与淘汰，并给 `SessionRepository` 增加删除能力。两处均在 Task 6 / Task 7 的 controller ruling 与上述用户授权范围内执行，只改提交 / attempt 相关接线，未改 M3B 课堂 / WS 契约。
 
-未改动：数据库 schema / 迁移、`build.gradle.kts`、YAML、`docs/design/02` / `12` / 前端；未修改 M3B / M4 / 前端进度行。
+未改动：数据库 schema / 迁移、`build.gradle.kts`、`docs/design/02` / `12` / 前端；未修改 M3B / M4 / 前端进度行。Task 3 经用户授权修改了 `server/src/main/resources/application-docker.yml` 与 `docker-compose.yml` 的 MinIO 环境变量（`M3_MINIO_*`），属于已批准的配置接线；除这两处外没有计划外 YAML 改动。
 
 ## 2. 实现摘要（Tasks 1–7）
 
@@ -51,8 +51,9 @@ Task 6 为提交接通了 M3B 的 `SessionController` / `SessionApplicationServi
 
 - `server/src/test/java/com/shijiangtai/m3classroom/contract/RecordingContractTest.java`（6 条）
 - `server/src/test/java/com/shijiangtai/m3classroom/contract/ReplayContractTest.java`（4 条）
+- `server/src/test/java/com/shijiangtai/m3classroom/contract/RecordingWireContractTest.java`（1 条，最终审查补充）
 
-两个测试类都用 `JsonMapper.builder().propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE).build()` 镜像全局 `spring.jackson.property-naming-strategy=SNAKE_CASE`，用 `readTree` / `propertyNames()` 断言，不依赖空白或字段顺序；未为了让测试通过而修改生产 DTO。
+前两个测试类用 `JsonMapper.builder().propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE).build()` 本地镜像 snake_case，用 `readTree` / `propertyNames()` 断言，不依赖空白或字段顺序。它们是 DTO 字段名的快速契约网，但**不能单独证明全局 Jackson 配置**；`RecordingWireContractTest` 注入实际 Spring `ObjectMapper`，MockMvc IT（`RecordingControllerIT` / `ReplayControllerIT` / `SubmissionControllerIT`）守卫 HTTP 层 snake_case，三者共同覆盖全局配置回归。未为了让测试通过而修改生产 DTO。
 
 冻结的 wire key：
 
@@ -99,7 +100,13 @@ ReplayContractTest > replayViewFreezesManifestAndStreamKeys() FAILED
 13 tests completed, 10 failed
 ```
 
-恢复 `SNAKE_CASE` 后重新执行：`BUILD SUCCESSFUL`，10 条契约测试全部通过。RED 探针证明任何字段改名或命名策略回退都会使契约测试失败。
+恢复 `SNAKE_CASE` 后重新执行：`BUILD SUCCESSFUL`，10 条契约测试全部通过。RED 探针证明字段改名会让本地契约测试失败；全局配置本身由 `RecordingWireContractTest`（实际 Spring `ObjectMapper`）与 MockMvc IT 额外守卫。
+
+### 3.3 最终审查修复补充（2026-11-06）
+
+- 新增 `RecordingConcurrencyIT`（1 条）：PostgreSQL 中三线程同时 `multipart/start` camera/screen/audio，断言 1 条 recording、3 条 stream、无异常；修复前该用例稳定触发 `uq_recordings_session` 的 `DataIntegrityViolationException`。
+- 新增 `RecordingWireContractTest`（1 条）：使用实际 Spring `ObjectMapper` 验证录制视图的 snake_case 键。
+- 契约总数变为 11 条（6 + 4 + 1）。
 
 ## 4. 全量测试
 
@@ -108,18 +115,20 @@ docker compose --profile test run --rm test \
   gradle clean test --no-daemon --console=plain
 ```
 
-结果：`BUILD SUCCESSFUL in 2m 14s`；**88 个测试类 / 643 条用例，0 failure / 0 error / 0 skipped**（解析 `build/test-results/test/TEST-*.xml` 汇总）。Task 8 新增 2 个契约测试类 / 10 条用例；Task 6 全量基线为 623 条，Task 7 的 attempt 清理用例与 Task 8 的契约用例合计新增 20 条。
+结果：`BUILD SUCCESSFUL in 1m 59s`；**90 个测试类 / 663 条用例，0 failure / 0 error / 0 skipped**（解析 `build/test-results/test/TEST-*.xml` 汇总）。Task 8 新增 2 个契约测试类 / 10 条用例；最终审查修复新增 20 条（并发 IT 1、Spring mapper 契约 1、失败会话 / 内容校验 / 清理 / 回放 / 提交 / attempt 收敛 18），全量从 643 增至 663。
+
+> 运行提示：最终全量运行时只启动了 `postgres` 容器。若同时运行 `app` 容器，其 Hikari 连接池会与测试的 11 个 Spring 上下文叠加，可能触发 PostgreSQL `too many clients already`；这是测试环境连接数问题，不是本切片的业务回归。
 
 M3C 相关测试类：
 
 | 层级 | 测试类（用例数） | 小计 |
 |---|---|---:|
 | 领域 UT | `RecordingTest`(9)、`RequiredStreamsTest`(3)、`RecordingObjectKeyBuilderTest`(2) | 14 |
-| 应用 UT | `RecordingAccessPolicyTest`(8)、`RecordingApplicationServiceTest`(15)、`RecordingLifecycleServiceTest`(6)、`ReplayQueryServiceTest`(13)、`SubmissionServiceTest`(10)、`AttemptCleanupTest`(4) | 56 |
+| 应用 UT | `RecordingAccessPolicyTest`(8)、`RecordingApplicationServiceTest`(26)、`RecordingLifecycleServiceTest`(9)、`ReplayQueryServiceTest`(14)、`SubmissionServiceTest`(11)、`AttemptCleanupTest`(5) | 73 |
 | API IT | `RecordingControllerIT`(5)、`ReplayControllerIT`(5)、`SubmissionControllerIT`(5) | 15 |
-| 持久化 IT | `RecordingRepositoryIT`(7)、`SubmissionPersistenceIT`(5)、`SubmissionTransactionIT`(2) | 14 |
+| 持久化 IT | `RecordingRepositoryIT`(8)、`RecordingConcurrencyIT`(1)、`SubmissionPersistenceIT`(5)、`SubmissionTransactionIT`(2) | 16 |
 | 存储 | `InMemoryRecordingObjectStorageTest`(5)、`MinioRecordingObjectStorageTest`(2) | 7 |
-| 契约 | `RecordingContractTest`(6)、`ReplayContractTest`(4) | 10 |
+| 契约 | `RecordingContractTest`(6)、`ReplayContractTest`(4)、`RecordingWireContractTest`(1) | 11 |
 
 备注：全量运行日志中仍有既有的 `JpaContextPersistenceWriter` / Hikari shutdown INFO 日志（M3B 异步持久化测试清理时的正常关闭），不影响用例结果。
 
@@ -266,9 +275,9 @@ events (seq): 1 recording.ready_ack, 2 session.started,
 | M3-T20 三路录制；面试两路；track ended / 权限拒绝 failed | 后端三路 multipart + `RequiredStreams`（free 3 路 / interview 2 路）；`RecordingApplicationServiceTest` / `RequiredStreamsTest`；本 smoke 三路真实上传 | 后端部分 ✅；track ended / 权限拒绝属浏览器 MediaRecorder，E2E 待前端计划 |
 | M3-T21 5s timeslice、5MB part、三路并行、complete | `part_size=5242880`；三路 start / part-url / PUT / complete 全通过；complete 后 `stat` 校验 | 服务端部分 ✅；timeslice 与并行策略在客户端，E2E 待续 |
 | M3-T22 part 重试、积压阈值、abort 清理 | `RecordingLifecycleServiceTest`、`AttemptCleanupTest`、`RecordingApplicationServiceTest` 覆盖 abort / 取消清理；重试与 30 MB 积压阈值属客户端 | 服务端清理 ✅；客户端重试 / 背压 E2E 待续 |
-| M3-T23 时长补全、part 1 重传；补时长失败禁止提交 | 服务端接受同 part_number 重传与 `duration_ms`；缺必需流时提交 422 `RECORDING_INCOMPLETE`（`SubmissionControllerIT`） | 服务端校验 ✅；WebM 时长写入由浏览器 `fix-webm-duration` 完成，E2E 待续 |
-| M3-T24 required_streams 按模式；只保留选中录像 | `RequiredStreamsTest`、`SubmissionControllerIT`（缺流 422）、`SubmissionTransactionIT` / `AttemptCleanupTest`（其他 attempt 行与对象删除、选中录像保留） | ✅ 后端集成覆盖 |
-| M3-T25 回放 offset / seek / 漂移 <200ms / 倍速 / 全屏 | 回放 manifest 的 `offset_ms` / `duration_ms` / 预签名 URL 由 `ReplayControllerIT` 与本 smoke 验证 | 服务端 manifest ✅；seek / 漂移 / 倍速 / 全屏属前端，E2E 待续 |
+| M3-T23 时长补全、part 1 重传；补时长失败禁止提交 | 服务端在 complete 校验 `duration_ms > 0`、`size > 0`、对象 content-type 与流类型匹配；提交要求每个必需已上传流的 `bytes_uploaded > 0` 且 `duration_ms > 0`，否则 422 `RECORDING_INCOMPLETE`（`missing_streams` / `invalid_streams`）。服务端不做 WebM 时长补全或写入。 | 服务端参数 / 非空校验 ✅；WebM 时长写入由浏览器 `fix-webm-duration` 完成，E2E 待续 |
+| M3-T24 required_streams 按模式；只保留选中录像 | `RequiredStreamsTest`、`SubmissionControllerIT`（缺流 422）、`SubmissionTransactionIT` / `AttemptCleanupTest`（其他 attempt 行与对象删除、选中录像保留）；回放 manifest 按模式过滤，面试不会泄漏 screen 流 | ✅ 后端集成覆盖 |
+| M3-T25 回放 offset / seek / 漂移 <200ms / 倍速 / 全屏 | 回放 manifest 返回 `offset_ms` / `duration_ms` / 预签名 URL，结构由 `ReplayControllerIT` 验证；**生产 API 目前不填充 per-stream offset（恒为 0）**，`duration_ms` 来自客户端 complete 参数并只做 >0 校验，不做媒体级时长校验。`ReplayControllerIT` 的非零 offset 是测试直接写 `session.putStreamOffset` 构造的。 | 服务端 manifest 结构 ✅；offset 传输契约未定（见 §7 第 9 条），seek / 漂移 / 倍速 / 全屏属前端，E2E 待续 |
 | M3-T26 临时 24h / 5 attempt；关闭后 24h；课程结束 +1 年；训练 1 个月 | 5 个未提交 attempt 上限与最旧淘汰（`AttemptCleanupTest`）；保留期定时任务、任务关闭窗口、训练保留不在本切片 | 5-attempt ✅；保留期调度与训练属后续 / M6 |
 | M3-T27 学生本人 / 老师组 / 管理员 403；临时录像与训练私有 | `RecordingAccessPolicyTest`、`ReplayControllerIT`（本人 / 教师组提交后可见、管理员 / 跨校 / 其他学生 403、临时录像教师不可见） | ✅ 后端安全覆盖；训练私有属 M6 |
 
@@ -281,11 +290,14 @@ events (seq): 1 recording.ready_ack, 2 session.started,
 5. **attempt_no 中间态**：Task 7 的修复在删除最旧 attempt 之前按 `max(attemptNo) + 1` 计算，新的第 6 次 attempt 编号唯一；仅早期中间态已写入的重复 `attempt_no` 行没有迁移 / 唯一约束（`sessions.attempt_no` 无 unique constraint）。
 6. **提交后清理事务**：`SessionApplicationServiceImpl.submit` 先提交 submission（独立事务），再清理其他 attempt；若清理失败，submission 已提交但接口可能返回 5xx（Task 6 note）。
 7. **构建环境**：`docker compose up -d --build` 首次因 Docker credential helper 与 Maven Central 临时拒绝失败；使用临时空 Docker config、重试构建成功。该问题为 WSL / 网络环境，不是代码回归。
-8. 全量测试仍输出既有的 JPA / Hikari shutdown INFO 日志，0 failure / 0 error / 0 skipped。
+8. 全量测试仍输出既有的 JPA / Hikari shutdown INFO 与异步 flush 重试日志，0 failure / 0 error / 0 skipped。
+9. **回放 `offset_ms` 契约缺口（Important，本波不实现）**：生产 API 不填充 per-stream offset，manifest 的 `offset_ms` 当前恒为 0。offset 的传输方式（在 `complete` 请求中新增 `offset_ms`，还是新增独立命令）属于契约变更，必须先与 Media/Training / Foundation owner 达成一致并更新 `02` / `05B`，之后才能实现；本波明确不实现。
+10. **全量测试连接数**：测试套件会缓存多个 Spring 上下文（每个 Hikari 池默认最多 10 连接）；若 Docker `app` 容器同时运行，可能与 PostgreSQL 默认 `max_connections=100` 叠加。最后一次全量运行仅启动 `postgres`，`90 classes / 663 tests` 通过。该问题属测试环境隔离，不影响生产代码。
 
 ## 8. 结论
 
 - Task 1–7 的 M3C 后端实现可运行，REST / WS / PostgreSQL / MinIO 全链路 smoke 通过。
 - Task 8 新增 2 个契约测试类 / 10 条用例；契约 RED 探针显示字段或命名漂移会被捕获。
-- 全量套件 88 classes / 643 tests，0 failure / 0 error / 0 skipped。
-- 进度：M3C 测试行 UT / IT / 契约 ✅、E2E / 性能安全 ⬜、测试完成度 60%；模块完成度保持 10%，G2—G8 未标记。
+- 最终审查修复：`start/complete/abort` 在读取 recording 前锁定 session（`FOR NO KEY UPDATE`），`RecordingRepositoryAdapter.save` 改为 merge-only；并行三路 start 的 PostgreSQL IT 通过。complete/abort 失败会将会话置为 `FAILED(recording_lost)`（终态除外），并 best-effort 中止 multipart；清理会中止所有带 uploadId 的流（含 FAILED）。complete 校验时长 / 大小 / content-type，提交校验已上传流非空且时长 > 0。
+- 全量套件 90 classes / 663 tests，0 failure / 0 error / 0 skipped。
+- 进度：M3C 测试行 UT / IT / 契约 ✅、E2E / 性能安全 ⬜、测试完成度 60%；模块完成度保持 10%，G2—G8 未标记。回放 `offset_ms` 生产填充按契约变更延期，见 §7 第 9 条。

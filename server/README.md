@@ -103,8 +103,10 @@ SESSION=$(curl -fsS -X POST "$API/tasks/$TASK/sessions" "${STUDENT[@]}" | jq -r 
 
 # 3) For each stream: multipart start -> part-url -> PUT part -> complete.
 for stream in camera screen audio; do
-  START=$(curl -fsS -X POST \
-    "$API/sessions/$SESSION/recordings/$stream/multipart/start" "${STUDENT[@]}")
+  # Validate the start response contract before using the upload.
+  curl -fsS -X POST \
+    "$API/sessions/$SESSION/recordings/$stream/multipart/start" "${STUDENT[@]}" \
+    | jq -e '.upload_id and .object_key and (.part_size > 0)' >/dev/null
   PART_URL=$(curl -fsS -X POST \
     "$API/sessions/$SESSION/recordings/$stream/multipart/part-url" "${STUDENT[@]}" \
     -H 'Content-Type: application/json' -d '{"part_number":1}' | jq -r .url)
