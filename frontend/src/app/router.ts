@@ -25,6 +25,11 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('../views/task/StudentTaskDetailPage.vue'),
   },
   {
+    path: '/student/sessions/:sessionId/classroom',
+    name: 'student-classroom',
+    component: () => import('../views/classroom/ClassroomPage.vue'),
+  },
+  {
     path: '/403',
     name: 'forbidden',
     component: () => import('../views/errors/ForbiddenPage.vue'),

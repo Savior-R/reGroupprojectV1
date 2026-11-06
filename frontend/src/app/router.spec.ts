@@ -15,12 +15,12 @@ describe('router', () => {
     expect(router.resolve('/missing').name).toBe('not-found')
   })
 
-  it('registers the student task routes but not the session rooms yet', () => {
+  it('registers the student task and classroom routes but not the interview or review rooms yet', () => {
     const paths = router.getRoutes().map((route) => route.path)
 
     expect(paths).toContain('/student/tasks')
     expect(paths).toContain('/student/tasks/:taskId')
-    expect(paths).not.toContain('/student/sessions/:sessionId/classroom')
+    expect(paths).toContain('/student/sessions/:sessionId/classroom')
     expect(paths).not.toContain('/student/sessions/:sessionId/interview')
     expect(paths).not.toContain('/student/sessions/:sessionId/review')
   })
@@ -30,5 +30,12 @@ describe('router', () => {
 
     expect(resolved.name).toBe('student-task-detail')
     expect(resolved.params.taskId).toBe('task-1')
+  })
+
+  it('resolves a classroom path to the classroom route', () => {
+    const resolved = router.resolve('/student/sessions/session-1/classroom')
+
+    expect(resolved.name).toBe('student-classroom')
+    expect(resolved.params.sessionId).toBe('session-1')
   })
 })
