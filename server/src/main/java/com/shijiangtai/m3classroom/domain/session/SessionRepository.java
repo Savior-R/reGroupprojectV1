@@ -3,6 +3,7 @@ package com.shijiangtai.m3classroom.domain.session;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -36,6 +37,21 @@ public interface SessionRepository {
     List<Session> findByStatusIn(Collection<SessionStatus> statuses);
 
     long countByStudentAndTask(AccountId studentAccountId, TaskId taskId);
+
+    /**
+     * Task sessions whose temporary-recording retention has expired at {@code now}.
+     *
+     * <p>The anchor is {@code COALESCE(ended_at, updated_at)}, extended to
+     * {@code GREATEST(anchor, tasks.closed_at)} when the task closed later; expiry is
+     * {@code anchor + 24 hours <= now}. Only {@code ended}, {@code reviewing}, {@code failed},
+     * and {@code cancelled} sessions are candidates.
+     *
+     * <p>Defaults to an empty list so lightweight test fakes stay source-compatible; the JPA
+     * adapter and {@code InMemorySessionRepository} override it.
+     */
+    default List<Session> findExpiredTemporary(Instant now) {
+        return List.of();
+    }
 
     /** Deletes a superseded attempt; recordings and derived rows cascade. */
     void deleteById(SessionId id);

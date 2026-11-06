@@ -1,5 +1,6 @@
 package com.shijiangtai.m3classroom.infrastructure.persistence.jpa;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -27,4 +28,17 @@ public interface SessionJpaRepository extends JpaRepository<SessionEntity, UUID>
     List<SessionEntity> findByStatusIn(Collection<String> statuses);
 
     long countByStudentAccountIdAndTaskId(UUID studentAccountId, UUID taskId);
+
+    @Query(value = """
+            SELECT s.* FROM m3_classroom.sessions s
+            LEFT JOIN m3_classroom.tasks t ON t.id = s.task_id
+            WHERE s.session_type = 'task'
+              AND s.status IN ('ended', 'reviewing', 'failed', 'cancelled')
+              AND GREATEST(
+                    COALESCE(s.ended_at, s.updated_at),
+                    COALESCE(t.closed_at, s.ended_at, s.updated_at)
+                  ) + INTERVAL '24 hours' <= :now
+            ORDER BY s.id
+            """, nativeQuery = true)
+    List<SessionEntity> findExpiredTemporary(@Param("now") Instant now);
 }

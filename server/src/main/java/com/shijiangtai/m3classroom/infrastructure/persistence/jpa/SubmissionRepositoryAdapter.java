@@ -6,8 +6,11 @@ import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.ClassId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class SubmissionRepositoryAdapter implements SubmissionRepository {
@@ -40,6 +43,22 @@ public class SubmissionRepositoryAdapter implements SubmissionRepository {
     @Override
     public boolean existsBySession(SessionId sessionId) {
         return repository.existsBySessionId(sessionId.value());
+    }
+
+    @Override
+    public List<Submission> findExpiredForRetention(Instant now) {
+        return repository.findExpiredForRetention(now).stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public void deleteBySession(SessionId sessionId) {
+        repository.deleteBySessionId(sessionId.value());
+        // Flush so a following session delete in the same transaction sees the
+        // ON DELETE RESTRICT foreign key released.
+        repository.flush();
     }
 
     private SubmissionEntity toEntity(Submission submission) {

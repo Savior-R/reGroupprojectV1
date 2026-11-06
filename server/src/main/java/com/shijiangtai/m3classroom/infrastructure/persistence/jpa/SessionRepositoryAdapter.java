@@ -11,6 +11,7 @@ import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -79,6 +80,13 @@ public class SessionRepositoryAdapter implements SessionRepository {
     public long countByStudentAndTask(AccountId studentAccountId, TaskId taskId) {
         return repository.countByStudentAccountIdAndTaskId(
                 studentAccountId.value(), taskId.value());
+    }
+
+    @Override
+    public List<Session> findExpiredTemporary(Instant now) {
+        return repository.findExpiredTemporary(now).stream()
+                .map(this::toDomain)
+                .toList();
     }
 
     @Override

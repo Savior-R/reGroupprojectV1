@@ -3,14 +3,19 @@ package com.shijiangtai.m3classroom.support;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
+import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -21,6 +26,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * lets tests detect stale live actors that were bypassed by a repository-level update.
  */
 public final class InMemorySessionRepository implements SessionRepository {
+
+    private static final Duration TEMPORARY_RETENTION = Duration.ofHours(24);
+    private static final Set<SessionStatus> TEMPORARY_STATUSES = EnumSet.of(
+            SessionStatus.ENDED, SessionStatus.REVIEWING,
+            SessionStatus.FAILED, SessionStatus.CANCELLED);
 
     private final Map<SessionId, Session> sessions = new ConcurrentHashMap<>();
 
@@ -73,6 +83,26 @@ public final class InMemorySessionRepository implements SessionRepository {
         return sessions.values().stream()
                 .filter(session -> belongsTo(session, studentAccountId, taskId))
                 .count();
+    }
+
+    /**
+     * The fake has no task store, so it can only apply {@code max(ended_at, updated_at) + 24h};
+     * the task-close extension is covered by the Postgres IT and by
+     * {@code RecordingLifecycleServiceTest}, which supplies a {@code TaskRepository} fake.
+     */
+    @Override
+    public List<Session> findExpiredTemporary(Instant now) {
+        return sessions.values().stream()
+                .filter(session -> session.type() == SessionType.TASK)
+                .filter(session -> TEMPORARY_STATUSES.contains(session.status()))
+                .filter(session -> {
+                    Instant anchor = session.endedAt() != null
+                            ? session.endedAt() : session.updatedAt();
+                    return !anchor.plus(TEMPORARY_RETENTION).isAfter(now);
+                })
+                .sorted(Comparator.comparing(session -> session.id().value()))
+                .map(InMemorySessionRepository::copy)
+                .toList();
     }
 
     @Override
