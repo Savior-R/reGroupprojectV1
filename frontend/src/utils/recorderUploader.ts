@@ -42,6 +42,8 @@ export type UploadStatus = 'uploading' | 'completed' | 'failed'
 export interface UploadProgress {
   uploadedBytes: number
   totalBytes: number
+  /** Bytes captured but not yet sent because a S3 part needs 5 MB. */
+  bufferedBytes?: number
   status: UploadStatus
 }
 
@@ -676,9 +678,11 @@ export class RecorderUploader {
 
   private emitProgress(status: UploadStatus): void {
     const uploadedBytes = this.sumPartSizes()
+    const totalBytes = Math.max(this.receivedBytes, uploadedBytes)
     const progress: UploadProgress = {
       uploadedBytes,
-      totalBytes: Math.max(this.receivedBytes, uploadedBytes),
+      totalBytes,
+      bufferedBytes: Math.max(0, totalBytes - uploadedBytes),
       status,
     }
     for (const listener of this.progressListeners) {

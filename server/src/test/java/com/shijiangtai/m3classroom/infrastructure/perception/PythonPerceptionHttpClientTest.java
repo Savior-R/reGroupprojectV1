@@ -126,6 +126,50 @@ class PythonPerceptionHttpClientTest {
     }
 
     @Test
+    void questionPostsStudentContextAndMapsContent() {
+        respond(200, """
+                {"text":"老师，为什么要这样计算？","context_sufficient":true,
+                 "input_question_complete":true,"output_complete":true,"missing":[],
+                 "confidence":0.8,"model_version":"mock","prompt_version":"v1"}
+                """);
+        PythonPerceptionHttpClient client = client(Duration.ofSeconds(15));
+
+        var result = client.question(new com.shijiangtai.m3classroom.application.port.ContentRequest(
+                "task-1", "session-1", "free", "荷塘月色",
+                List.of("老师好"), null, "小明", "积极但容易走神", 0.6, null));
+
+        assertThat(result.text()).isEqualTo("老师，为什么要这样计算？");
+        assertThat(result.confidence()).isEqualTo(0.8);
+        assertThat(result.modelVersion()).isEqualTo("mock");
+        assertThat(result.promptVersion()).isEqualTo("v1");
+        assertThat(recorded.path()).isEqualTo("/internal/v1/classroom/question");
+        JsonNode requestJson = mapper.readTree(recorded.body());
+        assertThat(requestJson.get("question_kind").asString()).isEqualTo("student_question");
+        assertThat(requestJson.get("context").get("student").get("name").asString())
+                .isEqualTo("小明");
+        assertThat(requestJson.get("context").get("recent_texts").get(0).asString())
+                .isEqualTo("老师好");
+    }
+
+    @Test
+    void answerUsesLatestTeacherTextAsQuestion() {
+        respond(200, """
+                {"text":"我认为重点是中间那段。","confidence":0.7,
+                 "model_version":"mock","prompt_version":"v1"}
+                """);
+        PythonPerceptionHttpClient client = client(Duration.ofSeconds(15));
+
+        var result = client.answer(new com.shijiangtai.m3classroom.application.port.ContentRequest(
+                "task-1", "session-1", "free", "荷塘月色",
+                List.of("第一句", "请小明回答"), null, "小明", "积极", 0.6, null));
+
+        assertThat(result.text()).isEqualTo("我认为重点是中间那段。");
+        assertThat(recorded.path()).isEqualTo("/internal/v1/classroom/answer");
+        JsonNode requestJson = mapper.readTree(recorded.body());
+        assertThat(requestJson.get("question").asString()).isEqualTo("请小明回答");
+    }
+
+    @Test
     void non200ThrowsRuntimeException() {
         respond(503, "{\"error\":\"unavailable\"}");
         PythonPerceptionHttpClient client = client(Duration.ofSeconds(15));

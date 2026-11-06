@@ -4,6 +4,7 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElMessageBox } from 'element-plus'
 import ImmersiveLayout from '../../layouts/ImmersiveLayout.vue'
 import CameraPreview from '../../components/classroom/CameraPreview.vue'
+import DialoguePanel from '../../components/classroom/DialoguePanel.vue'
 import InterviewTimer from '../../components/classroom/InterviewTimer.vue'
 import QuestionPanel from '../../components/classroom/QuestionPanel.vue'
 import RecordingStatus from '../../components/classroom/RecordingStatus.vue'
@@ -19,6 +20,9 @@ import type { ClassroomState } from '../../utils/classroomReducer'
 import { acquireMedia, createRecorder, STREAM_MIME } from '../../utils/media'
 import type { AcquiredMedia } from '../../utils/media'
 import { messageOf } from '../../utils/message'
+import { PcmCapture } from '../../utils/pcmCapture'
+import { PerceptionClient } from '../../utils/perceptionClient'
+import type { PerceptionMessage } from '../../utils/perceptionClient'
 import { RecorderUploader } from '../../utils/recorderUploader'
 import type { UploadProgress } from '../../utils/recorderUploader'
 import { createWsClient, WS_GRACE_MS } from '../../utils/wsClient'
@@ -74,6 +78,11 @@ const roomStarting = ref(false)
 const recordersActive = ref(false)
 
 const uploaders = new Map<StreamType, RecorderUploader>()
+const liveAsrText = ref('')
+const dialogueRefreshToken = ref(0)
+let perceptionClient: PerceptionClient | null = null
+let pcmCapture: PcmCapture | null = null
+let perceptionStarted = false
 let ws: WsClient | null = null
 let disposed = false
 let recordingLost = false
@@ -320,8 +329,62 @@ function ensureFinish(): void {
   void finishAfterUploads(stopAllUploaders())
 }
 
+function startPerception(): void {
+  if (perceptionStarted || ending.value || failure.value || !media.value || !sessionId.value) {
+    return
+  }
+  perceptionStarted = true
+  perceptionClient = new PerceptionClient({
+    sessionId: sessionId.value,
+    ticketProvider: () => fetchWsTicket(sessionId.value),
+    onMessage: handlePerceptionMessage,
+  })
+  void perceptionClient.connect()
+  pcmCapture = new PcmCapture({
+    onChunk: (chunk) => {
+      perceptionClient?.sendAudio(chunk)
+    },
+    onError: (error) => {
+      console.warn('Microphone perception failed', error)
+    },
+  })
+  void pcmCapture.start(media.value.audio)
+}
+
+async function stopPerception(): Promise<void> {
+  pcmCapture?.stop()
+  pcmCapture = null
+  if (perceptionClient) {
+    await perceptionClient.stop()
+    perceptionClient = null
+  }
+  perceptionStarted = false
+  liveAsrText.value = ''
+}
+
+function handlePerceptionMessage(message: PerceptionMessage): void {
+  if (message.type === 'asr.partial') {
+    liveAsrText.value = message.text
+    return
+  }
+  if (message.type === 'asr.final') {
+    liveAsrText.value = ''
+    dialogueRefreshToken.value += 1
+    return
+  }
+  if (message.type === 'error') {
+    console.warn('Perception error', message.code, message.message)
+  }
+}
+
 function handleServerEvent(event: ServerEvent): void {
   room.value = classroomReducer(room.value, event)
+  if (room.value.status === 'in_progress') {
+    startPerception()
+  }
+  if (event.type === 'interview.question_shown' || event.type === 'interview.ended') {
+    dialogueRefreshToken.value += 1
+  }
   if (room.value.status !== null && room.value.status !== 'preparing') {
     // The server owns the session now (started/terminal); never cancel it.
     sessionPreparing = false
@@ -344,10 +407,12 @@ function handleServerEvent(event: ServerEvent): void {
       // The server emits `interview.ended` immediately before `session.ended`;
       // either one is terminal for the room, so the finish flow starts here
       // without waiting for the follow-up event.
+      stopPerception()
       ensureFinish()
       return
 
     case 'session.ended':
+      stopPerception()
       ws?.close()
       ensureFinish()
       return
@@ -355,6 +420,7 @@ function handleServerEvent(event: ServerEvent): void {
     case 'session.failed': {
       // A failed session is terminal; release the end flow as well so an
       // in-flight “结束面试” cannot wait forever.
+      stopPerception()
       endCommandPending = false
       clearEndWatchdog()
       const code =
@@ -445,6 +511,7 @@ function handleRecordingFailure(message: string): void {
   }
   failure.value = message
   recordingLost = true
+  stopPerception()
   ending.value = false
   endCommandPending = false
   clearEndWatchdog()
@@ -507,9 +574,11 @@ async function endInterview(): Promise<void> {
   ending.value = true
   endError.value = null
 
-  // Stop the recorders first, then ask the server to end; the final parts keep
+  // Drain the final ASR segment while the session is still in progress, then
+  // stop the recorders and ask the server to end; the final media parts keep
   // uploading over REST while the control channel delivers `interview.ended`
   // and `session.ended`.
+  await stopPerception()
   stopAllUploaders()
 
   // A reconnect may be in progress: wait inside the 30 s grace instead of
@@ -678,6 +747,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   disposed = true
+  stopPerception()
   cancelPreparingSession()
   setRecordersActive(false)
   clearEndWatchdog()
@@ -785,6 +855,12 @@ onBeforeUnmount(() => {
 
           <aside class="interview-page__sidebar">
             <InterviewTimer :remaining-ms="remainingMs" />
+            <DialoguePanel
+              :session-id="sessionId"
+              :students="room.students"
+              :live-text="liveAsrText"
+              :refresh-token="dialogueRefreshToken"
+            />
           </aside>
         </div>
 

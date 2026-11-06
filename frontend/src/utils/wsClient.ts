@@ -38,7 +38,7 @@ export type WsStatus =
 
 export interface WsSocket {
   readyState: number
-  send(data: string): void
+  send(data: string | ArrayBuffer): void
   close(code?: number, reason?: string): void
   onopen: (() => void) | null
   onmessage: ((event: { data: unknown }) => void) | null

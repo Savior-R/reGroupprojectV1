@@ -113,20 +113,28 @@ describe('ClassroomControls', () => {
     for (const testId of [
       'ask-class',
       'ask-student-question',
-      'call-on',
       'mark-correct',
       'mark-partial',
       'mark-wrong',
       'remind',
-      'end-qa',
       'end-session',
     ]) {
       expect(isDisabled(wrapper, testId)).toBe(false)
     }
-    // Dialogue controls additionally require an active dialogue from the reducer.
+    // Call-on/end-QA require the QA macro state; dialogue requires a dialogue.
+    expect(isDisabled(wrapper, 'call-on')).toBe(true)
+    expect(isDisabled(wrapper, 'end-qa')).toBe(true)
     expect(isDisabled(wrapper, 'end-dialogue')).toBe(true)
 
-    await wrapper.setProps({ dialogueActive: true })
+    await wrapper.setProps({
+      macroState: 'qa',
+      qaPhase: 'waiting_hands',
+      dialogueActive: true,
+    })
+    expect(isDisabled(wrapper, 'ask-class')).toBe(true)
+    expect(isDisabled(wrapper, 'ask-student-question')).toBe(true)
+    expect(isDisabled(wrapper, 'call-on')).toBe(false)
+    expect(isDisabled(wrapper, 'end-qa')).toBe(false)
     expect(isDisabled(wrapper, 'end-dialogue')).toBe(false)
   })
 
@@ -150,19 +158,30 @@ describe('ClassroomControls', () => {
       },
     })
 
-    const clicks: Array<[string, string]> = [
+    const lecturing: Array<[string, string]> = [
       ['ask-class', 'askClass'],
       ['ask-student-question', 'askStudentQuestion'],
-      ['call-on', 'callOn'],
       ['mark-correct', 'mark'],
       ['mark-partial', 'mark'],
       ['mark-wrong', 'mark'],
       ['remind', 'remind'],
-      ['end-dialogue', 'endDialogue'],
-      ['end-qa', 'endQa'],
       ['end-session', 'endSession'],
     ]
-    for (const [testId, emitted] of clicks) {
+    for (const [testId, emitted] of lecturing) {
+      await wrapper.get(`[data-testid="${testId}"]`).trigger('click')
+      expect(wrapper.emitted(emitted), `${testId} should emit ${emitted}`).toBeTruthy()
+    }
+
+    await wrapper.setProps({
+      macroState: 'qa',
+      qaPhase: 'waiting_hands',
+      dialogueActive: true,
+    })
+    for (const [testId, emitted] of [
+      ['call-on', 'callOn'],
+      ['end-dialogue', 'endDialogue'],
+      ['end-qa', 'endQa'],
+    ] as Array<[string, string]>) {
       await wrapper.get(`[data-testid="${testId}"]`).trigger('click')
       expect(wrapper.emitted(emitted), `${testId} should emit ${emitted}`).toBeTruthy()
     }

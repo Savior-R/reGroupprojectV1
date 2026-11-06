@@ -307,6 +307,7 @@ describe('RecorderUploader', () => {
     expect(harness.progress.at(-1)).toEqual({
       uploadedBytes: 11.5 * MB,
       totalBytes: 11.5 * MB,
+      bufferedBytes: 0,
       status: 'completed',
     })
   })

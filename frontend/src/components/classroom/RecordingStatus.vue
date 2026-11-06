@@ -34,6 +34,16 @@ const STATUS_LABELS: Record<UploadProgress['status'] | 'idle', string> = {
   failed: '失败',
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(0)} KB`
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 const rows = computed(() =>
   STREAM_META.filter((meta) => props.streamTypes.includes(meta.type)).map((meta) => {
     const progress = props.streams[meta.type] ?? null
@@ -42,11 +52,14 @@ const rows = computed(() =>
       progress && progress.totalBytes > 0
         ? Math.min(100, Math.round((progress.uploadedBytes / progress.totalBytes) * 100))
         : null
+    const buffered = progress?.bufferedBytes ?? 0
+    const captureOnly = status === 'uploading' && buffered > 0 && (progress?.uploadedBytes ?? 0) === 0
     return {
       ...meta,
       status,
-      statusLabel: STATUS_LABELS[status],
-      percent,
+      statusLabel: captureOnly ? '录制中' : STATUS_LABELS[status],
+      percent: captureOnly ? null : percent,
+      bufferedLabel: buffered > 0 ? `已缓存 ${formatBytes(buffered)}` : null,
     }
   }),
 )
@@ -65,6 +78,9 @@ const rows = computed(() =>
       <span class="recording-status__state">{{ row.statusLabel }}</span>
       <span v-if="row.percent !== null" class="recording-status__percent">
         {{ row.percent }}%
+      </span>
+      <span v-if="row.bufferedLabel" class="recording-status__buffered">
+        {{ row.bufferedLabel }}
       </span>
     </span>
   </div>
@@ -113,7 +129,12 @@ const rows = computed(() =>
   color: #f87171;
 }
 
-.recording-status__percent {
+.recording-status__percent,
+.recording-status__buffered {
   color: #94a3b8;
+}
+
+.recording-status__buffered {
+  font-size: 11px;
 }
 </style>

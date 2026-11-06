@@ -66,6 +66,29 @@ vi.mock('../../utils/recorderUploader', () => ({
   }),
 }))
 
+vi.mock('../../utils/perceptionClient', () => ({
+  PerceptionClient: vi.fn(function () {
+    return {
+      connect: vi.fn(async () => undefined),
+      sendAudio: vi.fn(() => true),
+      stop: vi.fn(async () => undefined),
+      close: vi.fn(),
+    }
+  }),
+}))
+
+vi.mock('../../utils/pcmCapture', () => ({
+  PcmCapture: vi.fn(function () {
+    return { start: vi.fn(async () => undefined), stop: vi.fn() }
+  }),
+}))
+
+vi.mock('../../utils/screenSampler', () => ({
+  ScreenSampler: vi.fn(function () {
+    return { start: vi.fn(async () => undefined), stop: vi.fn() }
+  }),
+}))
+
 vi.mock('../../utils/media', () => ({
   acquireMedia: vi.fn(),
   createRecorder: vi.fn(),
@@ -82,6 +105,10 @@ vi.mock('../../api/sessions', () => ({
   startSession: vi.fn(),
   endSession: vi.fn(),
   cancelSession: vi.fn(),
+}))
+
+vi.mock('../../api/replay', () => ({
+  getTexts: vi.fn(async () => []),
 }))
 
 vi.mock('../../api/recordings', () => ({

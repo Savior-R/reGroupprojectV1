@@ -1,6 +1,9 @@
 package com.shijiangtai.m3classroom.infrastructure.perception;
 
 import com.shijiangtai.m3classroom.application.port.ClassifyResult;
+import com.shijiangtai.m3classroom.application.port.ContentClient;
+import com.shijiangtai.m3classroom.application.port.ContentRequest;
+import com.shijiangtai.m3classroom.application.port.ContentResponse;
 import com.shijiangtai.m3classroom.application.port.OcrClient;
 import com.shijiangtai.m3classroom.application.port.OcrResult;
 import com.shijiangtai.m3classroom.application.port.TeacherSpeechClassifier;
@@ -32,12 +35,17 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Component
 @ConditionalOnProperty(name = "m3.ai.base-url")
-public class PythonPerceptionHttpClient implements OcrClient, TeacherSpeechClassifier {
+public class PythonPerceptionHttpClient
+        implements OcrClient, TeacherSpeechClassifier, ContentClient {
 
     private static final String OCR_PATH = "/internal/v1/ocr";
     private static final String CLASSIFY_PATH = "/internal/v1/classroom/classify";
+    private static final String QUESTION_PATH = "/internal/v1/classroom/question";
+    private static final String ANSWER_PATH = "/internal/v1/classroom/answer";
     private static final String OCR_UNAVAILABLE = "OCR 服务不可用";
     private static final String CLASSIFY_UNAVAILABLE = "教师话语分类服务不可用";
+    private static final String CONTENT_UNAVAILABLE = "内容生成服务不可用";
+    private static final Duration CONTENT_TIMEOUT = Duration.ofSeconds(5);
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -50,6 +58,7 @@ public class PythonPerceptionHttpClient implements OcrClient, TeacherSpeechClass
         this.objectMapper = objectMapper;
         this.baseUrl = stripTrailingSlash(properties.baseUrl());
         this.httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(properties.asrConnectTimeout())
                 .build();
     }
@@ -78,6 +87,67 @@ public class PythonPerceptionHttpClient implements OcrClient, TeacherSpeechClass
             return mapClassify(response);
         } catch (RuntimeException exception) {
             throw new RuntimeException(CLASSIFY_UNAVAILABLE, exception);
+        }
+    }
+
+    @Override
+    public ContentResponse question(ContentRequest request) {
+        Map<String, Object> body = contentBody(request);
+        body.put("question_kind", "student_question");
+        body.put("max_chars", 120);
+        return contentResponse(post(
+                QUESTION_PATH, body, CONTENT_TIMEOUT, CONTENT_UNAVAILABLE));
+    }
+
+    @Override
+    public ContentResponse answer(ContentRequest request) {
+        Map<String, Object> body = contentBody(request);
+        List<String> recent = request.recentTexts();
+        body.put("question", recent.isEmpty() ? "" : recent.get(recent.size() - 1));
+        body.put("teacher_feedback", null);
+        body.put("max_chars", 180);
+        return contentResponse(post(
+                ANSWER_PATH, body, CONTENT_TIMEOUT, CONTENT_UNAVAILABLE));
+    }
+
+    private Map<String, Object> contentBody(ContentRequest request) {
+        Map<String, Object> student = new LinkedHashMap<>();
+        student.put("student_id", request.studentName());
+        student.put("name", request.studentName());
+        student.put("personality", request.personality() == null ? "" : request.personality());
+        student.put("ability", request.ability());
+        student.put("activity", 0.5);
+        student.put("question_rate", 0.5);
+        student.put("attention", 0.5);
+        student.put("discipline", 0.5);
+
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("session_id", request.sessionId());
+        context.put("task_id", request.taskId());
+        context.put("mode", request.mode());
+        context.put("topic", request.topic());
+        context.put("recent_texts", request.recentTexts());
+        context.put("screen_text", request.screenText() == null ? "" : request.screenText());
+        context.put("scenario", "");
+        context.put("student", student);
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("context", context);
+        return body;
+    }
+
+    private ContentResponse contentResponse(JsonNode response) {
+        try {
+            double confidence = response.has("confidence")
+                    && response.get("confidence").isNumber()
+                    ? response.get("confidence").asDouble() : 0.0;
+            return new ContentResponse(
+                    requiredText(response, "text"),
+                    confidence,
+                    requiredText(response, "model_version"),
+                    requiredText(response, "prompt_version"));
+        } catch (RuntimeException exception) {
+            throw new RuntimeException(CONTENT_UNAVAILABLE, exception);
         }
     }
 
@@ -115,12 +185,12 @@ public class PythonPerceptionHttpClient implements OcrClient, TeacherSpeechClass
 
     private JsonNode post(
             String path, Map<String, Object> body, Duration timeout, String unavailableMessage) {
+        String json = objectMapper.writeValueAsString(body);
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(baseUrl + path))
                 .timeout(timeout)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(
-                        objectMapper.writeValueAsString(body), StandardCharsets.UTF_8));
+                .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8));
         String serviceToken = properties.serviceToken();
         if (serviceToken != null && !serviceToken.isBlank()) {
             builder.header("X-Service-Token", serviceToken);

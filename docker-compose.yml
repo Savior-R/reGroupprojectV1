@@ -74,6 +74,18 @@ services:
       timeout: 5s
       retries: 10
 
+  ai:
+    build: ./ai
+    environment:
+      AI_MOCK: ${AI_MOCK:-true}
+      SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-dev-service-token}
+    ports: ["8001:8001"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   app:
     build: ./server
     environment:
@@ -88,11 +100,14 @@ services:
       M3_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       M3_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       M3_MINIO_BUCKET: shijiangtai
+      M3_AI_BASE_URL: http://ai:8001
+      M3_AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-dev-service-token}
     ports: ["8080:8080"]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio: { condition: service_healthy }
+      ai: { condition: service_healthy }
 
   test:
     profiles: ["test"]

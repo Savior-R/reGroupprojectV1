@@ -18,6 +18,8 @@ const props = withDefaults(
     dialogueActive?: boolean
     answerId?: string | null
     selectedStudentId?: string | null
+    macroState?: string | null
+    qaPhase?: string | null
     failed?: boolean
     ending?: boolean
   }>(),
@@ -25,6 +27,8 @@ const props = withDefaults(
     dialogueActive: false,
     answerId: null,
     selectedStudentId: null,
+    macroState: null,
+    qaPhase: null,
     failed: false,
     ending: false,
   },
@@ -44,9 +48,19 @@ const emit = defineEmits<{
 const baseDisabled = computed(
   () => props.failed || props.ending || props.status !== 'in_progress',
 )
-const studentDisabled = computed(() => baseDisabled.value || !props.selectedStudentId)
+const inQa = computed(() => props.macroState === 'qa')
+const askDisabled = computed(() => baseDisabled.value || inQa.value)
+const callOnDisabled = computed(
+  () =>
+    baseDisabled.value ||
+    !props.selectedStudentId ||
+    !inQa.value ||
+    props.qaPhase !== 'waiting_hands',
+)
+const remindDisabled = computed(() => baseDisabled.value || !props.selectedStudentId)
 const markDisabled = computed(() => baseDisabled.value || !props.answerId)
 const dialogueDisabled = computed(() => baseDisabled.value || !props.dialogueActive)
+const endQaDisabled = computed(() => baseDisabled.value || !inQa.value)
 </script>
 
 <template>
@@ -57,7 +71,7 @@ const dialogueDisabled = computed(() => baseDisabled.value || !props.dialogueAct
         type="button"
         class="classroom-controls__button"
         data-testid="ask-class"
-        :disabled="baseDisabled"
+        :disabled="askDisabled"
         @click="emit('askClass')"
       >
         向全班提问
@@ -66,7 +80,7 @@ const dialogueDisabled = computed(() => baseDisabled.value || !props.dialogueAct
         type="button"
         class="classroom-controls__button"
         data-testid="ask-student-question"
-        :disabled="baseDisabled"
+        :disabled="askDisabled"
         @click="emit('askStudentQuestion')"
       >
         让学生提问
@@ -79,7 +93,7 @@ const dialogueDisabled = computed(() => baseDisabled.value || !props.dialogueAct
         type="button"
         class="classroom-controls__button"
         data-testid="call-on"
-        :disabled="studentDisabled"
+        :disabled="callOnDisabled"
         @click="emit('callOn')"
       >
         点名
@@ -88,7 +102,7 @@ const dialogueDisabled = computed(() => baseDisabled.value || !props.dialogueAct
         type="button"
         class="classroom-controls__button"
         data-testid="remind"
-        :disabled="studentDisabled"
+        :disabled="remindDisabled"
         @click="emit('remind')"
       >
         提醒
@@ -141,7 +155,7 @@ const dialogueDisabled = computed(() => baseDisabled.value || !props.dialogueAct
         type="button"
         class="classroom-controls__button"
         data-testid="end-qa"
-        :disabled="baseDisabled"
+        :disabled="endQaDisabled"
         @click="emit('endQa')"
       >
         结束问答
