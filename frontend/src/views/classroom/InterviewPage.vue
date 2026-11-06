@@ -113,9 +113,10 @@ function isTerminal(status: SessionStatus): boolean {
   return status === 'ended' || status === 'reviewing' || status === 'submitted'
 }
 
-function addRecorder(type: StreamType, stream: MediaStream): void {
+function addRecorder(type: StreamType, stream: MediaStream, offsetBaseMs: number): void {
   const recorder = createRecorder(stream, STREAM_MIME[type])
   const uploader = new RecorderUploader(recordingsApi, sessionId.value, type, recorder, {
+    offsetBaseMs,
     onProgress: (next) => {
       progress.value = { ...progress.value, [type]: next }
     },
@@ -133,8 +134,9 @@ function prepareRecorders(): void {
   }
   // Interviews record camera + microphone only; a screen stream is never
   // acquired for this mode and must not be reported to the server.
-  addRecorder('camera', acquired.camera)
-  addRecorder('audio', acquired.audio)
+  const offsetBaseMs = Date.now()
+  addRecorder('camera', acquired.camera, offsetBaseMs)
+  addRecorder('audio', acquired.audio, offsetBaseMs)
   setRecordersActive(true)
 }
 

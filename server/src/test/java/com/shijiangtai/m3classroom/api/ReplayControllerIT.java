@@ -96,7 +96,6 @@ class ReplayControllerIT extends PostgresIntegrationTest {
     @Test
     void ownerReplayEventsAndTextsUseSnakeCase() throws Exception {
         String sessionId = createSession();
-        setStreamOffsets(sessionId);
         uploadAllStreams(sessionId);
         SessionId id = sessionId(sessionId);
         appendEvents(id);
@@ -214,7 +213,7 @@ class ReplayControllerIT extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.details.missing_streams[1]").value("screen"))
                 .andExpect(jsonPath("$.details.missing_streams[2]").value("audio"));
 
-        uploadStream(sessionId, "camera");
+        uploadStream(sessionId, "camera", 0);
 
         mockMvc.perform(asStudent(get("/api/v1/sessions/{sessionId}/replay", sessionId)))
                 .andExpect(status().isUnprocessableEntity())
@@ -317,20 +316,14 @@ class ReplayControllerIT extends PostgresIntegrationTest {
         return read(result, "$.session_id");
     }
 
-    private void setStreamOffsets(String sessionId) {
-        Session session = sessionRepository.findById(sessionId(sessionId)).orElseThrow();
-        session.putStreamOffset(StreamType.CAMERA, 1_500);
-        session.putStreamOffset(StreamType.AUDIO, 250);
-        sessionRepository.save(session);
-    }
-
     private void uploadAllStreams(String sessionId) throws Exception {
-        uploadStream(sessionId, "camera");
-        uploadStream(sessionId, "screen");
-        uploadStream(sessionId, "audio");
+        uploadStream(sessionId, "camera", 1_500);
+        uploadStream(sessionId, "screen", 0);
+        uploadStream(sessionId, "audio", 250);
     }
 
-    private void uploadStream(String sessionId, String streamType) throws Exception {
+    private void uploadStream(String sessionId, String streamType, long offsetMs)
+            throws Exception {
         MvcResult started = mockMvc.perform(asStudent(post(
                         "/api/v1/sessions/{sessionId}/recordings/{streamType}/multipart/start",
                         sessionId, streamType)))
@@ -345,8 +338,9 @@ class ReplayControllerIT extends PostgresIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"parts":[{"part_number":1,"etag":"etag-1"}],
-                                 "duration_ms":5000,"size":1024,"mime":"%s"}
-                                """.formatted(mime)))
+                                 "duration_ms":5000,"size":1024,"mime":"%s",
+                                 "offset_ms":%d}
+                                """.formatted(mime, offsetMs)))
                 .andExpect(status().isOk());
     }
 

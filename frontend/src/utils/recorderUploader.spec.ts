@@ -201,6 +201,8 @@ interface SetupOptions {
   /** Simulates a slow duration patch consuming wall-clock time. */
   advanceClockOnFix?: number
   onPut?: (attempt: number) => void
+  /** Shared recording t0; defaults to the uploader's own start (offset 0). */
+  offsetBaseMs?: number
 }
 
 function setup(options: SetupOptions = {}): Harness {
@@ -232,6 +234,7 @@ function setup(options: SetupOptions = {}): Harness {
     fetch: fetchHarness.fetch,
     now: () => now,
     fixWebmDuration,
+    offsetBaseMs: options.offsetBaseMs,
   })
   uploader.onProgress((value) => progress.push(value))
   uploader.onError((error) => errors.push(error))
@@ -306,6 +309,21 @@ describe('RecorderUploader', () => {
       totalBytes: 11.5 * MB,
       status: 'completed',
     })
+  })
+
+  it('reports the stream start offset relative to the shared recording t0', async () => {
+    const harness = setup({ offsetBaseMs: -1_000 })
+    await harness.uploader.start()
+
+    harness.recorder.emitData(blobOf(PART_SIZE, 1))
+    harness.setNow(5_000)
+    await harness.uploader.stop()
+
+    const completeBody = harness.api.completeMultipart.mock.calls[0]![2] as {
+      offset_ms: number
+    }
+    // this.startedAt = 0, t0 = -1000 => the stream started 1000 ms after t0.
+    expect(completeBody.offset_ms).toBe(1_000)
   })
 
   it('buffers dataavailable emitted before start() and uploads it', async () => {

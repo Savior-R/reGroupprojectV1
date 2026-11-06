@@ -31,8 +31,13 @@ public class RecordingRequestMapper {
                 : request.parts().stream()
                         .map(RecordingRequestMapper::toPartEtag)
                         .toList();
+        long offsetMs = request.offsetMs() == null ? 0L : request.offsetMs();
+        if (offsetMs < 0) {
+            throw new DomainException(ErrorCode.VALIDATION_ERROR, "录制偏移不能为负",
+                    Map.of("field", "offset_ms"));
+        }
         return new CompletePartCommand(
-                parts, request.durationMs(), request.size(), request.mime());
+                parts, request.durationMs(), request.size(), request.mime(), offsetMs);
     }
 
     private static PartEtag toPartEtag(PartRequest part) {
@@ -48,7 +53,7 @@ public class RecordingRequestMapper {
     }
 
     public record CompleteRequest(
-            List<PartRequest> parts, long durationMs, long size, String mime) {
+            List<PartRequest> parts, long durationMs, long size, String mime, Long offsetMs) {
     }
 
     public record PartRequest(int partNumber, String etag) {

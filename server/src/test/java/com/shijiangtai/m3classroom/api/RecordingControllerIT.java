@@ -101,7 +101,8 @@ class RecordingControllerIT extends PostgresIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"parts":[{"part_number":1,"etag":"etag-1"}],
-                                 "duration_ms":5000,"size":2048,"mime":"video/webm"}
+                                 "duration_ms":5000,"size":2048,"mime":"video/webm",
+                                 "offset_ms":1500}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.stream_type").value("camera"))
@@ -111,7 +112,7 @@ class RecordingControllerIT extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.parts_uploaded").value(1))
                 .andExpect(jsonPath("$.bytes_uploaded").value(2048))
                 .andExpect(jsonPath("$.duration_ms").value(5000))
-                .andExpect(jsonPath("$.offset_ms").value(0))
+                .andExpect(jsonPath("$.offset_ms").value(1500))
                 .andExpect(jsonPath("$.mime").value("video/webm"))
                 .andExpect(jsonPath("$.part_size").value(PART_SIZE))
                 .andExpect(jsonPath("$.streamType").doesNotExist());

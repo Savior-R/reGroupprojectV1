@@ -51,4 +51,9 @@ public record RecordingStream(
         return new RecordingStream(id, recordingId, type, uploadId, objectKey, partSize,
                 partsUploaded, bytesUploaded, durationMs, offsetMs, mime, newStatus);
     }
+
+    RecordingStream withOffset(long newOffsetMs) {
+        return new RecordingStream(id, recordingId, type, uploadId, objectKey, partSize,
+                partsUploaded, bytesUploaded, durationMs, newOffsetMs, mime, status);
+    }
 }

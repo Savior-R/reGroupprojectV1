@@ -169,6 +169,7 @@ class RecordingMutationService {
         requireUploading(stream);
         requireValidParts(command.parts());
         requireValidSize(command);
+        requireValidOffset(command);
 
         Instant now = clockProvider.now();
         try {
@@ -212,7 +213,10 @@ class RecordingMutationService {
             recording.markStreamUploaded(
                     type, session.mode(), command.parts().size(),
                     command.size(), command.durationMs(), command.mime(), now);
+            recording.updateStreamOffset(type, command.offsetMs(), now);
             recordingRepository.save(recording);
+            session.putStreamOffset(type, command.offsetMs());
+            sessionRepository.save(session);
         } catch (RuntimeException exception) {
             abortMultipartBestEffort(stream);
             markStreamFailed(session.id(), type, now);
@@ -372,6 +376,13 @@ class RecordingMutationService {
                 throw new DomainException(ErrorCode.VALIDATION_ERROR, "分片 etag 不能为空",
                         Map.of("field", "parts"));
             }
+        }
+    }
+
+    private static void requireValidOffset(CompletePartCommand command) {
+        if (command.offsetMs() < 0) {
+            throw new DomainException(ErrorCode.VALIDATION_ERROR, "录制偏移不能为负",
+                    Map.of("field", "offset_ms", "value", command.offsetMs()));
         }
     }
 

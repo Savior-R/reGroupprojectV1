@@ -89,7 +89,7 @@ class RecordingContractTest {
     void completeRequestAndPartUrlRequestReadSnakeCaseBodies() {
         RecordingRequestMapper.CompleteRequest complete = mapper.readValue("""
                 {"parts":[{"part_number":1,"etag":"etag-1"}],
-                 "duration_ms":5000,"size":1024,"mime":"video/webm"}
+                 "duration_ms":5000,"size":1024,"mime":"video/webm","offset_ms":1500}
                 """, RecordingRequestMapper.CompleteRequest.class);
 
         assertThat(complete.parts()).hasSize(1);
@@ -98,10 +98,12 @@ class RecordingContractTest {
         assertThat(complete.durationMs()).isEqualTo(5_000L);
         assertThat(complete.size()).isEqualTo(1_024L);
         assertThat(complete.mime()).isEqualTo("video/webm");
+        assertThat(complete.offsetMs()).isEqualTo(1_500L);
 
         JsonNode encoded = tree(complete);
         assertThat(encoded.propertyNames())
-                .containsExactlyInAnyOrder("parts", "duration_ms", "size", "mime");
+                .containsExactlyInAnyOrder(
+                        "parts", "duration_ms", "size", "mime", "offset_ms");
         assertThat(encoded.get("parts").get(0).propertyNames())
                 .containsExactlyInAnyOrder("part_number", "etag");
         assertThat(encoded.get("parts").get(0).get("part_number").asInt()).isEqualTo(1);
@@ -109,6 +111,15 @@ class RecordingContractTest {
         assertThat(encoded.get("duration_ms").asLong()).isEqualTo(5_000L);
         assertThat(encoded.get("size").asLong()).isEqualTo(1_024L);
         assertThat(encoded.get("mime").asString()).isEqualTo("video/webm");
+        assertThat(encoded.get("offset_ms").asLong()).isEqualTo(1_500L);
+
+        RecordingRequestMapper.CompleteRequest withoutOffset = mapper.readValue("""
+                {"parts":[{"part_number":1,"etag":"etag-1"}],
+                 "duration_ms":5000,"size":1024,"mime":"video/webm"}
+                """, RecordingRequestMapper.CompleteRequest.class);
+        assertThat(withoutOffset.offsetMs()).isNull();
+        assertThat(new RecordingRequestMapper().toCompleteCommand(withoutOffset).offsetMs())
+                .isZero();
 
         RecordingRequestMapper.PartUrlRequest partUrl = mapper.readValue(
                 "{\"part_number\":3}", RecordingRequestMapper.PartUrlRequest.class);

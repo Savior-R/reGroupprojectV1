@@ -135,6 +135,25 @@ public final class Recording {
         recomputeStatus(mode);
     }
 
+    /**
+     * Records the stream start offset relative to the attempt's t0. The offset is supplied by the
+     * browser at complete time (02 §4.3); replay uses the persisted value to align the streams.
+     */
+    public void updateStreamOffset(StreamType type, long offsetMs, Instant now) {
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(now, "now");
+        if (offsetMs < 0) {
+            throw new DomainException(ErrorCode.VALIDATION_ERROR, "录制偏移不能为负",
+                    Map.of("field", "offset_ms"));
+        }
+        RecordingStream stream = requireStream(type);
+        if (stream.offsetMs() == offsetMs) {
+            return;
+        }
+        streams.put(type, stream.withOffset(offsetMs));
+        this.updatedAt = now;
+    }
+
     public void markStreamFailed(StreamType type, Instant now) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(now, "now");

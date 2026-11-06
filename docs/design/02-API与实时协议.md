@@ -260,13 +260,14 @@ location = /_auth {
 | GET | `/api/v1/sessions/{session_id}/recordings` | `session:read` | 录像列表 |
 | POST | `/api/v1/sessions/{session_id}/recordings/{stream_type}/multipart/start` | `session:start` | 创建 MinIO multipart，返回 `upload_id` / `part_size` / `object_key` |
 | POST | `/api/v1/sessions/{session_id}/recordings/{stream_type}/multipart/part-url` | `session:start` | 获取下一段 part 预签名 PUT URL |
-| POST | `/api/v1/sessions/{session_id}/recordings/{stream_type}/multipart/complete` | `session:start` | 提交 parts、duration、size、mime |
+| POST | `/api/v1/sessions/{session_id}/recordings/{stream_type}/multipart/complete` | `session:start` | 提交 parts、duration、size、mime、offset_ms（可选，缺省 0） |
 | POST | `/api/v1/sessions/{session_id}/recordings/{stream_type}/multipart/abort` | `session:start` | 中止 multipart，清理分片 |
 | POST | `/api/v1/sessions/{session_id}/ws-ticket` | `ws:session` | WebSocket ticket |
 | POST | `/api/v1/sessions/{session_id}/perception/screen` | `session:start` | 上传屏幕截图（JPEG + `at_ms` + `change_score`）；202，Java 异步 OCR |
 
 - `stream_type`：`camera` / `screen` / `audio`。
 - 分片：MediaRecorder timeslice 5 秒，缓冲至 5 MB 上传；第一段保留，补 WebM 时长后重传 part 1 再 complete。
+- `complete` 的 `offset_ms`：该路录制开始相对本轮 t0（最早启动的录制流）的毫秒偏移，非负，缺省 0；服务端写入 `sessions.stream_offsets` 与 `recording_streams.offset_ms`，回放 manifest 原样返回。
 - 提交按模式校验 `required_streams`：自由 / 情景 camera + screen + audio；结构化面试 camera + audio；缺任一必需流返回 `RECORDING_INCOMPLETE` 并列出缺失流。
 - 回放只支持 Chrome / Edge 的 WebM。
 - 感知通道：`WS /ws/v1/sessions/{session_id}/perception?ticket=...` 只传二进制音频；控制 WS 只传命令 / 事件。

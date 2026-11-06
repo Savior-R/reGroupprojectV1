@@ -52,6 +52,8 @@ export interface CompleteMultipartBody {
   duration_ms: number
   size: number
   mime: string
+  /** Stream start relative to the attempt's t0 (earliest stream start). */
+  offset_ms: number
 }
 
 /** One presigned replay stream. */

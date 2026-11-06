@@ -127,9 +127,10 @@ function isTerminal(status: SessionStatus): boolean {
   return status === 'ended' || status === 'reviewing' || status === 'submitted'
 }
 
-function addRecorder(type: StreamType, stream: MediaStream): void {
+function addRecorder(type: StreamType, stream: MediaStream, offsetBaseMs: number): void {
   const recorder = createRecorder(stream, STREAM_MIME[type])
   const uploader = new RecorderUploader(recordingsApi, sessionId.value, type, recorder, {
+    offsetBaseMs,
     onProgress: (next) => {
       progress.value = { ...progress.value, [type]: next }
     },
@@ -145,11 +146,13 @@ function prepareRecorders(): void {
   if (!acquired) {
     throw new Error('媒体流未就绪')
   }
-  addRecorder('camera', acquired.camera)
+  // All recorders share the earliest start as t0 so per-stream offsets stay non-negative.
+  const offsetBaseMs = Date.now()
+  addRecorder('camera', acquired.camera, offsetBaseMs)
   if (acquired.screen) {
-    addRecorder('screen', acquired.screen)
+    addRecorder('screen', acquired.screen, offsetBaseMs)
   }
-  addRecorder('audio', acquired.audio)
+  addRecorder('audio', acquired.audio, offsetBaseMs)
   setRecordersActive(true)
 }
 

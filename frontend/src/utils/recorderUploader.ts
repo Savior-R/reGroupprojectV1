@@ -133,6 +133,12 @@ export interface RecorderUploaderOptions {
   maxBufferedBytes?: number
   /** Defaults to 3 (total PUT attempts per part). */
   maxPartAttempts?: number
+  /**
+   * Epoch millis of the attempt's recording t0 (the earliest stream start). The uploader
+   * reports its own start relative to this value in `complete`. Defaults to its own start,
+   * which yields offset 0.
+   */
+  offsetBaseMs?: number
   onProgress?: (progress: UploadProgress) => void
   onError?: (error: RecordingUploadError) => void
 }
@@ -154,6 +160,7 @@ export class RecorderUploader {
   private readonly fixDuration: FixWebmDuration
   private readonly maxBufferedBytes: number
   private readonly maxPartAttempts: number
+  private readonly offsetBaseMs: number
 
   private readonly progressListeners = new Set<(progress: UploadProgress) => void>()
   private readonly errorListeners = new Set<(error: RecordingUploadError) => void>()
@@ -210,6 +217,7 @@ export class RecorderUploader {
     // the first 5 s `dataavailable` blob is never dropped while the page waits
     // for `recording.ready_ack`.
     this.startedAt = this.now()
+    this.offsetBaseMs = options.offsetBaseMs ?? this.startedAt
     this.stopSignal = new Promise<void>((resolve) => {
       this.resolveStopSignal = resolve
     })
@@ -587,6 +595,7 @@ export class RecorderUploader {
       duration_ms: durationMs,
       size: this.sumPartSizes(),
       mime: this.completeMime,
+      offset_ms: Math.max(0, Math.round(this.startedAt - this.offsetBaseMs)),
     }
 
     try {
