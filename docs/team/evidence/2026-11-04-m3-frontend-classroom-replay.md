@@ -4,7 +4,7 @@
 > 计划：`docs/superpowers/plans/2026-11-04-m3-frontend-classroom-replay.md`（Task 1–8）
 > 执行人：M3 Owner（当前使用者，经用户确认）
 > 环境：Linux / WSL2，Node v22.22.1、npm 9.2.0、Vite 8.2.2、Vue 3.5.41、Vitest 5.1.0；本机无 Docker CLI / Docker Desktop / Java，无 Linux 浏览器与 Playwright 浏览器缓存；Windows Chrome 可经 WSL interop 以 headless 方式访问 WSL 内 dev server。
-> 结论：Task 1–7 的前端切片已实现，全量 Vitest **14 files / 111 tests 全部通过**，生产构建（`vue-tsc -b && vite build`）通过；**浏览器手工 smoke 被环境阻塞**，未执行完整录制 / 回看 / 提交流程，不声称通过。G2 设计冻结未关闭，G3—G8 均未标记，模块完成度保持 10%。
+> 结论：Task 1–8 的前端切片与最终审查修复已实现，全量 Vitest **15 files / 134 tests 全部通过**，生产构建（`vue-tsc -b && vite build`）通过；**浏览器手工 smoke 被环境阻塞**，未执行完整录制 / 回看 / 提交流程，不声称通过。G2 设计冻结未关闭，G3—G8 均未标记，模块完成度保持 10%。
 
 ## 1. 范围与授权
 
@@ -48,17 +48,17 @@
 
 ## 3. 验证结果（2026-11-06）
 
-### 3.1 全量单测
+### 3.1 全量单测（最终审查修复后）
 
 ```text
 npm --prefix frontend run test -- --run
 
-Test Files  14 passed (14)
-Tests       111 passed (111)
-Duration    7.00s (environment 62%, import 23%, tests 9%, transform 6%, worker 1%)
+Test Files  15 passed (15)
+Tests       134 passed (134)
+Duration    5.80s (environment 63%, import 23%, tests 11%, transform 2%, worker 1%)
 ```
 
-- 0 failed / 0 skipped；测试覆盖 `api/client`、`app/router`、`stores/auth`、`utils/wsClient`、`utils/classroomReducer`、`utils/media`、`utils/recorderUploader`、`utils/replaySync`、课堂 / 面试 / 回看 / 任务页与回放组件。
+- 0 failed / 0 skipped；测试覆盖 `api/client`、`app/router`、`stores/auth`、`utils/wsClient`、`utils/classroomReducer`、`utils/media`、`utils/recorderUploader`、`utils/replaySync`、课堂 / 面试 / 回看 / 任务页、回放组件与 `ReplayPage` 事件分页。
 - 本机 Node 为 22.22.1，jsdom 31 的 engine 建议 `^22.22.2`；仅安装期警告，不影响本次运行。
 
 ### 3.2 生产构建
@@ -106,10 +106,53 @@ VITE v8.2.2 ready in 1261 ms
 - 未修改 `docker-compose.yml`。已核实 MinIO CORS `MINIO_API_CORS_ALLOW_ORIGIN: "*"` 与公网端点 `M3_MINIO_PUBLIC_ENDPOINT: http://localhost:9000` 已在 M3C 计划 Task 3 配置。
 - 由于本机无 Docker，MinIO 是否实际暴露 `ETag` 响应头无法在本次环境运行验证；Task 4 记录的该风险仍待有 Docker 的环境确认。
 
+### 3.6 最终审查修复验证（2026-11-06 第二轮）
+
+修复范围：2 Critical + 4 Important + 5 项次要项；未改后端、契约、设计文档或依赖。
+
+| 项 | 修复 | 验证 |
+|---|---|---|
+| Critical：用户手势采集 | 课堂 / 面试页 mount 只加载 session 并渲染「开始录制 / 开始面试」门；点击后才 `acquireMedia`、创建 recorder/uploader、连接 WS，再走原有 `recording.ready` → `ready_ack` → `session.start` 流程。`in_progress` 刷新仍走 lost-recording 路径，不采集媒体。 | `ClassroomPage.spec` / `InterviewPage.spec` 新增门禁测试；RED/GREEN 见下 |
+| Critical：preparing session 泄漏 | 采集失败、浏览器不支持、屏幕选择取消、recorder 创建失败、WS ticket/连接失败、ready ack 拒绝、uploader 启动失败、`session.start` 发送失败以及 preparing 状态离开页面时，均 best-effort `cancelSession(sessionId)`（只调用一次，且 `session.start` 已发送后不再取消）；任务详情页对 `submitted` / `closed` / 不支持浏览器禁用「开始试讲」并显示原因；409 `SESSION_ACTIVE_EXISTS` 文案改为「请从任务列表取消或继续该会话；如无法处理，请联系教师」。 | 课堂/面试页 4 类取消测试 + 任务详情 3 个门禁测试 + 409 文案断言 |
+| Important：回放时间线 | 过滤 `session.time_tick` / `session.resumed` / `ping` / `pong` / `time.sync`；按 `after_seq` 继续取页，最多 20 页 / 2000 行，直到取得 >100 条有效事件或 feed 结束；仅在确实还有更多事件时显示截断提示。 | 新增 `ReplayPage.spec.ts`：tick 密集 fixture、短末页、20 页上限 3 条 |
+| Important：提交确认 | `ElMessageBox.confirm` 提示提交不可修改且删除其他未提交尝试；提交中按钮禁用；422 同时展示 `missing_streams` 与 `invalid_streams` 并刷新录制状态。 | `ReviewPage.spec` 新增确认取消、422 双列表、60 s 停滞测试 |
+| Important：离开守卫 | 录制期间注册 `beforeunload` 与 `onBeforeRouteLeave` 确认；停止 / 卸载时移除。课堂与面试页均覆盖。 | 两页各新增 unload guard 注册/移除测试 |
+| Important：submitted/closed 门禁 | 见上 tasks started guard。 | 任务详情 3 个测试 |
+| 次要项 | 回看轮询 60 s 无进展显示「录制可能已中断，请重做」；`ReplayPlayer` 在 `await master.play()` 后复查 `playing`/mounted 并增加 `disposed`；已提交会话不再显示无法复现的提交号（统一隐藏）；`ClassroomPage` 改用共享 `fetchWsTicket` / `messageOf`；清理 stale Task 7 注释。 | 对应测试 / 类型检查 / 构建 |
+
+**RED/GREEN 证据（手势门禁与取消）：**
+
+```text
+# RED：仅回退两个页面的实现到 HEAD（测试保留新断言）
+npm --prefix frontend run test -- --run \
+  src/views/classroom/ClassroomPage.spec.ts src/views/classroom/InterviewPage.spec.ts
+
+Test Files  2 failed (2)
+Tests       9 failed | 22 passed (31)
+# 失败包括：acquireMedia 在 mount 时已被调用（无门禁）、
+# cancelSession 未被调用（采集失败 / recorder 失败 / 连接失败 / 离开 preparing）
+```
+
+```text
+# GREEN：恢复实现后同一命令
+Test Files  2 passed (2)
+Tests       31 passed (31)
+```
+
+构建（最终）：
+
+```text
+npm --prefix frontend run build
+✓ 1741 modules transformed.
+✓ built in 2.46s
+# 唯一警告：index 主 chunk 833.24 kB（gzip 261.72 kB）超过 500 kB 建议阈值（既有 Element Plus 全量引入警告）
+```
+
 ## 4. 已知缺口 / 后续
 
 - `offset_ms` 生产值仍为 0（M3C 契约缺口）；播放器已按 manifest 应用非零 offset 并有单测 / 组件测试，后端补齐后前端无需修改。
-- 回放仅取 first 100 events（`after_seq=0&limit=100`），超长 session 的时间线会截断，目前只显示截断提示；游标分页未实现。
+- 回放事件的 `session.time_tick` 等控制事件由前端过滤并按 `after_seq` 分页（最多 20 页 / 2000 行）；后端 `ReplayQueryService` 的 `NON_REPLAYABLE` 排除属于跨模块契约变更，本约束下未改后端，需求已转给 M3C Owner。
+- 浏览器关闭 / 刷新时无法可靠等待 `cancelSession`（unmount 仅覆盖 SPA 导航）；preparing session 的浏览器级清理仍依赖后端 grace / attempt 上限。
 - 没有 Playwright E2E；本计划明确不含浏览器自动化，E2E 由 Score/QA Owner 后续补齐。
 - 没有完整 Element Plus 暗色主题：沉浸式深色顶栏上仍是浅色主题控件，Vite 脚手架残留 `HelloWorld.vue` / 示例资源未清理。
 - `InterviewPage` 与 `ClassroomPage` 编排逻辑重复（约 780 行）；后续应抽取 room composable。
@@ -127,6 +170,18 @@ VITE v8.2.2 ready in 1261 ms
 | `docs/team/02-进度看板.md` | 仅更新 M3B / M3C 阻塞文本并新增一条 §5 记录；G3—G8 与完成度未改 |
 | `frontend/README.md` | dev / build / test / preview 命令、dev proxy 与 `?dev_role=teacher` 身份说明 |
 | `server/README.md` | 增加前端 dev server 启动方式与代理说明（仅在需要处提及） |
+
+### 5.1.1 最终审查修复（2026-11-06 第二轮）
+
+| 文件 | 说明 |
+|---|---|
+| `frontend/src/views/classroom/ClassroomPage.vue` / `InterviewPage.vue` | 启动门、preparing cancel、录制离开守卫、共享 `fetchWsTicket` / `messageOf`、清理 stale 注释 |
+| `frontend/src/views/classroom/ClassroomPage.spec.ts` / `InterviewPage.spec.ts` | 手势门禁、取消、unload guard 测试 |
+| `frontend/src/views/replay/ReplayPage.vue` / `ReplayPage.spec.ts` | 控制事件过滤 + `after_seq` 分页 + 截断提示；新增测试文件 |
+| `frontend/src/views/replay/ReviewPage.vue` / `ReviewPage.spec.ts` | 提交确认、422 双列表 + 刷新、60 s 停滞、隐藏提交号 |
+| `frontend/src/views/task/StudentTaskDetailPage.vue` / `.spec.ts` | submitted/closed/浏览器门禁、409 文案 |
+| `frontend/src/components/replay/ReplayPlayer.vue` | `disposed` / `playing` 复查 |
+| `docs/team/evidence/2026-11-04-m3-frontend-classroom-replay.md` / `docs/team/02-进度看板.md` | 本轮证据与看板记录 |
 
 ### 5.2 Task 1–7 前端变更（相对计划基线 `37ddbb0`，共 61 个文件）
 
