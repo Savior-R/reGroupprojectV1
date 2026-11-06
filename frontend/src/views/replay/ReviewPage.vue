@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElTag } from 'element-plus'
+import { ElAlert, ElButton, ElMessageBox, ElTag } from 'element-plus'
 import ImmersiveLayout from '../../layouts/ImmersiveLayout.vue'
 import ReplayPage from './ReplayPage.vue'
 import { getRecordings, submitSession } from '../../api/replay'
-import type { SubmissionView } from '../../api/replay'
 import { getSession } from '../../api/sessions'
 import { ApiError } from '../../types/api'
 import type { RecordingStreamView, StreamType } from '../../types/recording'
@@ -23,6 +22,8 @@ import { messageOf } from '../../utils/message'
  */
 
 const POLL_INTERVAL_MS = 2_000
+/** No upload progress for this long: the recording is probably dead. */
+const STALL_TIMEOUT_MS = 60_000
 
 const REQUIRED_STREAMS: Record<SessionMode, readonly StreamType[]> = {
   free: ['camera', 'screen', 'audio'],
@@ -75,11 +76,11 @@ const initialTimeMs = computed(() => {
 
 const session = ref<SessionView | null>(null)
 const recordings = ref<RecordingStreamView[]>([])
-const submission = ref<SubmissionView | null>(null)
 const loadingSession = ref(true)
 const refreshingRecordings = ref(false)
 const submitting = ref(false)
 const submitted = ref(false)
+const uploadStalled = ref(false)
 const loadError = ref('')
 const recordingsError = ref('')
 const submitError = ref('')
@@ -87,6 +88,8 @@ const submitError = ref('')
 const replayPageRef = ref<InstanceType<typeof ReplayPage> | null>(null)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let stallTimer: ReturnType<typeof setTimeout> | null = null
+let lastProgressSignature = ''
 let disposed = false
 
 const requiredTypes = computed<readonly StreamType[]>(() =>
@@ -171,6 +174,36 @@ function stopPolling(): void {
     clearInterval(pollTimer)
     pollTimer = null
   }
+  clearStallTimer()
+}
+
+function clearStallTimer(): void {
+  if (stallTimer !== null) {
+    clearTimeout(stallTimer)
+    stallTimer = null
+  }
+}
+
+function progressSignature(rows: RecordingStreamView[]): string {
+  return rows
+    .map(
+      (row) =>
+        `${row.stream_type}:${row.status}:${row.parts_uploaded}:${row.bytes_uploaded}`,
+    )
+    .join('|')
+}
+
+/** Re-arms the dead-upload watchdog; only actual progress resets the clock. */
+function armStallTimer(): void {
+  clearStallTimer()
+  if (disposed || submitted.value) {
+    return
+  }
+  stallTimer = setTimeout(() => {
+    stallTimer = null
+    stopPolling()
+    uploadStalled.value = true
+  }, STALL_TIMEOUT_MS)
 }
 
 function startPolling(): void {
@@ -180,6 +213,7 @@ function startPolling(): void {
   pollTimer = setInterval(() => {
     void refreshRecordings()
   }, POLL_INTERVAL_MS)
+  armStallTimer()
 }
 
 async function refreshRecordings(): Promise<void> {
@@ -192,6 +226,11 @@ async function refreshRecordings(): Promise<void> {
     const rows = await getRecordings(sessionId.value)
     if (disposed) {
       return
+    }
+    const signature = progressSignature(rows)
+    if (signature !== lastProgressSignature) {
+      lastProgressSignature = signature
+      armStallTimer()
     }
     recordings.value = rows
     if (allUploaded.value || anyFailed.value) {
@@ -211,6 +250,8 @@ async function refreshRecordings(): Promise<void> {
 }
 
 async function retryRecordings(): Promise<void> {
+  uploadStalled.value = false
+  lastProgressSignature = ''
   await refreshRecordings()
   if (!allUploaded.value && !anyFailed.value && !recordingsError.value) {
     startPolling()
@@ -258,17 +299,41 @@ async function init(): Promise<void> {
   }
 }
 
+function detailStreams(details: Record<string, unknown> | undefined, key: string): string {
+  const value = details?.[key]
+  return Array.isArray(value) ? value.map(String).join('、') : ''
+}
+
 async function submit(): Promise<void> {
   if (!canSubmit.value) {
     return
   }
+  try {
+    await ElMessageBox.confirm(
+      '提交后将无法修改，且其他未提交的尝试会被删除。确认提交本次录制吗？',
+      '确认提交',
+      {
+        confirmButtonText: '确认提交',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+  if (!canSubmit.value) {
+    return
+  }
+
   submitting.value = true
   submitError.value = ''
   try {
-    submission.value = await submitSession(sessionId.value)
+    await submitSession(sessionId.value)
     if (disposed) {
       return
     }
+    // The backend exposes no submission-detail endpoint, so the id returned
+    // here is not shown; a later reload of a submitted session behaves the same.
     submitted.value = true
     stopPolling()
     if (session.value) {
@@ -282,12 +347,22 @@ async function submit(): Promise<void> {
       return
     }
     if (value instanceof ApiError) {
-      const missing = Array.isArray(value.details?.missing_streams)
-        ? (value.details.missing_streams as unknown[]).map(String).join('、')
-        : ''
-      submitError.value = missing
-        ? `${value.message}（缺少：${missing}）`
+      const missing = detailStreams(value.details, 'missing_streams')
+      const invalid = detailStreams(value.details, 'invalid_streams')
+      const reasons: string[] = []
+      if (missing) {
+        reasons.push(`缺少：${missing}`)
+      }
+      if (invalid) {
+        reasons.push(`无效：${invalid}`)
+      }
+      submitError.value = reasons.length
+        ? `${value.message}（${reasons.join('；')}）`
         : value.message
+      if (value.status === 422) {
+        // The upload states may have changed since the last poll.
+        await refreshRecordings()
+      }
     } else {
       submitError.value = messageOf(value, '提交失败，请重试。')
     }
@@ -368,6 +443,20 @@ onBeforeUnmount(() => {
         </ElAlert>
 
         <ElAlert
+          v-if="uploadStalled"
+          class="review-page__state"
+          type="warning"
+          :closable="false"
+          show-icon
+          data-testid="upload-stalled"
+        >
+          <template #title>录制可能已中断，请重做。</template>
+          <ElButton size="small" data-testid="upload-stalled-retry" @click="retryRecordings">
+            重新检查
+          </ElButton>
+        </ElAlert>
+
+        <ElAlert
           v-if="submitError"
           class="review-page__state"
           type="error"
@@ -415,9 +504,6 @@ onBeforeUnmount(() => {
           <ElTag type="success">已提交</ElTag>
           <span class="review-page__readonly-text">
             回放为只读，提交件可在课程结束前查看。
-          </span>
-          <span v-if="submission" class="review-page__submission-id">
-            提交号：{{ submission.submission_id }}
           </span>
         </div>
 
@@ -533,12 +619,6 @@ onBeforeUnmount(() => {
 
 .review-page__readonly-text {
   color: #bbf7d0;
-}
-
-.review-page__submission-id {
-  color: #94a3b8;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
 }
 
 .review-page__actions {

@@ -8,6 +8,7 @@ import { getStudentTask } from '../../api/tasks'
 import type { StudentTaskDetailView } from '../../api/tasks'
 import { createSession } from '../../api/sessions'
 import type { SessionView } from '../../types/session'
+import { isSupportedBrowser } from '../../utils/media'
 
 vi.mock('../../api/tasks', () => ({
   listStudentTasks: vi.fn(),
@@ -20,6 +21,10 @@ vi.mock('../../api/sessions', () => ({
   startSession: vi.fn(),
   endSession: vi.fn(),
   cancelSession: vi.fn(),
+}))
+
+vi.mock('../../utils/media', () => ({
+  isSupportedBrowser: vi.fn(() => true),
 }))
 
 const TASK_ID = 'task-1'
@@ -107,6 +112,7 @@ describe('StudentTaskDetailPage', () => {
   beforeEach(() => {
     vi.mocked(getStudentTask).mockReset()
     vi.mocked(createSession).mockReset()
+    vi.mocked(isSupportedBrowser).mockReturnValue(true)
   })
 
   it('renders only public task fields and navigates to classroom', async () => {
@@ -172,7 +178,55 @@ describe('StudentTaskDetailPage', () => {
     await clickStart(wrapper)
 
     expect(wrapper.text()).toContain('SESSION_ACTIVE_EXISTS')
+    expect(wrapper.text()).toContain('取消或继续')
+    expect(wrapper.text()).toContain('联系教师')
+    expect(wrapper.text()).not.toContain('刷新任务列表后重试')
     expect(wrapper.find('[data-testid="retry-start"]').exists()).toBe(true)
     expect(router.currentRoute.value.path).toBe(`/student/tasks/${TASK_ID}`)
+  })
+
+  it('disables starting a task that was already submitted', async () => {
+    vi.mocked(getStudentTask).mockResolvedValue(
+      detailView({ assignment_status: 'submitted' }),
+    )
+
+    const { wrapper } = await mountPage()
+
+    const start = wrapper.get('[data-testid="start-task-session"]')
+    expect(start.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="start-blocked"]').text()).toContain('已提交')
+
+    await start.trigger('click')
+    await flushPromises()
+    expect(createSession).not.toHaveBeenCalled()
+  })
+
+  it('disables starting a closed task', async () => {
+    vi.mocked(getStudentTask).mockResolvedValue(detailView({ status: 'closed' }))
+
+    const { wrapper } = await mountPage()
+
+    const start = wrapper.get('[data-testid="start-task-session"]')
+    expect(start.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="start-blocked"]').text()).toContain('任务已关闭')
+
+    await start.trigger('click')
+    await flushPromises()
+    expect(createSession).not.toHaveBeenCalled()
+  })
+
+  it('disables starting in an unsupported browser', async () => {
+    vi.mocked(isSupportedBrowser).mockReturnValue(false)
+    vi.mocked(getStudentTask).mockResolvedValue(detailView())
+
+    const { wrapper } = await mountPage()
+
+    const start = wrapper.get('[data-testid="start-task-session"]')
+    expect(start.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="start-blocked"]').text()).toContain('Chrome 或 Edge')
+
+    await start.trigger('click')
+    await flushPromises()
+    expect(createSession).not.toHaveBeenCalled()
   })
 })

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElAlert, ElMessageBox } from 'element-plus'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { ElAlert, ElButton, ElMessageBox } from 'element-plus'
 import ImmersiveLayout from '../../layouts/ImmersiveLayout.vue'
 import CameraPreview from '../../components/classroom/CameraPreview.vue'
 import InterviewTimer from '../../components/classroom/InterviewTimer.vue'
@@ -9,7 +9,7 @@ import QuestionPanel from '../../components/classroom/QuestionPanel.vue'
 import RecordingStatus from '../../components/classroom/RecordingStatus.vue'
 import WsStatus from '../../components/classroom/WsStatus.vue'
 import { recordingsApi } from '../../api/recordings'
-import { getSession } from '../../api/sessions'
+import { cancelSession, getSession } from '../../api/sessions'
 import { fetchWsTicket } from '../../api/wsTicket'
 import type { ClientCommandType, EventPayload } from '../../types/event'
 import type { StreamType } from '../../types/recording'
@@ -18,6 +18,7 @@ import { classroomReducer, createInitialClassroomState } from '../../utils/class
 import type { ClassroomState } from '../../utils/classroomReducer'
 import { acquireMedia, createRecorder, STREAM_MIME } from '../../utils/media'
 import type { AcquiredMedia } from '../../utils/media'
+import { messageOf } from '../../utils/message'
 import { RecorderUploader } from '../../utils/recorderUploader'
 import type { UploadProgress } from '../../utils/recorderUploader'
 import { createWsClient, WS_GRACE_MS } from '../../utils/wsClient'
@@ -26,10 +27,11 @@ import type { WsClient, WsStatus as WsConnectionStatus } from '../../utils/wsCli
 /**
  * Structured interview room (05C §6-§7, 05B §3, 09 §6.5).
  *
- * Flow: load the session, acquire camera + microphone only (the server rejects
- * a screen stream for interviews), create one recorder/uploader per stream,
- * connect the control channel and report `recording.ready` with the two
- * streams on the first snapshot. Multipart uploads start only after
+ * Flow: load the session, show an explicit start gate, then acquire camera +
+ * microphone only (the server rejects a screen stream for interviews), create
+ * one recorder/uploader per stream, connect the control channel and report
+ * `recording.ready` with the two streams on the first snapshot. Multipart
+ * uploads start only after
  * `recording.ready_ack.ok`; `session.start` follows once they are running.
  *
  * Question text, order/total and the total remaining time come exclusively
@@ -65,6 +67,11 @@ const endError = ref<string | null>(null)
 const ending = ref(false)
 /** Loaded an `in_progress` session: no local recorders exist for it. */
 const resumeLostMode = ref(false)
+/** `preparing` session loaded: wait for an explicit start click before capture. */
+const gateVisible = ref(false)
+const roomStarting = ref(false)
+/** Recorders are running: guard unload / route changes until they stop. */
+const recordersActive = ref(false)
 
 const uploaders = new Map<StreamType, RecorderUploader>()
 let ws: WsClient | null = null
@@ -73,6 +80,9 @@ let recordingLost = false
 let readySent = false
 let resumeSent = false
 let startRequested = false
+let startAttempted = false
+let sessionPreparing = false
+let cancelRequested = false
 let endCommandPending = false
 let finishStarted = false
 let endWatchdog: ReturnType<typeof setTimeout> | null = null
@@ -103,10 +113,6 @@ function isTerminal(status: SessionStatus): boolean {
   return status === 'ended' || status === 'reviewing' || status === 'submitted'
 }
 
-function messageOf(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback
-}
-
 function addRecorder(type: StreamType, stream: MediaStream): void {
   const recorder = createRecorder(stream, STREAM_MIME[type])
   const uploader = new RecorderUploader(recordingsApi, sessionId.value, type, recorder, {
@@ -129,7 +135,64 @@ function prepareRecorders(): void {
   // acquired for this mode and must not be reported to the server.
   addRecorder('camera', acquired.camera)
   addRecorder('audio', acquired.audio)
+  setRecordersActive(true)
 }
+
+function setRecordersActive(active: boolean): void {
+  if (recordersActive.value === active) {
+    return
+  }
+  recordersActive.value = active
+  if (active) {
+    window.addEventListener('beforeunload', handleBeforeUnload)
+  } else {
+    window.removeEventListener('beforeunload', handleBeforeUnload)
+  }
+}
+
+function handleBeforeUnload(event: BeforeUnloadEvent): void {
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+/**
+ * A `preparing` session that never reached `session.start` would keep blocking
+ * new attempts, so every pre-start exit path (failure, navigation, unmount)
+ * cancels it best-effort. Once `session.start` has been sent the server owns
+ * the lifecycle and cancellation would be destructive.
+ */
+function cancelPreparingSession(): void {
+  if (!sessionPreparing || startAttempted || cancelRequested) {
+    return
+  }
+  cancelRequested = true
+  const targetId = session.value?.session_id ?? sessionId.value
+  try {
+    void Promise.resolve(cancelSession(targetId)).catch(() => undefined)
+  } catch {
+    // Best effort: the page is already leaving or showing a failure.
+  }
+}
+
+onBeforeRouteLeave(async () => {
+  if (!recordersActive.value) {
+    return true
+  }
+  try {
+    await ElMessageBox.confirm(
+      '录制正在进行，离开将中断本次面试且当前录制会丢失，确定离开吗？',
+      '离开确认',
+      {
+        confirmButtonText: '离开',
+        cancelButtonText: '继续面试',
+        type: 'warning',
+      },
+    )
+    return true
+  } catch {
+    return false
+  }
+})
 
 async function startUploaders(): Promise<void> {
   const results = await Promise.allSettled(
@@ -182,6 +245,7 @@ async function beginRecordingStart(): Promise<void> {
   }
 
   if (sendCommand('session.start')) {
+    markStartAttempted()
     return
   }
 
@@ -198,9 +262,16 @@ async function beginRecordingStart(): Promise<void> {
   if (failure.value) {
     return
   }
-  if (!connected || !sendCommand('session.start')) {
-    handleRecordingFailure('无法开始面试：与面试服务的连接已断开。')
+  if (connected && sendCommand('session.start')) {
+    markStartAttempted()
+    return
   }
+  handleRecordingFailure('无法开始面试：与面试服务的连接已断开。')
+}
+
+function markStartAttempted(): void {
+  startAttempted = true
+  sessionPreparing = false
 }
 
 function handleSnapshot(): void {
@@ -249,6 +320,10 @@ function ensureFinish(): void {
 
 function handleServerEvent(event: ServerEvent): void {
   room.value = classroomReducer(room.value, event)
+  if (room.value.status !== null && room.value.status !== 'preparing') {
+    // The server owns the session now (started/terminal); never cancel it.
+    sessionPreparing = false
+  }
 
   switch (event.type) {
     case 'session.snapshot':
@@ -372,6 +447,8 @@ function handleRecordingFailure(message: string): void {
   endCommandPending = false
   clearEndWatchdog()
   settleConnectionWait(false)
+  cancelPreparingSession()
+  setRecordersActive(false)
   for (const uploader of uploaders.values()) {
     void uploader.abort()
   }
@@ -380,6 +457,7 @@ function handleRecordingFailure(message: string): void {
 }
 
 function stopAllUploaders(): Promise<boolean> {
+  setRecordersActive(false)
   if (!uploadsPromise) {
     uploadsPromise = (async () => {
       const results = await Promise.allSettled(
@@ -417,8 +495,6 @@ async function finishAfterUploads(stopPromise: Promise<boolean>): Promise<void> 
     ending.value = false
     return
   }
-  // Task 7 registers this route; until then the literal path resolves through
-  // the catch-all 404 page, which is expected for this slice.
   await router.push(reviewPath.value)
 }
 
@@ -508,41 +584,16 @@ function connectControlChannel(): void {
   void ws.connect()
 }
 
-async function init(): Promise<void> {
-  if (!sessionId.value) {
-    loadError.value = '缺少会话 ID。'
+/**
+ * Entry point from the start gate. The click is the user gesture browsers
+ * require before media capture; nothing is acquired on mount.
+ */
+async function startRoom(): Promise<void> {
+  if (!gateVisible.value || roomStarting.value || !session.value) {
     return
   }
-
-  try {
-    session.value = await getSession(sessionId.value)
-  } catch (error) {
-    loadError.value = messageOf(error, '会话加载失败，请重试。')
-    return
-  }
-  if (disposed) {
-    return
-  }
-
-  if (isTerminal(session.value.status)) {
-    // `session.ended` normally navigates here; a refresh on an already ended
-    // session goes straight to the review room (Task 7 registers it).
-    await router.replace(reviewPath.value)
-    return
-  }
-  if (session.value.status === 'failed' || session.value.status === 'cancelled') {
-    failure.value = '该会话已结束，无法继续面试。'
-    return
-  }
-
-  if (session.value.status === 'in_progress') {
-    // A page reload cannot own the recorders of the previous page. Do not
-    // capture media or create uploaders; connect and report the lost recording
-    // so the server decides the terminal state.
-    resumeLostMode.value = true
-    connectControlChannel()
-    return
-  }
+  roomStarting.value = true
+  gateVisible.value = false
 
   try {
     // Interview sessions require camera + microphone only; `acquireMedia`
@@ -550,6 +601,7 @@ async function init(): Promise<void> {
     media.value = await acquireMedia('interview')
   } catch (error) {
     failure.value = messageOf(error, '无法获取摄像头或麦克风，请检查设备权限后重试。')
+    cancelPreparingSession()
     return
   }
   if (disposed) {
@@ -571,12 +623,61 @@ async function init(): Promise<void> {
   connectControlChannel()
 }
 
+async function init(): Promise<void> {
+  if (!sessionId.value) {
+    loadError.value = '缺少会话 ID。'
+    return
+  }
+
+  try {
+    session.value = await getSession(sessionId.value)
+  } catch (error) {
+    loadError.value = messageOf(error, '会话加载失败，请重试。')
+    return
+  }
+  if (disposed) {
+    // The page was left while the session was still loading: a `preparing`
+    // session would otherwise block the next attempt.
+    if (session.value.status === 'preparing') {
+      sessionPreparing = true
+      cancelPreparingSession()
+    }
+    return
+  }
+
+  if (isTerminal(session.value.status)) {
+    // `session.ended` normally navigates here; a refresh on an already ended
+    // session goes straight to the review room.
+    await router.replace(reviewPath.value)
+    return
+  }
+  if (session.value.status === 'failed' || session.value.status === 'cancelled') {
+    failure.value = '该会话已结束，无法继续面试。'
+    return
+  }
+
+  if (session.value.status === 'in_progress') {
+    // A page reload cannot own the recorders of the previous page. Do not
+    // capture media or create uploaders; connect and report the lost recording
+    // so the server decides the terminal state.
+    resumeLostMode.value = true
+    connectControlChannel()
+    return
+  }
+
+  // `preparing`: wait for the user gesture before requesting media.
+  sessionPreparing = true
+  gateVisible.value = true
+}
+
 onMounted(() => {
   void init()
 })
 
 onBeforeUnmount(() => {
   disposed = true
+  cancelPreparingSession()
+  setRecordersActive(false)
   clearEndWatchdog()
   settleConnectionWait(false)
   ws?.close()
@@ -647,40 +748,65 @@ onBeforeUnmount(() => {
         <p class="interview-page__failure-message">{{ room.lastError.message }}</p>
       </ElAlert>
 
-      <div class="interview-page__body">
-        <section class="interview-page__stage" aria-label="面试题目">
-          <QuestionPanel :question="question" />
-          <CameraPreview :stream="media?.camera ?? null" />
-          <p v-if="ending" class="interview-page__ending" data-testid="interview-ending">
-            正在结束面试，等待录制上传完成…
-          </p>
-        </section>
-
-        <aside class="interview-page__sidebar">
-          <InterviewTimer :remaining-ms="remainingMs" />
-        </aside>
-      </div>
-
-      <footer class="interview-page__controls" role="toolbar" aria-label="面试控制">
-        <button
-          type="button"
-          class="interview-page__button"
-          data-testid="next-question"
-          :disabled="nextDisabled"
-          @click="nextQuestion"
+      <section
+        v-if="gateVisible"
+        class="interview-page__gate"
+        data-testid="interview-gate"
+      >
+        <h2 class="interview-page__gate-title">开始面试</h2>
+        <p class="interview-page__gate-text">
+          本次面试需要录制摄像头和麦克风两路媒体。点击“开始面试”后，
+          浏览器会请求摄像头与麦克风权限，请允许后进入面试。
+        </p>
+        <p class="interview-page__gate-text">
+          录制一旦开始，请勿刷新或关闭页面，否则本次录制将丢失。
+        </p>
+        <ElButton
+          type="primary"
+          data-testid="start-interview"
+          :loading="roomStarting"
+          @click="startRoom"
         >
-          下一题
-        </button>
-        <button
-          type="button"
-          class="interview-page__button interview-page__button--danger"
-          data-testid="end-interview"
-          :disabled="baseDisabled"
-          @click="endInterview"
-        >
-          {{ ending ? '结束中…' : '结束面试' }}
-        </button>
-      </footer>
+          开始面试
+        </ElButton>
+      </section>
+
+      <template v-else>
+        <div class="interview-page__body">
+          <section class="interview-page__stage" aria-label="面试题目">
+            <QuestionPanel :question="question" />
+            <CameraPreview :stream="media?.camera ?? null" />
+            <p v-if="ending" class="interview-page__ending" data-testid="interview-ending">
+              正在结束面试，等待录制上传完成…
+            </p>
+          </section>
+
+          <aside class="interview-page__sidebar">
+            <InterviewTimer :remaining-ms="remainingMs" />
+          </aside>
+        </div>
+
+        <footer class="interview-page__controls" role="toolbar" aria-label="面试控制">
+          <button
+            type="button"
+            class="interview-page__button"
+            data-testid="next-question"
+            :disabled="nextDisabled"
+            @click="nextQuestion"
+          >
+            下一题
+          </button>
+          <button
+            type="button"
+            class="interview-page__button interview-page__button--danger"
+            data-testid="end-interview"
+            :disabled="baseDisabled"
+            @click="endInterview"
+          >
+            {{ ending ? '结束中…' : '结束面试' }}
+          </button>
+        </footer>
+      </template>
     </div>
   </ImmersiveLayout>
 </template>
@@ -701,6 +827,30 @@ onBeforeUnmount(() => {
 
 .interview-page__failure-message {
   margin: 4px 0 0;
+}
+
+.interview-page__gate {
+  display: flex;
+  max-width: 600px;
+  margin: auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.86);
+}
+
+.interview-page__gate-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+.interview-page__gate-text {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.6;
 }
 
 .interview-page__body {

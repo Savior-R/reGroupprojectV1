@@ -20,6 +20,21 @@ import { messageOf } from '../../utils/message'
  */
 
 const EVENT_PAGE_SIZE = 100
+const MAX_EVENT_PAGES = 20
+const MAX_EVENT_ROWS = 2_000
+
+/**
+ * Control-plane events that carry no replay value. `session.time_tick` rows
+ * dominate persisted history (one or more per second), so filtering them is
+ * required before applying the display cap.
+ */
+const NON_REPLAYABLE_EVENT_TYPES = new Set([
+  'session.time_tick',
+  'session.resumed',
+  'ping',
+  'pong',
+  'time.sync',
+])
 
 const props = withDefaults(
   defineProps<{
@@ -41,6 +56,61 @@ const eventsError = ref('')
 const eventsTruncated = ref(false)
 let disposed = false
 
+/**
+ * Fetches the event history with `after_seq` pagination, dropping
+ * non-replayable control rows before applying the display cap. The loop stops
+ * once the feed ends, when more than `EVENT_PAGE_SIZE` meaningful events have
+ * been seen (so the truncation hint is accurate), or at the page/row bound.
+ */
+async function loadReplayEvents(
+  sessionId: string,
+): Promise<{ items: ReplayEvent[]; truncated: boolean }> {
+  const meaningful: ReplayEvent[] = []
+  let afterSeq = 0
+  let rowsFetched = 0
+  let pages = 0
+  let feedEnded = false
+
+  while (
+    meaningful.length <= EVENT_PAGE_SIZE &&
+    !feedEnded &&
+    pages < MAX_EVENT_PAGES &&
+    rowsFetched < MAX_EVENT_ROWS
+  ) {
+    const limit = Math.min(EVENT_PAGE_SIZE, MAX_EVENT_ROWS - rowsFetched)
+    const page = await getEvents(sessionId, afterSeq, limit)
+    pages += 1
+    rowsFetched += page.items.length
+
+    let nextAfterSeq = afterSeq
+    for (const item of page.items) {
+      if (item.seq > nextAfterSeq) {
+        nextAfterSeq = item.seq
+      }
+      if (!NON_REPLAYABLE_EVENT_TYPES.has(item.type)) {
+        meaningful.push(item)
+      }
+    }
+
+    // A short page is the last page. A page that does not advance the cursor
+    // would loop forever, so treat it as the end as well.
+    if (page.items.length < limit || nextAfterSeq <= afterSeq) {
+      feedEnded = true
+      break
+    }
+    afterSeq = nextAfterSeq
+  }
+
+  return {
+    items: meaningful.slice(0, EVENT_PAGE_SIZE),
+    // More meaningful events are already in hand, or the bounded scan stopped
+    // while the feed still has rows and at least one full page is shown.
+    truncated:
+      meaningful.length > EVENT_PAGE_SIZE ||
+      (!feedEnded && meaningful.length >= EVENT_PAGE_SIZE),
+  }
+}
+
 async function reload(options: { preservePosition?: boolean } = {}): Promise<void> {
   if (!props.sessionId || disposed) {
     return
@@ -53,7 +123,7 @@ async function reload(options: { preservePosition?: boolean } = {}): Promise<voi
   eventsError.value = ''
   const [manifestResult, eventsResult] = await Promise.allSettled([
     getReplay(props.sessionId),
-    getEvents(props.sessionId, 0, EVENT_PAGE_SIZE),
+    loadReplayEvents(props.sessionId),
   ])
   if (disposed) {
     return
@@ -68,7 +138,7 @@ async function reload(options: { preservePosition?: boolean } = {}): Promise<voi
 
   if (eventsResult.status === 'fulfilled') {
     events.value = eventsResult.value.items
-    eventsTruncated.value = eventsResult.value.items.length >= EVENT_PAGE_SIZE
+    eventsTruncated.value = eventsResult.value.truncated
   } else {
     eventsError.value = messageOf(eventsResult.reason, '事件加载失败。')
   }

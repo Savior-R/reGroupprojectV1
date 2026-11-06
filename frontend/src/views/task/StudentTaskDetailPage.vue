@@ -7,6 +7,7 @@ import type { AssignmentStatus, StudentTaskDetailView, TaskMode, TaskStatus } fr
 import { createSession } from '../../api/sessions'
 import type { SessionView } from '../../types/session'
 import { ApiError } from '../../types/api'
+import { isSupportedBrowser } from '../../utils/media'
 
 /**
  * Student task detail / interview pre-check (09 §4.1, 05C §9.8).
@@ -29,6 +30,27 @@ const startError = ref('')
 const startErrorCode = ref('')
 
 const isInterview = computed(() => task.value?.mode === 'interview')
+
+const browserSupported = isSupportedBrowser(navigator.userAgent)
+
+const submitted = computed(() => task.value?.assignment_status === 'submitted')
+const closed = computed(() => task.value?.status === 'closed')
+
+/** Why the start action is unavailable, or an empty string when it is allowed. */
+const startBlockedReason = computed(() => {
+  if (submitted.value) {
+    return '该任务已提交，不能再次开始。'
+  }
+  if (closed.value) {
+    return '任务已关闭，无法开始试讲。'
+  }
+  if (!browserSupported) {
+    return '当前浏览器不支持录制，请使用 Chrome 或 Edge。'
+  }
+  return ''
+})
+
+const startBlocked = computed(() => startBlockedReason.value !== '')
 
 const MODE_LABELS: Record<TaskMode, string> = {
   free: '自由试讲',
@@ -86,10 +108,6 @@ async function loadTask(): Promise<void> {
   }
 }
 
-/**
- * Task 5/6 register these session routes. Until then `router.push` resolves to
- * the catch-all 404 page; that is expected for the Task 2 slice.
- */
 function sessionPath(session: SessionView): string {
   return session.mode === 'interview'
     ? `/student/sessions/${session.session_id}/interview`
@@ -97,7 +115,7 @@ function sessionPath(session: SessionView): string {
 }
 
 async function startTask(): Promise<void> {
-  if (starting.value) {
+  if (starting.value || startBlocked.value) {
     return
   }
   starting.value = true
@@ -110,10 +128,11 @@ async function startTask(): Promise<void> {
     if (error instanceof ApiError) {
       startErrorCode.value = error.code
       // The student list/detail payload does not expose the active session id,
-      // so do not guess a resume path: surface a retryable error with the code.
+      // so do not guess a resume path. Point the student at the task list (where
+      // an active attempt can be cancelled/resumed) or the teacher.
       startError.value =
         error.code === 'SESSION_ACTIVE_EXISTS'
-          ? '已有进行中的会话，请刷新任务列表后重试。'
+          ? '已有进行中的会话。请从任务列表取消或继续该会话；如无法处理，请联系教师。'
           : error.message
     } else {
       startError.value = '创建会话失败，请重试。'
@@ -218,11 +237,23 @@ onMounted(loadTask)
           <ElButton size="small" data-testid="retry-start" @click="startTask">重试</ElButton>
         </ElAlert>
 
+        <ElAlert
+          v-if="startBlocked"
+          class="task-start-blocked"
+          type="warning"
+          :closable="false"
+          show-icon
+          data-testid="start-blocked"
+        >
+          <template #title>{{ startBlockedReason }}</template>
+        </ElAlert>
+
         <div class="task-actions">
           <ElButton
             type="primary"
             data-testid="start-task-session"
             :loading="starting"
+            :disabled="startBlocked"
             @click="startTask"
           >
             开始试讲
@@ -299,7 +330,8 @@ onMounted(loadTask)
 }
 
 .task-interview-check,
-.task-start-error {
+.task-start-error,
+.task-start-blocked {
   margin-bottom: 16px;
 }
 

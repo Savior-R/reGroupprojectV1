@@ -96,6 +96,7 @@ let refreshAttempts = 0
 let lastRefreshAt = 0
 let resumeMs: number | null = null
 let initialApplied = false
+let disposed = false
 
 /**
  * Per-manifest health tracking. The retry budget is only reset after every
@@ -162,7 +163,7 @@ function targetOf(stream: ReplayStreamView): ReplaySyncPlayer | null {
 }
 
 function startSync(): void {
-  if (syncTimer !== null) {
+  if (syncTimer !== null || disposed || !playing.value) {
     return
   }
   syncTimer = setInterval(syncOnce, SYNC_INTERVAL_MS)
@@ -222,6 +223,12 @@ async function playAll(): Promise<void> {
     await master.play()
   } catch {
     playing.value = false
+    stopSync()
+    return
+  }
+  // `play()` may resolve after the user paused or the component unmounted;
+  // never leave a sync interval running for a stopped player.
+  if (disposed || !playing.value) {
     stopSync()
     return
   }
@@ -461,6 +468,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  disposed = true
   stopSync()
   clearHealthyTimer()
   clearBackoffTimer()

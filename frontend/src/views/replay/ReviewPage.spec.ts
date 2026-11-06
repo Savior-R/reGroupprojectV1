@@ -1,13 +1,19 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { VueWrapper } from '@vue/test-utils'
+import { ElMessageBox } from 'element-plus'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { routes } from '../../app/router'
 import ReviewPage from './ReviewPage.vue'
 import { getSession } from '../../api/sessions'
 import { getEvents, getRecordings, getReplay, submitSession } from '../../api/replay'
+import { ApiError } from '../../types/api'
 import type { SessionView } from '../../types/session'
 import type { RecordingStreamView, ReplayView } from '../../types/recording'
+
+const confirmSpy = vi
+  .spyOn(ElMessageBox, 'confirm')
+  .mockResolvedValue('confirm' as never)
 
 vi.mock('../../api/sessions', () => ({
   createSession: vi.fn(),
@@ -35,6 +41,7 @@ const pauseSpy = vi
 afterAll(() => {
   playSpy.mockRestore()
   pauseSpy.mockRestore()
+  confirmSpy.mockRestore()
 })
 
 function sessionView(overrides: Partial<SessionView> = {}): SessionView {
@@ -145,6 +152,7 @@ let replayLoadCount = 0
 
 beforeEach(() => {
   vi.clearAllMocks()
+  confirmSpy.mockResolvedValue('confirm' as never)
   replayLoadCount = 0
   vi.mocked(getSession).mockReset().mockResolvedValue(sessionView())
   vi.mocked(getRecordings).mockReset()
@@ -252,7 +260,7 @@ describe('ReviewPage', () => {
     expect(wrapper.find('[data-testid="submit-session"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="redo-session"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('已提交')
-    expect(wrapper.text()).toContain('submission-1')
+    expect(wrapper.text()).not.toContain('提交号')
     expect(router.currentRoute.value.path).toBe('/student/sessions/session-1/review')
     wrapper.unmount()
   })
@@ -329,5 +337,72 @@ describe('ReviewPage', () => {
     )
     expect(wrapper.find('[data-testid="replay-load-error"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('asks for confirmation and does not submit when it is cancelled', async () => {
+    vi.mocked(getRecordings).mockResolvedValue(uploadedFreeStreams())
+    confirmSpy.mockRejectedValueOnce(new Error('cancel'))
+
+    const { wrapper } = await mountPage()
+
+    await wrapper.get('[data-testid="submit-session"]').trigger('click')
+    await flushPromises()
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1)
+    const message = String(confirmSpy.mock.calls[0]?.[0] ?? '')
+    expect(message).toContain('无法修改')
+    expect(message).toContain('其他未提交的尝试会被删除')
+    expect(submitSession).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="review-submitted"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows missing and invalid streams on 422 and refreshes recordings', async () => {
+    vi.mocked(getRecordings).mockResolvedValue(uploadedFreeStreams())
+    vi.mocked(submitSession).mockRejectedValue(
+      new ApiError({
+        code: 'RECORDING_INCOMPLETE',
+        message: '录制不完整',
+        details: {
+          missing_streams: ['screen'],
+          invalid_streams: ['audio'],
+        },
+        status: 422,
+      }),
+    )
+
+    const { wrapper } = await mountPage()
+    expect(getRecordings).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('[data-testid="submit-session"]').trigger('click')
+    await flushPromises()
+
+    const submitError = wrapper.get('[data-testid="submit-error"]').text()
+    expect(submitError).toContain('缺少：screen')
+    expect(submitError).toContain('无效：audio')
+    expect(getRecordings).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('stops polling and warns when uploads make no progress for 60 s', async () => {
+    fakeTimers()
+    let wrapper: VueWrapper | null = null
+    try {
+      vi.mocked(getRecordings).mockResolvedValue(uploadingFreeStreams())
+
+      const mounted = await mountPage()
+      wrapper = mounted.wrapper
+      expect(wrapper.find('[data-testid="upload-stalled"]').exists()).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(60_000)
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="upload-stalled"]').text()).toContain(
+        '录制可能已中断，请重做',
+      )
+    } finally {
+      wrapper?.unmount()
+      vi.useRealTimers()
+    }
   })
 })

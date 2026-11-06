@@ -4,7 +4,7 @@ import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { routes } from '../../app/router'
 import InterviewPage from './InterviewPage.vue'
-import { getSession } from '../../api/sessions'
+import { cancelSession, getSession } from '../../api/sessions'
 import { acquireMedia, createRecorder } from '../../utils/media'
 import type { ServerEvent, SessionView } from '../../types/session'
 import type { StreamType } from '../../types/recording'
@@ -210,12 +210,19 @@ function wsOptions(): {
   }
 }
 
-async function mountPage() {
+async function mountPage(options: { autoStart?: boolean } = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/student/sessions/session-1/interview')
   await router.isReady()
   const wrapper = mount(InterviewPage, { global: { plugins: [router] } })
   await flushPromises()
+  if (options.autoStart !== false) {
+    const start = wrapper.find('[data-testid="start-interview"]')
+    if (start.exists()) {
+      await start.trigger('click')
+      await flushPromises()
+    }
+  }
   return { wrapper, router }
 }
 
@@ -229,6 +236,7 @@ beforeEach(() => {
 
   currentMedia = acquiredMedia()
   vi.mocked(getSession).mockReset().mockResolvedValue(sessionView())
+  vi.mocked(cancelSession).mockReset().mockResolvedValue(undefined)
   vi.mocked(acquireMedia).mockReset().mockResolvedValue(currentMedia)
   vi.mocked(createRecorder)
     .mockReset()
@@ -583,6 +591,128 @@ describe('InterviewPage', () => {
     expect(currentMedia.stop).toHaveBeenCalled()
     for (const uploader of harness.uploaders) {
       expect(uploader.abort).not.toHaveBeenCalled()
+    }
+  })
+
+  it('waits for the start click before acquiring media, then runs the ready/start flow', async () => {
+    const { wrapper } = await mountPage({ autoStart: false })
+
+    expect(getSession).toHaveBeenCalledWith('session-1')
+    expect(acquireMedia).not.toHaveBeenCalled()
+    expect(createRecorder).not.toHaveBeenCalled()
+    expect(harness.uploaders).toHaveLength(0)
+    expect(harness.state.options).toBeNull()
+
+    const gate = wrapper.get('[data-testid="interview-gate"]')
+    expect(gate.text()).toContain('摄像头')
+    expect(gate.text()).toContain('麦克风')
+    expect(wrapper.find('[data-testid="end-interview"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="start-interview"]').trigger('click')
+    await flushPromises()
+
+    expect(acquireMedia).toHaveBeenCalledWith('interview')
+    expect(createRecorder).toHaveBeenCalledTimes(2)
+    expect(harness.state.options).toBeTruthy()
+    expect(wrapper.find('[data-testid="interview-gate"]').exists()).toBe(false)
+
+    const options = wsOptions()
+    options.onEvent(snapshotEvent('preparing'))
+    await flushPromises()
+    expect(harness.fakeWs.send).toHaveBeenCalledWith('recording.ready', {
+      streams: [
+        { stream_type: 'camera', status: 'ready' },
+        { stream_type: 'audio', status: 'ready' },
+      ],
+    })
+
+    options.onEvent(
+      serverEvent('recording.ready_ack', {
+        required_streams: ['camera', 'audio'],
+        ok: true,
+      }),
+    )
+    await flushPromises()
+    for (const uploader of harness.uploaders) {
+      expect(uploader.start).toHaveBeenCalledTimes(1)
+    }
+    expect(harness.fakeWs.send).toHaveBeenCalledWith('session.start', {})
+  })
+
+  it('cancels a preparing session when media acquisition is denied', async () => {
+    vi.mocked(acquireMedia).mockRejectedValue(new Error('用户拒绝了麦克风权限'))
+
+    const { wrapper } = await mountPage()
+
+    expect(cancelSession).toHaveBeenCalledWith('session-1')
+    expect(wrapper.get('[data-testid="interview-failure"]').text()).toContain(
+      '用户拒绝了麦克风权限',
+    )
+    expect(harness.state.options).toBeNull()
+  })
+
+  it('cancels a preparing session when the control channel cannot connect', async () => {
+    const { wrapper } = await mountPage()
+
+    wsOptions().onStatus({ status: 'failed', reason: 'connect_failed' })
+    await flushPromises()
+
+    expect(cancelSession).toHaveBeenCalledWith('session-1')
+    expect(wrapper.get('[data-testid="interview-failure"]').text()).toContain(
+      '无法连接面试服务',
+    )
+  })
+
+  it('cancels a preparing session when leaving the start gate', async () => {
+    const { wrapper } = await mountPage({ autoStart: false })
+
+    expect(acquireMedia).not.toHaveBeenCalled()
+    wrapper.unmount()
+    await flushPromises()
+
+    expect(cancelSession).toHaveBeenCalledWith('session-1')
+  })
+
+  it('does not cancel a session that is already in progress on reload', async () => {
+    vi.mocked(getSession)
+      .mockReset()
+      .mockResolvedValue(sessionView({ status: 'in_progress' }))
+
+    const { wrapper } = await mountPage()
+
+    wrapper.unmount()
+    await flushPromises()
+
+    expect(cancelSession).not.toHaveBeenCalled()
+  })
+
+  it('arms the unload guard while recorders run and removes it when they stop', async () => {
+    const addSpy = vi.spyOn(window, 'addEventListener')
+    const removeSpy = vi.spyOn(window, 'removeEventListener')
+    try {
+      const { wrapper } = await mountPage()
+      expect(addSpy.mock.calls.some(([type]) => type === 'beforeunload')).toBe(true)
+
+      const options = wsOptions()
+      options.onStatus({ status: 'connected' })
+      options.onEvent(
+        snapshotEvent('in_progress', {
+          lastSeq: 5,
+        }),
+      )
+      await flushPromises()
+
+      await wrapper.get('[data-testid="end-interview"]').trigger('click')
+      await flushPromises()
+
+      expect(removeSpy.mock.calls.some(([type]) => type === 'beforeunload')).toBe(true)
+
+      options.onEvent(serverEvent('interview.ended', {}))
+      await flushPromises()
+      wrapper.unmount()
+    } finally {
+      addSpy.mockRestore()
+      removeSpy.mockRestore()
     }
   })
 })
