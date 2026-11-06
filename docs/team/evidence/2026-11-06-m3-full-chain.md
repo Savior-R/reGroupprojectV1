@@ -106,3 +106,48 @@ INTERVIEW ACCEPTANCE PASSED
 - 真实摄像头 / 屏幕共享、Safari、性能 / 并发 NFR 未覆盖。
 - AI 镜像默认使用 Huawei 镜像源；其他环境可通过 `PYTHON_IMAGE` 构建参数替换。
 - Java AI HTTP 客户端已固定 HTTP/1.1；若未来换用支持 h2c 的服务端，可再评估。
+
+## 6. 真实 Provider 测试（AI_MOCK=false，2026-11-06）
+
+### 6.1 环境
+
+- 本地 `ai/.venv` 启动 `AI_MOCK=false` 的 FastAPI 服务（真实 DeepSeek / Paraformer / Qwen-OCR key 只从被 gitignore 的 `ai/.env` 读取，未写入仓库）。
+- 为测试临时把 `app` 的 `M3_AI_BASE_URL` 指向 `host.docker.internal:8001`；测试后恢复为 Compose 的 `http://ai:8001`（AI 容器，默认 mock）。
+- Playwright 使用完整 Chromium（`channel: 'chromium'`），`--use-file-for-fake-audio-capture=/tmp/asr_sample_48k.wav`；fixture 从 16 kHz 重采样到 48 kHz，headless shell + 16 kHz 会得到 `NO_VALID_AUDIO_ERROR`。
+
+### 6.2 结果
+
+```text
+- wait for real ASR teacher text ... ok
+- ask class and call on a student ... ok
+- receive a real LLM student answer ... ok
+- end and submit ... ok
+REAL AI FLOW PASSED
+```
+
+对话面板实际内容（节选）：
+
+- 教师 ASR：`这里是阿里巴巴语音实验室。`
+- 教师 ASR：`Hello, 我的这里是阿里巴巴语音实验室。`
+- 小明（DeepSeek `deepseek-flash`）：`老师，这句话里“我的”和“这里是”好像重复了，是不是应该说“你好，这里是阿里巴巴语音实验室”？`
+
+数据库：4 条 `session_texts`（3 条 teacher/asr + 1 条 student/llm，后者 `model_version=deepseek-flash`）；3 条屏幕帧全部 `processed`（真实 Qwen-OCR）。
+
+### 6.3 LLM 调用频率
+
+问答环节不是持续调用 LLM，而是**事件驱动**：
+
+| 事件 | LLM 调用 |
+|---|---|
+| `teacher.ask_class` / 举手 / 点名 | 无 |
+| `teacher.call_on` → 学生回答 | 1 次 `/classroom/answer` |
+| 回答后按 `question_rate * 0.5` 命中追问 | 1 次 `/classroom/question` |
+| 教师 ASR final（lecturing） | 1 次 `/classroom/classify` |
+| 教师 ASR final（dialogue 中） | 命中追问时 1 次 `/classroom/question`，否则不调用 |
+| 学生主动提问 / 追问问世 | 1 次 `/classroom/question` |
+
+没有轮询或持续对话循环；每次生成受 `ContentGenerationService` 的 2 s / 3 s 超时保护，失败回退模板。
+
+### 6.4 多轮语义提醒
+
+真实 ASR 下，教师在 `qa.dialogue` 中说话会推进多轮，但当前 05A 设计产生的是学生 **`student.follow_up`（学生再问老师）**，不是“学生回答老师的追问”。若产品要求“老师追问 → 学生回答”，需要改状态机与事件契约，不能在现有 UI 上直接实现。
