@@ -443,3 +443,41 @@ DOCKER="/mnt/c/Users/forever alone/AppData/Local/Programs/DockerDesktop/resource
 
 - 前端仍保留同一组过滤作为向后兼容兜底；后端与前端集合若未来新增控制事件需同步。
 - 真实浏览器 E2E 未覆盖事件点击 seek 在过滤后的时间线行为。
+
+## 13. MinIO CORS ETag 暴露验证（2026-11-06）
+
+### 13.1 目的
+
+前端 multipart 上传依赖从预签名 PUT 响应头读取 `ETag`；若浏览器 JS 不可见该头，part 上传会失败。此前只有结构检查，未在真实 MinIO 验证。
+
+### 13.2 方法
+
+- Compose 启动真实 MinIO（`MINIO_API_CORS_ALLOW_ORIGIN=*`，端口 9000）。
+- 在 `test` 容器内用 MinIO Java SDK 生成 `PUT` 预签名 URL，再用 Java `HttpClient` 带 `Origin: http://localhost:5173` 上传 3 字节对象。
+- 断言 HTTP 200、响应含 `ETag`，且 `Access-Control-Expose-Headers` 包含 `etag`。
+
+一次性探针测试未提交（避免在无 MinIO 的 CI 中失败）；命令与关键输出记录如下：
+
+```text
+docker compose --profile test run --rm \
+  -e M3_MINIO_ENDPOINT=http://minio:9000 \
+  -e M3_MINIO_ACCESS_KEY=minioadmin \
+  -e M3_MINIO_SECRET_KEY=minioadmin \
+  -e M3_MINIO_BUCKET=shijiangtai \
+  test gradle test --tests '*MinioCorsProbeTest' --no-daemon --console=plain
+
+BUILD SUCCESSFUL
+status=200
+access-control-allow-origin=[http://localhost:5173]
+access-control-expose-headers=[Date, Etag, Server, Connection, Accept-Ranges, ...]
+etag=["5289df737df57326fcdd22597afb1fac"]
+```
+
+### 13.3 结论
+
+真实 MinIO 的预签名 PUT 响应暴露 `Etag`，当前 `MINIO_API_CORS_ALLOW_ORIGIN=*` + MinIO 默认暴露列表满足前端读取 `ETag` 的需求；无需修改 `docker-compose.yml` 或存储代码。
+
+### 13.4 剩余缺口
+
+- 探针使用 Java `HttpClient` 校验响应头可见性，不是完整浏览器 CORS 执行；浏览器端仍应由 Playwright / 手工 smoke 最终确认。
+- 生产 MinIO 若使用不同的 CORS 配置，需要按同一方法复验。
