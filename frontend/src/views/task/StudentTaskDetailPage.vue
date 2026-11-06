@@ -128,11 +128,11 @@ async function startTask(): Promise<void> {
     if (error instanceof ApiError) {
       startErrorCode.value = error.code
       // The student list/detail payload does not expose the active session id,
-      // so do not guess a resume path. Point the student at the task list (where
-      // an active attempt can be cancelled/resumed) or the teacher.
+      // and the task list has no cancel/resume action; point the student at the
+      // teacher instead of promising an unavailable action.
       startError.value =
         error.code === 'SESSION_ACTIVE_EXISTS'
-          ? '已有进行中的会话。请从任务列表取消或继续该会话；如无法处理，请联系教师。'
+          ? '已有进行中的会话。请联系教师取消或继续该会话；也可稍后重试。'
           : error.message
     } else {
       startError.value = '创建会话失败，请重试。'
