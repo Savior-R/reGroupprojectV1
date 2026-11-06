@@ -21,22 +21,23 @@ import { acquireMedia, createRecorder, STREAM_MIME } from '../../utils/media'
 import type { AcquiredMedia } from '../../utils/media'
 import { RecorderUploader } from '../../utils/recorderUploader'
 import type { UploadProgress } from '../../utils/recorderUploader'
-import { createWsClient } from '../../utils/wsClient'
+import { createWsClient, WS_GRACE_MS } from '../../utils/wsClient'
 import type { WsClient, WsStatus as WsConnectionStatus } from '../../utils/wsClient'
 
 /**
  * Classroom room (05A §6-§8, 05B §3-§4, 09 §6.5).
  *
- * Flow: load the session, acquire camera/screen/audio, create one uploader per
- * stream, connect the control channel, report `recording.ready` on the first
- * snapshot, then send `session.start` once the backend acknowledges that every
- * required stream is ready. All classroom state comes from the reducer; the
- * components only emit commands.
+ * Flow: load the session, acquire camera/screen/audio, create one recorder and
+ * uploader per stream, connect the control channel and report `recording.ready`
+ * on the first snapshot. Multipart uploads start only after
+ * `recording.ready_ack.ok`; `session.start` follows once they are running. All
+ * classroom state comes from the reducer; the components only emit commands.
  */
 
 type Correctness = 'correct' | 'partial' | 'wrong'
 
 const STREAM_ORDER: readonly StreamType[] = ['camera', 'screen', 'audio']
+const END_CONFIRM_TIMEOUT_MS = 10_000
 
 const WS_FAILURE_MESSAGES: Record<'recording_lost' | 'reconnect_timeout' | 'connect_failed', string> = {
   recording_lost: '录制已中断，无法重连。',
@@ -58,19 +59,24 @@ const progress = ref<Partial<Record<StreamType, UploadProgress>>>({})
 const selectedStudentId = ref<string | null>(null)
 const loadError = ref('')
 const failure = ref<string | null>(null)
+const endError = ref<string | null>(null)
 const ending = ref(false)
+/** Loaded an `in_progress` session: no local recorders exist for it. */
+const resumeLostMode = ref(false)
 
 const uploaders = new Map<StreamType, RecorderUploader>()
 let ws: WsClient | null = null
+let disposed = false
 let recordingLost = false
 let readySent = false
-let mustReportRecordingLost = false
-let reportedRecordingLost = false
+let resumeSent = false
+let startRequested = false
+let endCommandPending = false
+let finishStarted = false
+let endWatchdog: ReturnType<typeof setTimeout> | null = null
 let uploadsPromise: Promise<boolean> | null = null
-let resolveEnded: (() => void) | null = null
-const ended = new Promise<void>((resolve) => {
-  resolveEnded = resolve
-})
+let connectionWaiter: ((connected: boolean) => void) | null = null
+let connectionTimeout: ReturnType<typeof setTimeout> | null = null
 
 const title = computed(() => {
   const topic = classroom.value.publicConfig.topic
@@ -102,7 +108,9 @@ const answerId = computed(() => {
 })
 
 const dialogueActive = computed(() => classroom.value.dialogue !== null)
-const controlsFailed = computed(() => failure.value !== null || loadError.value !== '')
+const controlsFailed = computed(
+  () => failure.value !== null || loadError.value !== '' || resumeLostMode.value,
+)
 
 function isTerminal(status: SessionStatus): boolean {
   return status === 'ended' || status === 'reviewing' || status === 'submitted'
@@ -130,10 +138,6 @@ function addRecorder(type: StreamType, stream: MediaStream): void {
     },
   })
   uploaders.set(type, uploader)
-  progress.value = {
-    ...progress.value,
-    [type]: { uploadedBytes: 0, totalBytes: 0, status: 'uploading' },
-  }
 }
 
 function prepareRecorders(): void {
@@ -161,17 +165,43 @@ async function startUploaders(): Promise<void> {
 }
 
 function streamStatuses(): Array<{ stream_type: StreamType; status: 'ready' | 'unavailable' }> {
+  // Recorders are created (and already recording) before `recording.ready`;
+  // uploaders only start after the backend acknowledges the stream report.
   return STREAM_ORDER.map((type) => ({
     stream_type: type,
-    status:
-      uploaders.has(type) && progress.value[type]?.status === 'uploading'
-        ? 'ready'
-        : 'unavailable',
+    status: uploaders.has(type) ? 'ready' : 'unavailable',
   }))
 }
 
 function sendCommand(type: ClientCommandType, payload: EventPayload = {}): boolean {
+  if (classroom.value.lastError) {
+    classroom.value = { ...classroom.value, lastError: null }
+  }
   return ws?.send(type, payload) ?? false
+}
+
+async function beginRecordingStart(): Promise<void> {
+  if (startRequested) {
+    return
+  }
+  startRequested = true
+  try {
+    await startUploaders()
+  } catch (error) {
+    handleRecordingFailure(messageOf(error, '录制启动失败，请检查设备后重试。'))
+    return
+  }
+  if (disposed) {
+    for (const uploader of uploaders.values()) {
+      void uploader.abort()
+    }
+    media.value?.stop()
+    return
+  }
+  if (failure.value) {
+    return
+  }
+  sendCommand('session.start')
 }
 
 function handleSnapshot(): void {
@@ -182,10 +212,40 @@ function handleSnapshot(): void {
   sendCommand('recording.ready', { streams: streamStatuses() })
 }
 
-function resolveSessionEnded(): void {
-  const resolve = resolveEnded
-  resolveEnded = null
-  resolve?.()
+function clearEndWatchdog(): void {
+  if (endWatchdog !== null) {
+    clearTimeout(endWatchdog)
+    endWatchdog = null
+  }
+}
+
+function armEndWatchdog(): void {
+  clearEndWatchdog()
+  endWatchdog = setTimeout(() => {
+    endWatchdog = null
+    if (disposed || finishStarted) {
+      return
+    }
+    endCommandPending = false
+    endError.value =
+      '结束试讲超时：服务器未确认结束，录制已停止并继续上传，请检查网络后重试。'
+    ending.value = false
+    media.value?.stop()
+  }, END_CONFIRM_TIMEOUT_MS)
+}
+
+/** Starts the single upload-and-navigate finish flow once `session.ended` arrives. */
+function ensureFinish(): void {
+  if (finishStarted) {
+    return
+  }
+  finishStarted = true
+  clearEndWatchdog()
+  settleConnectionWait(false)
+  endCommandPending = false
+  endError.value = null
+  ending.value = true
+  void finishAfterUploads(stopAllUploaders())
 }
 
 function handleServerEvent(event: ServerEvent): void {
@@ -198,25 +258,42 @@ function handleServerEvent(event: ServerEvent): void {
 
     case 'recording.ready_ack':
       if (event.payload.ok === true) {
-        sendCommand('session.start')
+        void beginRecordingStart()
       } else {
         handleRecordingFailure('录制流未全部就绪，无法开始试讲。')
       }
       return
 
     case 'session.ended':
-      resolveSessionEnded()
       ws?.close()
-      if (!ending.value) {
-        ending.value = true
-        void finishEnding()
-      }
+      ensureFinish()
       return
 
     case 'session.failed': {
+      // A failed session is terminal; release the end flow as well so an
+      // in-flight “结束试讲” cannot wait forever.
+      endCommandPending = false
+      clearEndWatchdog()
       const code =
         typeof event.payload.error_code === 'string' ? `（${event.payload.error_code}）` : ''
       handleRecordingFailure(`会话失败${code}，本次试讲无法继续。`)
+      return
+    }
+
+    case 'error': {
+      // The reducer stores the server error for the visible banner. While an
+      // end command is pending, the same error terminates the end flow so the
+      // page cannot stay stuck on “结束中…”.
+      if (endCommandPending) {
+        endCommandPending = false
+        clearEndWatchdog()
+        const code = typeof event.payload.code === 'string' ? event.payload.code : 'ERROR'
+        const message =
+          typeof event.payload.message === 'string' ? event.payload.message : '指令执行失败'
+        endError.value = `结束试讲失败（${code}）：${message}`
+        ending.value = false
+        media.value?.stop()
+      }
       return
     }
 
@@ -224,24 +301,59 @@ function handleServerEvent(event: ServerEvent): void {
   }
 }
 
+function settleConnectionWait(connected: boolean): void {
+  if (connectionTimeout !== null) {
+    clearTimeout(connectionTimeout)
+    connectionTimeout = null
+  }
+  const waiter = connectionWaiter
+  connectionWaiter = null
+  waiter?.(connected)
+}
+
+/**
+ * Resolves once the control channel can send commands, bounded by the 30 s
+ * reconnect grace. Returns immediately when already connected or failed.
+ */
+function waitForConnection(timeoutMs: number): Promise<boolean> {
+  const current = wsStatus.value?.status
+  if (current === 'connected') {
+    return Promise.resolve(true)
+  }
+  if (current === 'failed') {
+    return Promise.resolve(false)
+  }
+  settleConnectionWait(false)
+  return new Promise<boolean>((resolve) => {
+    connectionWaiter = resolve
+    connectionTimeout = setTimeout(() => {
+      connectionWaiter = null
+      connectionTimeout = null
+      resolve(false)
+    }, timeoutMs)
+  })
+}
+
 function handleConnectionStatus(status: WsConnectionStatus): void {
   wsStatus.value = status
   if (status.status === 'failed') {
+    settleConnectionWait(false)
     handleRecordingFailure(WS_FAILURE_MESSAGES[status.reason])
+    return
+  }
+  if (status.status !== 'connected') {
     return
   }
   // A fresh page load cannot own the previous page's recorders: report the
   // recording as lost so the server fails the session instead of accepting a
   // half-resumed session (05A §8, brief: refresh => recording_state=lost).
-  if (
-    status.status === 'connected' &&
-    mustReportRecordingLost &&
-    !reportedRecordingLost
-  ) {
-    reportedRecordingLost = true
-    recordingLost = true
+  if (resumeLostMode.value && !resumeSent) {
+    resumeSent = true
     ws?.resume()
   }
+  // Resolve after the ws client has sent its own `session.resume` for a
+  // reconnect, so an end command is never ordered before it.
+  queueMicrotask(() => settleConnectionWait(true))
 }
 
 function handleRecordingFailure(message: string): void {
@@ -251,6 +363,9 @@ function handleRecordingFailure(message: string): void {
   failure.value = message
   recordingLost = true
   ending.value = false
+  endCommandPending = false
+  clearEndWatchdog()
+  settleConnectionWait(false)
   for (const uploader of uploaders.values()) {
     void uploader.abort()
   }
@@ -268,9 +383,9 @@ function stopAllUploaders(): Promise<boolean> {
         (result): result is PromiseRejectedResult => result.status === 'rejected',
       )
       if (rejected) {
-        if (!failure.value) {
-          failure.value = messageOf(rejected.reason, '录制上传失败，请重试。')
-        }
+        // Same cleanup as a live recording failure: abort the remaining
+        // uploads, stop the tracks and close the control channel.
+        handleRecordingFailure(messageOf(rejected.reason, '录制上传失败，请重试。'))
         return false
       }
       return true
@@ -281,12 +396,17 @@ function stopAllUploaders(): Promise<boolean> {
 
 async function finishAfterUploads(stopPromise: Promise<boolean>): Promise<void> {
   const uploaded = await stopPromise
+  if (disposed) {
+    return
+  }
   if (!uploaded) {
+    if (!failure.value) {
+      media.value?.stop()
+    }
     ending.value = false
     return
   }
   media.value?.stop()
-  await ended
   if (failure.value) {
     ending.value = false
     return
@@ -296,31 +416,48 @@ async function finishAfterUploads(stopPromise: Promise<boolean>): Promise<void> 
   await router.push(reviewPath.value)
 }
 
-function finishEnding(): void {
-  void finishAfterUploads(stopAllUploaders())
-}
-
 async function endSession(): Promise<void> {
   if (ending.value || failure.value || classroom.value.status !== 'in_progress') {
     return
   }
   ending.value = true
+  endError.value = null
 
   // Stop the recorders first, then ask the server to end; the final parts keep
   // uploading over REST while the control channel delivers `session.ended`.
-  const stopPromise = stopAllUploaders()
-  const sent = sendCommand('teacher.end_session')
-  if (!sent) {
-    failure.value = '连接已断开，无法结束试讲。'
-    recordingLost = true
-    for (const uploader of uploaders.values()) {
-      void uploader.abort()
-    }
-    media.value?.stop()
+  stopAllUploaders()
+
+  // A reconnect may be in progress: wait inside the 30 s grace instead of
+  // aborting the recording data. The uploads keep running meanwhile.
+  const connected = await waitForConnection(WS_GRACE_MS)
+  if (disposed) {
+    return
+  }
+  if (finishStarted || classroom.value.status !== 'in_progress') {
+    // `session.ended` already arrived (for example a server timeout) and the
+    // finish flow owns the remaining work.
+    return
+  }
+  if (failure.value) {
     ending.value = false
     return
   }
-  void finishAfterUploads(stopPromise)
+  if (!connected) {
+    endError.value =
+      '无法连接课堂服务，结束指令未发送；录制已停止并继续上传，请恢复网络后重试。'
+    ending.value = false
+    media.value?.stop()
+    return
+  }
+
+  if (!sendCommand('teacher.end_session')) {
+    endError.value = '结束指令发送失败；录制已停止并继续上传，请重试。'
+    ending.value = false
+    media.value?.stop()
+    return
+  }
+  endCommandPending = true
+  armEndWatchdog()
 }
 
 function selectStudent(studentId: string): void {
@@ -382,7 +519,7 @@ async function confirmExit(): Promise<void> {
   if (ending.value) {
     return
   }
-  if (failure.value || classroom.value.status !== 'in_progress') {
+  if (failure.value || endError.value || classroom.value.status !== 'in_progress') {
     await router.push('/student/tasks')
     return
   }
@@ -402,6 +539,18 @@ function handleBack(): void {
   void confirmExit()
 }
 
+function connectControlChannel(): void {
+  ws = createWsClient({
+    sessionId: sessionId.value,
+    ticketProvider: fetchTicket,
+    onEvent: handleServerEvent,
+    onStatus: handleConnectionStatus,
+    recordingState: () =>
+      recordingLost || resumeLostMode.value ? 'lost' : 'active',
+  })
+  void ws.connect()
+}
+
 async function init(): Promise<void> {
   if (!sessionId.value) {
     loadError.value = '缺少会话 ID。'
@@ -412,6 +561,9 @@ async function init(): Promise<void> {
     session.value = await getSession(sessionId.value)
   } catch (error) {
     loadError.value = messageOf(error, '会话加载失败，请重试。')
+    return
+  }
+  if (disposed) {
     return
   }
 
@@ -426,9 +578,14 @@ async function init(): Promise<void> {
     return
   }
 
-  // An `in_progress` session loaded from disk means this page did not record
-  // its beginning; the control channel must report the recording as lost.
-  mustReportRecordingLost = session.value.status === 'in_progress'
+  if (session.value.status === 'in_progress') {
+    // A page reload cannot own the recorders of the previous page. Do not
+    // capture media or create uploaders; connect and report the lost recording
+    // so the server decides the terminal state.
+    resumeLostMode.value = true
+    connectControlChannel()
+    return
+  }
 
   try {
     media.value = await acquireMedia(session.value.mode)
@@ -439,26 +596,23 @@ async function init(): Promise<void> {
     )
     return
   }
+  if (disposed) {
+    media.value?.stop()
+    media.value = null
+    return
+  }
 
   try {
     prepareRecorders()
-    await startUploaders()
   } catch (error) {
     handleRecordingFailure(messageOf(error, '录制启动失败，请检查设备后重试。'))
     return
   }
-  if (failure.value) {
+  if (disposed || failure.value) {
     return
   }
 
-  ws = createWsClient({
-    sessionId: sessionId.value,
-    ticketProvider: fetchTicket,
-    onEvent: handleServerEvent,
-    onStatus: handleConnectionStatus,
-    recordingState: () => (recordingLost ? 'lost' : 'active'),
-  })
-  void ws.connect()
+  connectControlChannel()
 }
 
 onMounted(() => {
@@ -466,6 +620,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  disposed = true
+  clearEndWatchdog()
+  settleConnectionWait(false)
   ws?.close()
   media.value?.stop()
   for (const uploader of uploaders.values()) {
@@ -508,6 +665,30 @@ onBeforeUnmount(() => {
       >
         <template #title>录制或会话失败</template>
         <p class="classroom-page__failure-message">{{ failure }}</p>
+      </ElAlert>
+
+      <ElAlert
+        v-if="endError"
+        class="classroom-page__alert"
+        type="warning"
+        :closable="false"
+        show-icon
+        data-testid="classroom-end-error"
+      >
+        <template #title>结束试讲未完成</template>
+        <p class="classroom-page__failure-message">{{ endError }}</p>
+      </ElAlert>
+
+      <ElAlert
+        v-if="classroom.lastError && !endError"
+        class="classroom-page__alert"
+        type="error"
+        :closable="false"
+        show-icon
+        data-testid="classroom-command-error"
+      >
+        <template #title>指令失败（{{ classroom.lastError.code }}）</template>
+        <p class="classroom-page__failure-message">{{ classroom.lastError.message }}</p>
       </ElAlert>
 
       <div class="classroom-page__body">

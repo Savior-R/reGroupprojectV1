@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { routes } from '../../app/router'
 import ClassroomPage from './ClassroomPage.vue'
@@ -38,6 +39,7 @@ const harness = vi.hoisted(() => {
 })
 
 vi.mock('../../utils/wsClient', () => ({
+  WS_GRACE_MS: 30_000,
   createWsClient: vi.fn((options: unknown) => {
     harness.state.options = options
     return harness.fakeWs
@@ -85,6 +87,13 @@ vi.mock('../../api/sessions', () => ({
 vi.mock('../../api/recordings', () => ({
   recordingsApi: {},
 }))
+
+// jsdom does not implement HTMLMediaElement.play; stub it so the stream
+// attachment code does not print "Not implemented" warnings.
+const playSpy = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+afterAll(() => {
+  playSpy.mockRestore()
+})
 
 interface FakeMedia {
   camera: MediaStream
@@ -209,7 +218,7 @@ beforeEach(() => {
 })
 
 describe('ClassroomPage', () => {
-  it('sends recording.ready then session.start and renders the snapshot', async () => {
+  it('sends recording.ready once, starts uploaders only after the ack, then session.start', async () => {
     const { wrapper } = await mountPage()
 
     expect(getSession).toHaveBeenCalledWith('session-1')
@@ -220,7 +229,7 @@ describe('ClassroomPage', () => {
       'audio',
     ])
     for (const uploader of harness.uploaders) {
-      expect(uploader.start).toHaveBeenCalledTimes(1)
+      expect(uploader.start).not.toHaveBeenCalled()
     }
     expect(harness.state.options).toBeTruthy()
 
@@ -228,15 +237,25 @@ describe('ClassroomPage', () => {
       onEvent: (event: ServerEvent) => void
     }
     options.onEvent(snapshotEvent('preparing'))
+    // A duplicate snapshot (reconnect) must not re-report stream readiness.
+    options.onEvent(snapshotEvent('preparing'))
     await flushPromises()
 
-    expect(harness.fakeWs.send).toHaveBeenCalledWith('recording.ready', {
+    const readyCalls = harness.fakeWs.send.mock.calls.filter(
+      ([type]) => type === 'recording.ready',
+    )
+    expect(readyCalls).toHaveLength(1)
+    expect(readyCalls[0]?.[1]).toEqual({
       streams: [
         { stream_type: 'camera', status: 'ready' },
         { stream_type: 'screen', status: 'ready' },
         { stream_type: 'audio', status: 'ready' },
       ],
     })
+    expect(harness.fakeWs.send).not.toHaveBeenCalledWith('session.start', {})
+    for (const uploader of harness.uploaders) {
+      expect(uploader.start).not.toHaveBeenCalled()
+    }
     expect(wrapper.text()).toContain('小明')
     expect(wrapper.text()).toContain('小红')
     expect(wrapper.text()).toContain('向全班提问')
@@ -249,6 +268,9 @@ describe('ClassroomPage', () => {
     )
     await flushPromises()
 
+    for (const uploader of harness.uploaders) {
+      expect(uploader.start).toHaveBeenCalledTimes(1)
+    }
     expect(harness.fakeWs.send).toHaveBeenCalledWith('session.start', {})
   })
 
@@ -256,8 +278,10 @@ describe('ClassroomPage', () => {
     const { wrapper, router } = await mountPage()
 
     const options = harness.state.options as {
+      onStatus: (status: unknown) => void
       onEvent: (event: ServerEvent) => void
     }
+    options.onStatus({ status: 'connected' })
     options.onEvent(snapshotEvent('in_progress', 5))
     await flushPromises()
 
@@ -285,20 +309,175 @@ describe('ClassroomPage', () => {
     expect(currentMedia.stop).toHaveBeenCalled()
   })
 
-  it('reports a lost recording when the page loads an in-progress session', async () => {
-    vi.mocked(getSession)
-      .mockReset()
-      .mockResolvedValue(sessionView({ status: 'in_progress' }))
+  it('does not start the session when multipart upload start fails', async () => {
+    const { wrapper } = await mountPage()
 
+    harness.uploaders[0]!.start.mockRejectedValue(new Error('无法开始分片上传'))
+
+    const options = harness.state.options as {
+      onEvent: (event: ServerEvent) => void
+    }
+    options.onEvent(snapshotEvent('preparing'))
+    await flushPromises()
+    options.onEvent(
+      serverEvent('recording.ready_ack', {
+        required_streams: ['camera', 'screen', 'audio'],
+        ok: true,
+      }),
+    )
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('无法开始分片上传')
+    expect(harness.fakeWs.send).not.toHaveBeenCalledWith('session.start', {})
+    for (const uploader of harness.uploaders) {
+      expect(uploader.abort).toHaveBeenCalled()
+    }
+  })
+
+  it('waits for a reconnecting control channel before sending the end command', async () => {
     const { wrapper } = await mountPage()
 
     const options = harness.state.options as {
       onStatus: (status: unknown) => void
       onEvent: (event: ServerEvent) => void
     }
-    options.onStatus({ status: 'connected' })
+    options.onEvent(snapshotEvent('in_progress', 10))
+    options.onStatus({ status: 'reconnecting', secondsLeft: 17 })
+    await flushPromises()
 
+    await wrapper.get('[data-testid="end-session"]').trigger('click')
+    await flushPromises()
+
+    expect(harness.fakeWs.send).not.toHaveBeenCalledWith('teacher.end_session', {})
+    for (const uploader of harness.uploaders) {
+      expect(uploader.stop).toHaveBeenCalledTimes(1)
+      expect(uploader.abort).not.toHaveBeenCalled()
+    }
+
+    options.onStatus({ status: 'connected' })
+    await flushPromises()
+
+    expect(harness.fakeWs.send).toHaveBeenCalledWith('teacher.end_session', {})
+  })
+
+  it('keeps the page with an error when the end command is rejected', async () => {
+    const { wrapper, router } = await mountPage()
+
+    const options = harness.state.options as {
+      onStatus: (status: unknown) => void
+      onEvent: (event: ServerEvent) => void
+    }
+    options.onStatus({ status: 'connected' })
+    options.onEvent(snapshotEvent('in_progress', 6))
+    await flushPromises()
+
+    await wrapper.get('[data-testid="end-session"]').trigger('click')
+    await flushPromises()
+    expect(harness.fakeWs.send).toHaveBeenCalledWith('teacher.end_session', {})
+
+    options.onEvent(
+      serverEvent('error', {
+        code: 'SESSION_STATE_INVALID',
+        message: '当前状态不允许该操作',
+        command_id: 'cmd-1',
+      }),
+    )
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('结束试讲失败')
+    expect(wrapper.text()).toContain('当前状态不允许该操作')
+    expect(router.currentRoute.value.path).toBe(
+      '/student/sessions/session-1/classroom',
+    )
+    expect(wrapper.find('[data-testid="classroom-ending"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-testid="end-session"]').attributes('disabled'),
+    ).toBeUndefined()
+    expect(currentMedia.stop).toHaveBeenCalled()
+    for (const uploader of harness.uploaders) {
+      expect(uploader.abort).not.toHaveBeenCalled()
+    }
+  })
+
+  it('times out waiting for session.ended without getting stuck', async () => {
+    const { wrapper, router } = await mountPage()
+
+    const options = harness.state.options as {
+      onStatus: (status: unknown) => void
+      onEvent: (event: ServerEvent) => void
+    }
+    options.onStatus({ status: 'connected' })
+    options.onEvent(snapshotEvent('in_progress', 8))
+    await flushPromises()
+
+    vi.useFakeTimers()
+    try {
+      await wrapper.get('[data-testid="end-session"]').trigger('click')
+      await vi.advanceTimersByTimeAsync(10_000)
+      await nextTick()
+    } finally {
+      vi.useRealTimers()
+    }
+
+    expect(wrapper.text()).toContain('结束试讲超时')
+    expect(router.currentRoute.value.path).toBe(
+      '/student/sessions/session-1/classroom',
+    )
+    expect(wrapper.find('[data-testid="classroom-ending"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-testid="end-session"]').attributes('disabled'),
+    ).toBeUndefined()
+    expect(currentMedia.stop).toHaveBeenCalled()
+    for (const uploader of harness.uploaders) {
+      expect(uploader.abort).not.toHaveBeenCalled()
+    }
+  })
+
+  it('keeps the page when an upload fails during the end flow', async () => {
+    const { wrapper, router } = await mountPage()
+
+    const options = harness.state.options as {
+      onStatus: (status: unknown) => void
+      onEvent: (event: ServerEvent) => void
+    }
+    options.onStatus({ status: 'connected' })
+    options.onEvent(snapshotEvent('in_progress', 9))
+    await flushPromises()
+
+    harness.uploaders[0]!.stop.mockRejectedValue(new Error('分片上传失败'))
+    await wrapper.get('[data-testid="end-session"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('分片上传失败')
+    expect(router.currentRoute.value.path).toBe(
+      '/student/sessions/session-1/classroom',
+    )
+    expect(wrapper.find('[data-testid="classroom-ending"]').exists()).toBe(false)
+    expect(currentMedia.stop).toHaveBeenCalled()
+  })
+
+  it('reports a lost recording on reload without capturing media or uploaders', async () => {
+    vi.mocked(getSession)
+      .mockReset()
+      .mockResolvedValue(sessionView({ status: 'in_progress' }))
+
+    const { wrapper } = await mountPage()
+
+    expect(acquireMedia).not.toHaveBeenCalled()
+    expect(createRecorder).not.toHaveBeenCalled()
+    expect(harness.uploaders).toHaveLength(0)
+
+    const options = harness.state.options as {
+      recordingState: () => 'active' | 'lost'
+      onStatus: (status: unknown) => void
+      onEvent: (event: ServerEvent) => void
+    }
+    expect(options.recordingState()).toBe('lost')
+    expect(harness.fakeWs.resume).not.toHaveBeenCalled()
+
+    options.onStatus({ status: 'connected' })
     expect(harness.fakeWs.resume).toHaveBeenCalledTimes(1)
+    expect(harness.fakeWs.send).not.toHaveBeenCalledWith('recording.ready', expect.anything())
     expect(harness.fakeWs.send).not.toHaveBeenCalledWith('session.start', {})
 
     options.onEvent(
@@ -310,7 +489,7 @@ describe('ClassroomPage', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('会话失败')
-    expect(currentMedia.stop).toHaveBeenCalled()
+    expect(harness.fakeWs.close).toHaveBeenCalled()
   })
 
   it('shows a failure state when a track ends', async () => {
