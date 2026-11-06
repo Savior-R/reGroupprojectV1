@@ -375,6 +375,7 @@ DOCKER="/mnt/c/Users/forever alone/AppData/Local/Programs/DockerDesktop/resource
 - 无 live MinIO 保留期 smoke：对象优先删除路径由 `RecordingLifecycleServiceTest` 使用内存存储覆盖；`RetentionCandidateQueryIT` 走真实 PostgreSQL，但不触碰 MinIO。
 - 调度器在 `test` profile 不启动（按设计），因此全量套件不验证后台线程；调度器行为由直接实例化的 `RecordingRetentionSchedulerTest` 覆盖。
 - 未单独增加 `RecordingRetentionService.cleanup` 的端到端 PostgreSQL IT；最风险的 submit ↔ 清理交错已由 `RecordingConcurrencyIT` 确定性覆盖，候选查询与生命周期删除分别有 IT / 单测。
+- 残余风险：若清理已删除部分对象、后续对象删除失败，事务会回滚并保留行，但已删除对象无法恢复；会话仍可被提交，回放可能缺流。该窗口属对象存储部分故障，当前记录为残余风险；彻底修复需在失败时把 recording / stream 标记 failed 或增加对象级补偿。
 
 ### 10.5 最终审查修复
 
