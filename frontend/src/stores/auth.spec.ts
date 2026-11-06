@@ -9,12 +9,14 @@ const STUDENT_ID = '00000000-0000-0000-0000-000000000020'
 describe('authStore', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    localStorage.clear()
     window.history.replaceState({}, '', '/')
     setActivePinia(createPinia())
   })
 
   afterEach(() => {
     sessionStorage.clear()
+    localStorage.clear()
     window.history.replaceState({}, '', '/')
   })
 
@@ -36,6 +38,7 @@ describe('authStore', () => {
     expect(auth.accountType).toBe('TEACHER')
     expect(auth.role).toBe('teacher')
     expect(sessionStorage.getItem(DEV_IDENTITY_STORAGE_KEY)).toContain('teacher')
+    expect(localStorage.length).toBe(0)
 
     setActivePinia(createPinia())
     const reloaded = useAuthStore()

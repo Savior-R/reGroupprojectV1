@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { AxiosError } from 'axios'
+import { AxiosError, CanceledError } from 'axios'
 import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import { ApiError, apiClient } from './client'
 import { useAuthStore } from '../stores/auth'
@@ -117,6 +117,19 @@ describe('apiClient', () => {
       expect(apiError.status).toBe(status)
     },
   )
+
+  it('maps a cancelled request to ApiError with ABORTED', async () => {
+    const adapter: AxiosAdapter = async () => {
+      throw new CanceledError('请求已取消')
+    }
+    const error = await apiClient
+      .get('/sessions', { adapter })
+      .catch((reason: unknown) => reason)
+
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).code).toBe('ABORTED')
+    expect((error as ApiError).status).toBe(0)
+  })
 
   it('maps a network failure to ApiError', async () => {
     const adapter: AxiosAdapter = async (config) => {

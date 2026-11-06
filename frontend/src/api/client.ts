@@ -28,6 +28,14 @@ function toApiError(error: unknown): ApiError {
     return error
   }
 
+  if (axios.isCancel(error)) {
+    return new ApiError({
+      code: 'ABORTED',
+      message: error instanceof Error ? error.message : '请求已取消',
+      status: 0,
+    })
+  }
+
   if (axios.isAxiosError(error)) {
     const response = error.response
     if (response) {
