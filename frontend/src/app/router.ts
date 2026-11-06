@@ -6,7 +6,7 @@ import type { RouteRecordRaw } from 'vue-router'
  *
  * Task 1 added the root redirect and the shared error pages; Task 2 adds the
  * student task list/detail routes. Tasks 5/6 add the classroom and interview
- * routes; Task 7 appends the review route.
+ * routes; Task 7 adds the review/replay route.
  */
 
 export const routes: RouteRecordRaw[] = [
@@ -33,6 +33,11 @@ export const routes: RouteRecordRaw[] = [
     path: '/student/sessions/:sessionId/interview',
     name: 'student-interview',
     component: () => import('../views/classroom/InterviewPage.vue'),
+  },
+  {
+    path: '/student/sessions/:sessionId/review',
+    name: 'student-review',
+    component: () => import('../views/replay/ReviewPage.vue'),
   },
   {
     path: '/403',
