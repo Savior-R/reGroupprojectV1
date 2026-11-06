@@ -13,8 +13,11 @@ import static com.shijiangtai.m3classroom.TestFixtures.student2;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.shijiangtai.m3classroom.application.command.CompletePartCommand;
@@ -32,6 +35,7 @@ import com.shijiangtai.m3classroom.domain.recording.StreamStatus;
 import com.shijiangtai.m3classroom.domain.recording.StreamType;
 import com.shijiangtai.m3classroom.domain.session.FailureReason;
 import com.shijiangtai.m3classroom.domain.session.Session;
+import com.shijiangtai.m3classroom.domain.session.SessionEvent;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
 import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.m3classroom.domain.task.QuestionConfig;
@@ -59,6 +63,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 class RecordingApplicationServiceTest {
 
@@ -92,9 +97,14 @@ class RecordingApplicationServiceTest {
 
     private RecordingApplicationService newService(
             RecordingObjectStorage objectStorage, RecordingRepository repository) {
-        return new RecordingApplicationServiceImpl(
+        RecordingMutationService mutations = new RecordingMutationService(
                 sessions, tasks, repository, objectStorage, accessPolicy,
-                runtimeRegistry, events, UUID::randomUUID, () -> NOW);
+                UUID::randomUUID, () -> NOW);
+        RecordingSessionFailureService failures = new RecordingSessionFailureService(
+                sessions, events, UUID::randomUUID);
+        return new RecordingApplicationServiceImpl(
+                sessions, repository, objectStorage, accessPolicy, runtimeRegistry,
+                mutations, failures);
     }
 
     @Test
@@ -229,7 +239,7 @@ class RecordingApplicationServiceTest {
     }
 
     @Test
-    void completeRejectsZeroDurationAndFailsTheSession() {
+    void completeRejectsZeroDurationBeforeConsumingMultipart() {
         SessionId sessionId = createSession(taskId, TaskMode.FREE, SessionStatus.IN_PROGRESS);
         MultipartUploadView upload = service.start(student(), sessionId, StreamType.CAMERA);
         storage.recordObjectSize(upload.objectKey(), 1024);
@@ -247,7 +257,7 @@ class RecordingApplicationServiceTest {
     }
 
     @Test
-    void completeRejectsZeroSizeAndFailsTheSession() {
+    void completeRejectsZeroSizeBeforeConsumingMultipart() {
         SessionId sessionId = createSession(taskId, TaskMode.FREE, SessionStatus.IN_PROGRESS);
         MultipartUploadView upload = service.start(student(), sessionId, StreamType.CAMERA);
         storage.recordObjectSize(upload.objectKey(), 0);
@@ -284,6 +294,30 @@ class RecordingApplicationServiceTest {
                     assertThat(exception.details())
                             .containsEntry("stream_type", "camera")
                             .containsEntry("actual_content_type", "application/octet-stream");
+                });
+        assertThat(recording(sessionId).stream(StreamType.CAMERA).orElseThrow().status())
+                .isEqualTo(StreamStatus.FAILED);
+    }
+
+    @Test
+    void completeRejectsContentTypeThatOnlySharesTheExpectedPrefix() {
+        RecordingObjectStorage prefixStorage = new MimeOverridingStorage(
+                storage, "video/webmfoo");
+        RecordingApplicationService prefixService = newService(prefixStorage, recordings);
+        SessionId sessionId = createSession(taskId, TaskMode.FREE, SessionStatus.IN_PROGRESS);
+        MultipartUploadView upload = prefixService.start(
+                student(), sessionId, StreamType.CAMERA);
+        storage.recordObjectSize(upload.objectKey(), 1024);
+
+        assertThatThrownBy(() -> prefixService.complete(
+                        student(), sessionId, StreamType.CAMERA,
+                        new CompletePartCommand(
+                                List.of(new PartEtag(1, "etag-1")), 5_000, 1024,
+                                "video/webm")))
+                .isInstanceOfSatisfying(DomainException.class, exception -> {
+                    assertThat(exception.code()).isEqualTo(ErrorCode.VALIDATION_ERROR);
+                    assertThat(exception.details())
+                            .containsEntry("actual_content_type", "video/webmfoo");
                 });
         assertThat(recording(sessionId).stream(StreamType.CAMERA).orElseThrow().status())
                 .isEqualTo(StreamStatus.FAILED);
@@ -352,6 +386,97 @@ class RecordingApplicationServiceTest {
 
         verify(actor).fail(FailureReason.RECORDING_LOST);
         assertThat(events.all()).isEmpty();
+    }
+
+    @Test
+    void failureTransitionRunsAfterTheLockedMutationReturns() {
+        SessionId sessionId = createSession(taskId, TaskMode.FREE, SessionStatus.IN_PROGRESS);
+        RecordingMutationService mutations = mock(RecordingMutationService.class);
+        RecordingSessionFailureService failures = mock(RecordingSessionFailureService.class);
+        RecordingApplicationService ordered = new RecordingApplicationServiceImpl(
+                sessions, recordings, storage, accessPolicy, runtimeRegistry,
+                mutations, failures);
+        CompletePartCommand command = new CompletePartCommand(
+                List.of(new PartEtag(1, "etag-1")), 5_000, 1024, "video/webm");
+        IllegalStateException cause = new IllegalStateException("controlled post-consumption");
+        when(mutations.complete(any(), any(), any(), any())).thenThrow(
+                new RecordingMutationService.RecordingLostRuntimeException(cause, NOW));
+
+        assertThatThrownBy(() -> ordered.complete(
+                        student(), sessionId, StreamType.CAMERA, command))
+                .isSameAs(cause);
+
+        InOrder order = inOrder(mutations, failures);
+        order.verify(mutations).complete(student(), sessionId, StreamType.CAMERA, command);
+        order.verify(failures).failDirectly(sessionId, NOW);
+    }
+
+    @Test
+    void preMultipartValidationFailureDoesNotInvokeSessionFailure() {
+        SessionId sessionId = createSession(taskId, TaskMode.FREE, SessionStatus.IN_PROGRESS);
+        RecordingMutationService mutations = mock(RecordingMutationService.class);
+        RecordingSessionFailureService failures = mock(RecordingSessionFailureService.class);
+        RecordingApplicationService ordered = new RecordingApplicationServiceImpl(
+                sessions, recordings, storage, accessPolicy, runtimeRegistry,
+                mutations, failures);
+        DomainException validation = new DomainException(ErrorCode.VALIDATION_ERROR, "bad input");
+        when(mutations.complete(any(), any(), any(), any())).thenThrow(validation);
+
+        assertThatThrownBy(() -> ordered.complete(
+                        student(), sessionId, StreamType.CAMERA,
+                        new CompletePartCommand(
+                                List.of(new PartEtag(1, "etag-1")), 0, 1024, "video/webm")))
+                .isSameAs(validation);
+
+        verifyNoInteractions(failures);
+    }
+
+    @Test
+    void actorFailureAfterSessionAlreadyFailedDoesNotAppendSecondFailedEvent() {
+        SessionId sessionId = createSession(taskId, TaskMode.FREE, SessionStatus.IN_PROGRESS);
+        MultipartUploadView upload = service.start(student(), sessionId, StreamType.CAMERA);
+        storage.recordObjectSize(upload.objectKey(), 10);
+        Session alreadyFailed = sessions.findById(sessionId).orElseThrow();
+        alreadyFailed.fail(FailureReason.RECORDING_LOST, NOW);
+        sessions.save(alreadyFailed);
+        SessionActor actor = mock(SessionActor.class);
+        doThrow(new IllegalStateException("actor failed after aggregate save"))
+                .when(actor).fail(FailureReason.RECORDING_LOST);
+        when(runtimeRegistry.find(sessionId)).thenReturn(Optional.of(actor));
+
+        assertCode(() -> service.complete(student(), sessionId, StreamType.CAMERA,
+                        new CompletePartCommand(
+                                List.of(new PartEtag(1, "etag-1")), 5_000, 20, "video/webm")),
+                ErrorCode.VALIDATION_ERROR);
+
+        verify(actor).fail(FailureReason.RECORDING_LOST);
+        assertThat(events.all()).isEmpty();
+    }
+
+    @Test
+    void actorFailureAfterDurableSessionFailedEventDoesNotAppendSecondEvent() {
+        SessionId sessionId = createSession(taskId, TaskMode.FREE, SessionStatus.IN_PROGRESS);
+        MultipartUploadView upload = service.start(student(), sessionId, StreamType.CAMERA);
+        storage.recordObjectSize(upload.objectKey(), 10);
+        events.append(new SessionEvent(
+                UUID.randomUUID(), sessionId, 1, "session.failed", 0L,
+                Map.of("reason", FailureReason.RECORDING_LOST.wireValue()), NOW));
+        SessionActor actor = mock(SessionActor.class);
+        doThrow(new IllegalStateException("actor failed after event flush"))
+                .when(actor).fail(FailureReason.RECORDING_LOST);
+        when(runtimeRegistry.find(sessionId)).thenReturn(Optional.of(actor));
+
+        assertCode(() -> service.complete(student(), sessionId, StreamType.CAMERA,
+                        new CompletePartCommand(
+                                List.of(new PartEtag(1, "etag-1")), 5_000, 20, "video/webm")),
+                ErrorCode.VALIDATION_ERROR);
+
+        verify(actor).fail(FailureReason.RECORDING_LOST);
+        assertThat(events.all()).hasSize(1);
+        // The row was not persisted failed yet, so the direct path still writes the status but
+        // must not duplicate the terminal event.
+        assertThat(sessions.findById(sessionId).orElseThrow().status())
+                .isEqualTo(SessionStatus.FAILED);
     }
 
     @Test

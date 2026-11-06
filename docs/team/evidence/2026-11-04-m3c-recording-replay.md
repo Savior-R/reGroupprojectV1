@@ -4,7 +4,7 @@
 > 计划：`docs/superpowers/plans/2026-11-04-m3c-recording-backend.md`（Task 1–8）
 > 执行人：M3 Owner（当前使用者，经用户确认）
 > 环境：Docker Engine 29.6.2 / Compose v5.3.1 / PostgreSQL 18.6 / Spring Boot 4.1.2 / Java 21 / MinIO / Redis 8
-> 结论：M3C 录制 / 回放后端 P0（Task 1–7）完成；Task 8 契约测试、全量套件、Docker 全栈 smoke 通过。最终审查修复了并行录制启动的会话级并发缺陷，并补齐失败会话、上传清理与内容校验；修复后全量 90 classes / 663 tests 通过。G2 设计冻结未关闭，G3—G8 均未标记，模块完成度保持 10%；测试完成度按 UT / IT / 契约 3 个层级记 60%，E2E / 性能安全待续。
+> 结论：M3C 录制 / 回放后端 P0（Task 1–7）完成；Task 8 契约测试、全量套件、Docker 全栈 smoke 通过。最终审查修复了并行录制启动的会话级并发缺陷，并补齐失败会话、上传清理与内容校验；后续死锁回归修复（§9）拆分锁定事务与 actor 失败通知，修复后全量 90 classes / 672 tests 通过。G2 设计冻结未关闭，G3—G8 均未标记，模块完成度保持 10%；测试完成度按 UT / IT / 契约 3 个层级记 60%，E2E / 性能安全待续。
 
 ## 1. 范围与授权
 
@@ -292,12 +292,38 @@ events (seq): 1 recording.ready_ack, 2 session.started,
 7. **构建环境**：`docker compose up -d --build` 首次因 Docker credential helper 与 Maven Central 临时拒绝失败；使用临时空 Docker config、重试构建成功。该问题为 WSL / 网络环境，不是代码回归。
 8. 全量测试仍输出既有的 JPA / Hikari shutdown INFO 与异步 flush 重试日志，0 failure / 0 error / 0 skipped。
 9. **回放 `offset_ms` 契约缺口（Important，本波不实现）**：生产 API 不填充 per-stream offset，manifest 的 `offset_ms` 当前恒为 0。offset 的传输方式（在 `complete` 请求中新增 `offset_ms`，还是新增独立命令）属于契约变更，必须先与 Media/Training / Foundation owner 达成一致并更新 `02` / `05B`，之后才能实现；本波明确不实现。
-10. **全量测试连接数**：测试套件会缓存多个 Spring 上下文（每个 Hikari 池默认最多 10 连接）；若 Docker `app` 容器同时运行，可能与 PostgreSQL 默认 `max_connections=100` 叠加。最后一次全量运行仅启动 `postgres`，`90 classes / 663 tests` 通过。该问题属测试环境隔离，不影响生产代码。
+10. **全量测试连接数**：测试套件会缓存多个 Spring 上下文（每个 Hikari 池默认最多 10 连接）；若 Docker `app` 容器同时运行，可能与 PostgreSQL 默认 `max_connections=100` 叠加。§9 的并发 IT 因新增可控存储 `@TestConfiguration` 拥有独立上下文，已用 `@DirtiesContext(AFTER_CLASS)` 在该类结束后释放连接；最后一次全量运行仅启动 `postgres`，`90 classes / 672 tests` 通过。该问题属测试环境隔离，不影响生产代码。
 
 ## 8. 结论
 
 - Task 1–7 的 M3C 后端实现可运行，REST / WS / PostgreSQL / MinIO 全链路 smoke 通过。
 - Task 8 新增 2 个契约测试类 / 10 条用例；契约 RED 探针显示字段或命名漂移会被捕获。
 - 最终审查修复：`start/complete/abort` 在读取 recording 前锁定 session（`FOR NO KEY UPDATE`），`RecordingRepositoryAdapter.save` 改为 merge-only；并行三路 start 的 PostgreSQL IT 通过。complete/abort 失败会将会话置为 `FAILED(recording_lost)`（终态除外），并 best-effort 中止 multipart；清理会中止所有带 uploadId 的流（含 FAILED）。complete 校验时长 / 大小 / content-type，提交校验已上传流非空且时长 > 0。
-- 全量套件 90 classes / 663 tests，0 failure / 0 error / 0 skipped。
+- 全量套件 90 classes / 672 tests，0 failure / 0 error / 0 skipped。
 - 进度：M3C 测试行 UT / IT / 契约 ✅、E2E / 性能安全 ⬜、测试完成度 60%；模块完成度保持 10%，G2—G8 未标记。回放 `offset_ms` 生产填充按契约变更延期，见 §7 第 9 条。
+
+## 9. 死锁回归修复（2026-11-06）
+
+### 9.1 问题
+
+最终审查把 `RecordingApplicationServiceImpl.start/complete/abort` 整体放进 `@Transactional`，并在读取 recording 前对 session 行取 `FOR NO KEY UPDATE`。失败路径在**仍持有该行锁**时同步调用 `runtimeRegistry.find(...).fail(...)`（`SessionActor.fail` 是 `synchronized`）。与此同时，并发的 end / 超时回调持有 actor 监视器，并在 `SessionRuntimeRegistry.onStatusChanged` 中 `sessionRepository.save(actor.session())`（`saveAndFlush`）等待同一 session 行锁。形成 Java monitor ↔ PostgreSQL 行锁的硬死锁，PostgreSQL 不会检测。
+
+### 9.2 修复
+
+| 项 | 方案 |
+|---|---|
+| 锁 / 监视器环 | 新增包级 `RecordingMutationService`：`start/complete/abort` 的全部行锁聚合变更与 multipart IO 都在该 bean 的 `@Transactional` 方法内；公开的 `RecordingApplicationServiceImpl` 不再有写事务，只有在 mutation 方法返回或抛出（事务已提交 / 回滚）后才执行 `failSessionOnRecordingLoss`。 |
+| 失败写不丢失 | 新增包级 `RecordingSessionFailureService.failDirectly(...)`，`@Transactional(propagation = REQUIRES_NEW)`；无 actor 时重新读取 session 后落 `FAILED` 与 `session.failed`。actor 路径抛错后走该路径；若持久化状态已是 `FAILED` 或事件表已存在 `session.failed`，不再追加第二个事件。 |
+| 失败分类 | multipart 已消费后的 DomainException 包装为 `RecordingLostDomainException`（仍触发 `noRollbackFor` 提交失败流），基础设施 RuntimeException 包装为 `RecordingLostRuntimeException`（默认回滚）；公开方法最终重新抛出原始异常。 |
+| 清理 abort 范围 | `RecordingLifecycleService.abortStreamUpload` 仅对 `UPLOADING` / `FAILED` 且 `uploadId != null` 的流调用 abort；`UPLOADED` 流只安排对象删除。 |
+| 清理锁序 | `removeAttemptRows` 先对候选 session 执行 `findByIdForUpdate`（与 complete/abort 相同的 `FOR NO KEY UPDATE`），在锁下复核 `isDeletable`，再删除 recording 行与会话行；采用“先锁 session”方案，不依赖 V10 级联删除会话。 |
+| content-type | 去掉参数并小写后要求与 `video/webm` / `audio/webm` 精确相等，不再使用 `startsWith`，拒绝 `video/webmfoo`。 |
+| 测试重命名 | `completeRejectsZeroDurationAndFailsTheSession` → `completeRejectsZeroDurationBeforeConsumingMultipart`；零大小用例同步改为 `...BeforeConsumingMultipart`。 |
+
+### 9.3 测试
+
+- `RecordingConcurrencyIT.abortAndConcurrentActorEndDoNotDeadlock`：可控存储让 abort 在持有 session 行锁时阻塞在 `abortMultipart`；随后启动 `SessionApplicationService.end` 使 actor 持有监视器并阻塞在终态保存；释放 abort 后要求两个 future 在 20s 内完成，最终会话 `FAILED`、流 `FAILED`。旧实现会在该编排下必然死锁。
+- `RecordingConcurrencyIT.sessionFailureSurvivesRecordingTransactionRollback`：注入 `completeMultipart` 基础设施异常（非 DomainException），断言异常原样抛出后 session 行为 `FAILED` 且恰有 1 条 `session.failed`。`RecordingRepositoryAdapter.save` 本身是 `REQUIRES_NEW`，所以不把流行状态作为回滚证据；该用例证明的是回滚场景下 session 失败写仍独立持久化。
+- 单测：失败通知顺序（mutation 调用先于 `failDirectly`）、multipart 前校验不触发会话失败、actor 在已持久化 `FAILED` / 已有 `session.failed` 事件后抛错不重复追加、content-type 前缀拒绝、清理不 abort `UPLOADED` 流但仍删对象。
+- 定向：`RecordingApplicationServiceTest` 31、`RecordingLifecycleServiceTest` 11、`RecordingConcurrencyIT` 3、`RecordingControllerIT` 5（合计 50；Gradle 同时自动执行 ArchitectureTest 3 条），0 failure / 0 error / 0 skipped。
+- 全量：`90 classes / 672 tests`，0 failure / 0 error / 0 skipped。

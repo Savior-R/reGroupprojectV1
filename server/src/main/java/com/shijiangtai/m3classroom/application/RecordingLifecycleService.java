@@ -6,6 +6,7 @@ import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage;
 import com.shijiangtai.m3classroom.domain.recording.Recording;
 import com.shijiangtai.m3classroom.domain.recording.RecordingRepository;
 import com.shijiangtai.m3classroom.domain.recording.RecordingStream;
+import com.shijiangtai.m3classroom.domain.recording.StreamStatus;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
@@ -85,10 +86,6 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
     @Transactional
     public void deleteAttempt(SessionId sessionId) {
         Objects.requireNonNull(sessionId, "sessionId");
-        Session session = sessionRepository.findById(sessionId).orElse(null);
-        if (session == null || !isDeletable(session.status())) {
-            return;
-        }
         List<Runnable> objectDeletes = removeAttemptRows(sessionId);
         scheduleAfterCommit(objectDeletes);
     }
@@ -109,8 +106,20 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
         scheduleAfterCommit(objectDeletes);
     }
 
-    /** Deletes recording/stream rows (streams cascade) and the session row itself. */
+    /**
+     * Deletes recording/stream rows (streams cascade) and the session row itself.
+     *
+     * <p>The session row is loaded with the same {@code FOR NO KEY UPDATE} lock used by
+     * {@code start/complete/abort}. Taking that lock first gives cleanup and a late completion the
+     * same lock order (session row before recording rows), so they cannot deadlock. The
+     * deletability check is repeated under the lock because a session may have changed status
+     * since {@link #deleteOtherAttempts} listed the candidates.
+     */
     private List<Runnable> removeAttemptRows(SessionId sessionId) {
+        Session locked = sessionRepository.findByIdForUpdate(sessionId).orElse(null);
+        if (locked == null || !isDeletable(locked.status())) {
+            return List.of();
+        }
         List<Runnable> objectDeletes = new ArrayList<>();
         Recording recording = recordingRepository.findBySession(sessionId).orElse(null);
         if (recording != null) {
@@ -125,13 +134,16 @@ public class RecordingLifecycleService implements RecordingLifecyclePort {
     }
 
     /**
-     * Aborts every stream that still carries an upload id, including streams already marked
-     * {@code failed}. A failed stream may leave the MinIO multipart open (for example when
-     * {@code completeMultipart} or a post-complete check failed), so cleanup must not rely on the
-     * aggregate status alone. Aborts are best effort and idempotent.
+     * Aborts only streams whose multipart may still be open: {@code uploading} (never completed)
+     * or {@code failed} (multipart consumed by a failed complete attempt). An {@code uploaded}
+     * stream has no multipart left; aborting it always fails and only logs false warnings. Objects
+     * of uploaded streams are still scheduled for deletion by {@link #scheduleObjectDelete}.
+     * Aborts are best effort and idempotent.
      */
     private void abortStreamUpload(RecordingStream stream) {
-        if (stream.uploadId() != null) {
+        if (stream.uploadId() != null
+                && (stream.status() == StreamStatus.UPLOADING
+                        || stream.status() == StreamStatus.FAILED)) {
             abortUpload(stream);
         }
     }

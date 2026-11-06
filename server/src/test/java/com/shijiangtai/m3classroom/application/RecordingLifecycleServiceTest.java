@@ -41,7 +41,7 @@ class RecordingLifecycleServiceTest {
 
     private InMemorySessionRepository sessions;
     private InMemoryRecordingRepository recordings;
-    private InMemoryRecordingObjectStorage storage;
+    private CountingRecordingObjectStorage storage;
     private List<Runnable> afterCommitActions;
     private RecordingLifecycleService service;
 
@@ -49,7 +49,7 @@ class RecordingLifecycleServiceTest {
     void setUp() {
         sessions = new InMemorySessionRepository();
         recordings = new InMemoryRecordingRepository();
-        storage = new InMemoryRecordingObjectStorage();
+        storage = new CountingRecordingObjectStorage();
         afterCommitActions = new ArrayList<>();
         service = new RecordingLifecycleService(
                 recordings, sessions, storage, afterCommitActions::add, () -> NOW);
@@ -132,6 +132,52 @@ class RecordingLifecycleServiceTest {
 
         assertThatThrownBy(() -> storage.presignPart(
                 objectKey, uploadId, 1, Duration.ofMinutes(1)))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+    }
+
+    @Test
+    void abortAllDoesNotAbortUploadedMultipartButDeletesObject() {
+        SessionId sessionId = newSession();
+        String objectKey = keyFor(sessionId);
+        String uploadId = storage.createMultipart(objectKey, "video/webm").uploadId();
+        storage.recordObjectSize(objectKey, 1024);
+        storage.completeMultipart(objectKey, uploadId, List.of(new PartEtag(1, "etag-1")));
+        recordingWithUploadedStream(sessionId, objectKey, uploadId);
+        int abortsBefore = storage.abortCalls();
+
+        service.abortAll(sessionId);
+
+        // An uploaded stream has no open multipart; aborting it would only log a false warning.
+        assertThat(storage.abortCalls()).isEqualTo(abortsBefore);
+        assertThat(afterCommitActions).hasSize(1);
+        afterCommitActions.forEach(Runnable::run);
+        assertThatThrownBy(() -> storage.stat(objectKey))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code())
+                                .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
+    }
+
+    @Test
+    void deleteAttemptDoesNotAbortUploadedMultipartButDeletesObject() {
+        SessionId sessionId = newSession(
+                new TaskId(UUID.randomUUID()), 1, SessionStatus.CANCELLED);
+        String objectKey = keyFor(sessionId);
+        String uploadId = storage.createMultipart(objectKey, "video/webm").uploadId();
+        storage.recordObjectSize(objectKey, 1024);
+        storage.completeMultipart(objectKey, uploadId, List.of(new PartEtag(1, "etag-1")));
+        recordingWithUploadedStream(sessionId, objectKey, uploadId);
+        int abortsBefore = storage.abortCalls();
+
+        service.deleteAttempt(sessionId);
+
+        assertThat(storage.abortCalls()).isEqualTo(abortsBefore);
+        assertThat(sessions.findById(sessionId)).isEmpty();
+        assertThat(recordings.findBySession(sessionId)).isEmpty();
+        assertThat(afterCommitActions).hasSize(1);
+        afterCommitActions.forEach(Runnable::run);
+        assertThatThrownBy(() -> storage.stat(objectKey))
                 .isInstanceOfSatisfying(DomainException.class,
                         exception -> assertThat(exception.code())
                                 .isEqualTo(ErrorCode.SERVICE_UNAVAILABLE));
@@ -289,6 +335,32 @@ class RecordingLifecycleServiceTest {
         recording.startStream(UUID.randomUUID(), TaskMode.FREE, StreamType.CAMERA,
                 uploadId, objectKey, RecordingStream.DEFAULT_PART_SIZE, 0, "video/webm", NOW);
         recordings.save(recording);
+    }
+
+    private void recordingWithUploadedStream(
+            SessionId sessionId, String objectKey, String uploadId) {
+        Recording recording = Recording.create(UUID.randomUUID(), sessionId, NOW);
+        recording.startStream(UUID.randomUUID(), TaskMode.FREE, StreamType.CAMERA,
+                uploadId, objectKey, RecordingStream.DEFAULT_PART_SIZE, 0, "video/webm", NOW);
+        recording.markStreamUploaded(
+                StreamType.CAMERA, TaskMode.FREE, 1, 1024, 5_000, "video/webm", NOW);
+        recordings.save(recording);
+    }
+
+    /** Counts multipart abort attempts so cleanup can assert it never aborts an uploaded stream. */
+    private static final class CountingRecordingObjectStorage
+            extends InMemoryRecordingObjectStorage {
+        private int abortCalls;
+
+        @Override
+        public void abortMultipart(String objectKey, String uploadId) {
+            abortCalls++;
+            super.abortMultipart(objectKey, uploadId);
+        }
+
+        private int abortCalls() {
+            return abortCalls;
+        }
     }
 
     private static final class InMemoryRecordingRepository implements RecordingRepository {
