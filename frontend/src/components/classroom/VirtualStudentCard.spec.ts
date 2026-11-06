@@ -204,6 +204,14 @@ describe('RecordingStatus and WsStatus', () => {
     expect(text).toContain('已完成')
     expect(text).toContain('失败')
 
+    // Interview rooms record camera + microphone only and hide the screen row.
+    const interview = mount(RecordingStatus, {
+      props: { streams, streamTypes: ['camera', 'audio'] },
+    })
+    expect(interview.text()).toContain('摄像头')
+    expect(interview.text()).toContain('麦克风')
+    expect(interview.text()).not.toContain('屏幕')
+
     const reconnecting = mount(WsStatus, {
       props: { status: { status: 'reconnecting', secondsLeft: 17 } },
     })

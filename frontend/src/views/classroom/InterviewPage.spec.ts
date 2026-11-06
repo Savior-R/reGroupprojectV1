@@ -401,6 +401,10 @@ describe('InterviewPage', () => {
     options.onEvent(snapshotEvent('preparing'))
     await flushPromises()
 
+    const readyCalls = harness.fakeWs.send.mock.calls.filter(
+      ([type]) => type === 'recording.ready',
+    )
+    expect(readyCalls).toHaveLength(1)
     for (const uploader of harness.uploaders) {
       expect(uploader.start).not.toHaveBeenCalled()
     }

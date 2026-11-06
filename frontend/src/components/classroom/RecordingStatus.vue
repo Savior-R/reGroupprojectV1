@@ -6,13 +6,20 @@ import type { UploadProgress } from '../../utils/recorderUploader'
 /**
  * Per-stream recording/upload indicator (05B §4, 09 §6.5).
  *
- * The page owns uploader progress; this component renders the three public
- * classroom streams in a stable order.
+ * The page owns uploader progress; this component renders the requested public
+ * streams in a stable order. Classroom pages show all three streams; interview
+ * pages pass `['camera', 'audio']` because no screen stream is acquired.
  */
 
-const props = defineProps<{
-  streams: Partial<Record<StreamType, UploadProgress>>
-}>()
+const props = withDefaults(
+  defineProps<{
+    streams: Partial<Record<StreamType, UploadProgress>>
+    streamTypes?: readonly StreamType[]
+  }>(),
+  {
+    streamTypes: () => ['camera', 'screen', 'audio'],
+  },
+)
 
 const STREAM_META: ReadonlyArray<{ type: StreamType; name: string }> = [
   { type: 'camera', name: '摄像头' },
@@ -28,7 +35,7 @@ const STATUS_LABELS: Record<UploadProgress['status'] | 'idle', string> = {
 }
 
 const rows = computed(() =>
-  STREAM_META.map((meta) => {
+  STREAM_META.filter((meta) => props.streamTypes.includes(meta.type)).map((meta) => {
     const progress = props.streams[meta.type] ?? null
     const status = progress?.status ?? 'idle'
     const percent =

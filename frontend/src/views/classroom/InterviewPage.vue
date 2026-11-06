@@ -596,7 +596,7 @@ onBeforeUnmount(() => {
   >
     <template #status>
       <WsStatus :status="wsStatus" />
-      <RecordingStatus :streams="progress" />
+      <RecordingStatus :streams="progress" :stream-types="STREAM_ORDER" />
     </template>
 
     <div class="interview-page">
