@@ -8,7 +8,7 @@
 ## 1. 仓库与分支
 
 - 仓库：`/home/forever_alone/project_school_temp`（GitHub `Savior-R/reGroupprojectV1`）。
-- 基线：`main`，当前 `e9da2f8`（2026-11-07）。开始前先 `git fetch origin` 并确认 `main` 最新。
+- 基线：`main`，以最新 main 为准（2026-11-07）。开始前先 `git fetch origin` 并确认 `main` 最新。
 - 分支：从 `main` 新建 `<branch>`，不要使用其他模块或 M3 的进行中分支。
 - 工作区可能包含他人未提交文件；不得清理、提交或覆盖。提交使用 `git commit --only <显式路径>`。
 - 如仓库已存在同模块分支，先确认归属再继续，不要强制覆盖。

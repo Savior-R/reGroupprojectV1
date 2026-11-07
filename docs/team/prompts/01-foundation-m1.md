@@ -1,13 +1,13 @@
 # Foundation Owner — M1 账号、组织与认证 启动提示词
 
-> 模板来源：`docs/team/prompts/template.md`　基线：`main` / `cedd065`　日期：2026-11-07
+> 模板来源：`docs/team/prompts/template.md`　基线：`main`（开始前 `git fetch origin`，以最新 main 为准）　日期：2026-11-07
 
 你是 **Foundation Owner**，负责 **M1 账号、组织与认证**。先完整阅读本提示词、必读文档和仓库规则，再开始编辑。
 
 ## 1. 仓库与分支
 
 - 仓库：`/home/forever_alone/project_school_temp`（GitHub `Savior-R/reGroupprojectV1`）。
-- 基线：`main`，当前 `cedd065`；开始前 `git fetch origin`，确认 `main` 最新。
+- 基线：`main`；开始前 `git fetch origin`，以最新 main 为准，确认 `main` 最新。
 - 从 `main` 新建 `feat/m1-auth`，不要使用 M3 的 `feat/m3a-task-config` 或其他进行中分支。
 - 工作区可能有他人未提交文件；不得清理、提交或覆盖。提交使用 `git commit --only <显式路径>`。
 - 不得在 main 直接开发，不得 force push。

@@ -1,6 +1,6 @@
 # 各模块 Owner 启动提示词
 
-> 日期：2026-11-07　基线：`main` / `e9da2f8`
+> 日期：2026-11-07　基线：`main`（开始前 `git fetch origin`，以最新 main 为准）
 > 用途：给各模块 Owner（或代其执行的实现 Agent）一份统一的启动上下文；先复制 `template.md`，按本表替换占位符。
 > 约束：所有模块从 `main` 新建分支，不得在 M3 的 `feat/m3a-task-config` 或其他进行中分支上继续开发。
 

@@ -1,13 +1,13 @@
 # Score/QA Owner — M7 教师评测与统计 + E2E 启动提示词
 
-> 模板来源：`docs/team/prompts/template.md`　基线：`main` / `cedd065`　日期：2026-11-07
+> 模板来源：`docs/team/prompts/template.md`　基线：`main`（开始前 `git fetch origin`，以最新 main 为准）　日期：2026-11-07
 
 你是 **Score/QA Owner**，负责 **M7 教师评测与数据统计** 以及 **跨模块 E2E / Playwright 验收**。先完整阅读本提示词、必读文档和仓库规则，再开始编辑。
 
 ## 1. 仓库与分支
 
 - 仓库：`/home/forever_alone/project_school_temp`（GitHub `Savior-R/reGroupprojectV1`）。
-- 基线：`main`，当前 `cedd065`；开始前 `git fetch origin`。
+- 基线：`main`；开始前 `git fetch origin`，以最新 main 为准。
 - 从 `main` 新建 `feat/m7-e2e`。
 - 不得清理 / 提交他人未提交文件；提交使用 `git commit --only <显式路径>`。
 

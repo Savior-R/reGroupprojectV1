@@ -1,13 +1,13 @@
 # Course/Question Owner — M2 课程 + M5 题库 启动提示词
 
-> 模板来源：`docs/team/prompts/template.md`　基线：`main` / `cedd065`　日期：2026-11-07
+> 模板来源：`docs/team/prompts/template.md`　基线：`main`（开始前 `git fetch origin`，以最新 main 为准）　日期：2026-11-07
 
 你是 **Course/Question Owner**，负责 **M2 课程操作与管理** 和 **M5 结构化面试题库**。先完整阅读本提示词、必读文档和仓库规则，再开始编辑。
 
 ## 1. 仓库与分支
 
 - 仓库：`/home/forever_alone/project_school_temp`（GitHub `Savior-R/reGroupprojectV1`）。
-- 基线：`main`，当前 `cedd065`；开始前 `git fetch origin`。
+- 基线：`main`；开始前 `git fetch origin`，以最新 main 为准。
 - 从 `main` 新建 `feat/m2-m5`，不得使用 M3 分支或其他进行中分支。
 - 不得清理 / 提交他人未提交文件；提交使用 `git commit --only <显式路径>`。
 

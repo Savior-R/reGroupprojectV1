@@ -1,13 +1,13 @@
 # Media/Training Owner — M6 训练模式 启动提示词
 
-> 模板来源：`docs/team/prompts/template.md`　基线：`main` / `cedd065`　日期：2026-11-07
+> 模板来源：`docs/team/prompts/template.md`　基线：`main`（开始前 `git fetch origin`，以最新 main 为准）　日期：2026-11-07
 
 你是 **Media/Training Owner**，负责 **M6 训练模式**。先完整阅读本提示词、必读文档和仓库规则，再开始编辑。
 
 ## 1. 仓库与分支
 
 - 仓库：`/home/forever_alone/project_school_temp`（GitHub `Savior-R/reGroupprojectV1`）。
-- 基线：`main`，当前 `cedd065`；开始前 `git fetch origin`。
+- 基线：`main`；开始前 `git fetch origin`，以最新 main 为准。
 - 从 `main` 新建 `feat/m6-training`。
 - 不得清理 / 提交他人未提交文件；提交使用 `git commit --only <显式路径>`。
 

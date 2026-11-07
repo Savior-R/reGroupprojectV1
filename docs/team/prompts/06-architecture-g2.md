@@ -1,6 +1,6 @@
 # Architecture / Foundation — G2 设计冻结与契约复审 启动提示词
 
-> 模板来源：`docs/team/prompts/template.md`　基线：`main` / `cedd065`　日期：2026-11-07
+> 模板来源：`docs/team/prompts/template.md`　基线：`main`（开始前 `git fetch origin`，以最新 main 为准）　日期：2026-11-07
 
 你是 **Architecture / Foundation Owner**，负责 **G2 设计冻结与跨模块契约复审**。你不实现业务模块；你的产出是评审结论、契约冻结清单和 Owner 行动项。
 
