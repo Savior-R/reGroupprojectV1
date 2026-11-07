@@ -40,6 +40,7 @@ docs/team/evidence/*m7*、*e2e*
 ## 4. 当前状态与依赖
 
 - 本模块 gate：G1 提交，G2 待复审；尚无 P0 实现。
+- **并行开发约定**：M7 可立即开始；G2 评审并行；M4 terminal 未完成时用 fixture / 端口；M3 提交 / 录像契约已具备；E2E 可先搭骨架与种子数据。
 - 上游：M4 `EvaluationTerminalEvent`、M3 提交件 / 录像 / 事件 / 配置快照、M1 / M2 课程与人员。
 - 待冻结契约：M7 评分 / 配置 API、最终分合成、`EvaluationTerminalEvent` 消费、统计 / 排行榜 / CSV、归档只读。
 - E2E：6 组场景（E2E-01—06）；当前 M3 已具备独立浏览器验收，可作为 M3 fixture；完整 E2E 需 M1/M2/M4 完成。
@@ -73,7 +74,7 @@ docs/team/evidence/*m7*、*e2e*
 
 ## 6. 执行顺序
 
-1. G2 冻结 M7 配置 / 最终分 / 统计 / 导出契约与 M4 terminal 消费。
+1. 按 `docs/design/02/07/12` 实现 M7 配置 / 最终分 / 统计 / 导出；M4 terminal 用 fixture / 端口并行；G2 不阻塞编码。
 2. 迁移 V6 + 领域 / JPA：评分配置、教师评分、最终分。
 3. 评分配置 / 名单 / 评分 / 版本冲突 / 首次锁定。
 4. 最终分合成、状态优先级、清空重算、终态对账。
@@ -81,13 +82,11 @@ docs/team/evidence/*m7*、*e2e*
 6. E2E 骨架与 6 组场景；M3 独立验收纳入 fixture。
 7. 测试与证据：M7-T01—T11、E2E-01—06；更新 M7 / E2E 行。
 
-## 7. 测试门禁
+## 7. 测试策略（本阶段后置）
 
-- 后端：`docker compose --profile test run --rm test gradle test --tests '*m7teacher*' --no-daemon --console=plain`
-- 全量：`docker compose --profile test run --rm test gradle test --no-daemon --console=plain`
-- 前端：`npm --prefix frontend run test -- --run`、`npm --prefix frontend run build`
-- E2E：`npx playwright test`（首次需安装 Chromium；CI 使用 demo 环境）。
-- 重点：M7-T01—T11、E2E-01—06，尤其最终分状态、排行榜 NULL、CSV 注入、权限 403、归档只读。
+- 本阶段最小验证：后端 / 前端编译与 M7 关键路径 smoke；E2E 先搭骨架与种子数据。
+- 完整测试后置：M7-T01—T11、E2E-01—06（最终分状态、排行榜 NULL、CSV 注入、权限 403、归档只读）。
+- 未跑全量在汇报中写“测试后置”，不得伪造结果。
 
 ## 8. 交付物与汇报格式
 

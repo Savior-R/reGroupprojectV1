@@ -48,6 +48,7 @@ docs/team/evidence/*m1*
 - 外部依赖：微信开放平台（appid / secret / 回调白名单）、SMTP 邮件服务。
 - 契约待冻结：邮箱验证码 API、微信 OAuth state / ticket / callback、`oauth_identities` 唯一键、`auth:self` 权限码、JWT claims 不变。
 - M1 新增设计尚未实现；现有 M1 目录可能是早期骨架，先确认现状再改，不要假设已完成。
+- **并行开发约定**：M1 可立即开始；G2 评审并行进行，不作为编码硬门禁；M2/M5 按 M1 文档契约 + fake 并行，不需要等 M1 完成。发现契约冲突停下确认。
 
 ## 5. 目标与范围
 
@@ -80,7 +81,7 @@ docs/team/evidence/*m1*
 
 ## 6. 执行顺序
 
-1. **G2 前置**：确认 M1 新契约；未冻结前不写正式实现。
+1. **契约确认（可并行）**：按 `docs/design/02/03/12` 的 M1 契约编码；G2 评审并行进行；发现契约冲突再停下确认。
 2. **迁移 V13**：`accounts.email` / `email_verified_at`、三张新表、索引 / FK；`V13` 不得修改已执行迁移。
 3. **领域 / JPA**：`Account` email 验证状态、`OAuthIdentity`、`EmailLoginCode`、`AuthLoginEvent`。
 4. **邮箱验证码**：`MailSender`（SMTP + Mock）、发送 / 校验 / 登录、限流、绑定 / 换绑 / 解绑。
@@ -90,14 +91,12 @@ docs/team/evidence/*m1*
 8. **前端**：三 tab 登录、二维码轮询、邮箱倒计时、OAuth 引导注册、账号安全页。
 9. **测试 / 证据 / 看板**：M1-T01—T15；只更新 M1 行和本模块证据。
 
-## 7. 测试门禁
+## 7. 测试策略（本阶段后置）
 
-- 单元：`docker compose --profile test run --rm test gradle test --tests '*m1auth*' --no-daemon --console=plain`
-- 集成：`docker compose --profile test run --rm test gradle test --tests '*M1*IT' --no-daemon --console=plain`
-- 全量：`docker compose --profile test run --rm test gradle test --no-daemon --console=plain`
-- 前端：`npm --prefix frontend run test -- --run`、`npm --prefix frontend run build`
+- 本阶段最小验证：`docker compose --profile test run --rm test gradle compileJava compileTestJava --no-daemon --console=plain` + 登录 / 建校 smoke；前端构建。
+- 完整 UT / IT / 契约 / E2E 后置到测试阶段，不阻塞并行开发；后续清单：M1-T01—T15。
 - 真实微信 / SMTP 只做手工 smoke；CI 使用 Mock，不得把真实 key 写入仓库。
-- 必测：M1-T11 邮箱验证码、M1-T12 微信扫码、M1-T13 OAuth 引导注册、M1-T14 绑定 / 解绑、M1-T15 审计 / 枚举。
+- 未跑全量必须在汇报中明确“测试后置”，不得伪造结果。
 
 ## 8. 交付物与汇报格式
 
