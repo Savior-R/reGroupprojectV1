@@ -19,8 +19,9 @@
 | 2 | Course | M2 / `feat/m2-course` | `requirements/M2`；`design/03`；`implementation/02` | `m2course/**`、`V2*`、`frontend/src/views/course/**` | 按 M1 契约 + fake 并行，不等 M1 完成 |
 | 3 | AI | M4 / `feat/m4-eval` | `requirements/M4`；`design/06`；`implementation/05`、`08` | `m4eval/**`、`ai/app/capabilities/evaluation.py`、`media.py`、`worker/**`、`V5*`、`frontend/src/views/report/**` | M3 提交契约已具备；M4 manifest / callback 用文档契约并行 |
 | 4 | Media/Training | **M5 + M6** / `feat/m5-m6` | `requirements/M5`、`requirements/M6`；`design/04`、`08`；`implementation/03`、`07` | `m5question/**`、`m6training/**`、`V3*`、`V7*`、`frontend/src/views/question/**`、`views/training/**` | M5 用 M1 契约；M6 用 M3 训练 session / M4 报告契约 + fake，并行 |
-| 5 | Score/QA | M7 + E2E / `feat/m7-e2e` | `requirements/M7`；`design/07`、`09`、`10`；`implementation/06` | `m7teacher/**`、`V6*`、`frontend/src/views/grading/**`、`views/stats/**`、`e2e/**` | M4 terminal / M3 提交契约 + seed，并行；E2E 可先搭骨架 |
-| 6 | Architecture / Foundation | G2 设计冻结 / 无业务分支 | `design/11`、`00`、`02`、`01`、`12`、`13`、`14`、`15` | 仅评审 / 契约文档 | 与 1—5 并行；不阻塞各模块开始编码，但契约变更需其确认 |
+| 5 | Score | M7 / `feat/m7-score` | `requirements/M7`；`design/07`、`09`；`implementation/06` | `m7teacher/**`、`V6*`、`frontend/src/views/grading/**`、`views/stats/**` | M4 terminal / M3 提交契约 + fixture，并行 |
+| 6 | QA | E2E / `feat/e2e` | `design/10`、`09`、M1—M7 需求 / 设计只读 | `e2e/**` | 可先搭骨架；随模块可用逐步启用 E2E-01—06 |
+| 7 | Architecture / Foundation | G2 设计冻结 / 无业务分支 | `design/11`、`00`、`02`、`01`、`12`、`13`、`14`、`15` | 仅评审 / 契约文档 | 与 1—6 并行；不阻塞编码，但契约变更需其确认 |
 
 ## 3. 已生成提示词
 
@@ -30,8 +31,9 @@
 | Course / M2 | [`02-course-m2.md`](02-course-m2.md) |
 | AI / M4 | [`03-ai-m4.md`](03-ai-m4.md) |
 | Media/Training / M5 + M6 | [`04-media-m5-m6.md`](04-media-m5-m6.md) |
-| Score/QA / M7 + E2E | [`05-score-m7-e2e.md`](05-score-m7-e2e.md) |
-| Architecture / Foundation / G2 | [`06-architecture-g2.md`](06-architecture-g2.md) |
+| Score / M7 | [`05-score-m7.md`](05-score-m7.md) |
+| QA / E2E | [`06-e2e.md`](06-e2e.md) |
+| Architecture / Foundation / G2 | [`07-architecture-g2.md`](07-architecture-g2.md) |
 
 ## 4. 并行开发约定
 
@@ -39,7 +41,8 @@
 - **不等待上游实现**：上游未完成时用文档端口 / fake / fixture / seed 开发；不得把 stub 假设写进正式接口。
 - **迁移独立**：M1 `V13*`、M2 `V2*`、M5 `V3*`、M4 `V5*`、M7 `V6*`、M6 `V7*`；不得修改他人迁移；版本冲突先找 Architecture。
 - **模块边界**：不得改他人模块代码 / 测试 / owner 表；跨模块缺陷记录场景交对应 Owner。
-- **测试后置**：本阶段先交付可运行实现 + 受影响路径 smoke + 编译；完整 UT / IT / 契约 / E2E 由各 Owner / Score-QA 在后续测试阶段补齐。不得把“测试后置”当成“可以不做测试”或伪造结果。
+- **测试后置**：本阶段先交付可运行实现 + 受影响路径 smoke + 编译；完整 UT / IT / 契约 / E2E 由各 Owner / QA 在后续测试阶段补齐。不得把“测试后置”当成“可以不做测试”或伪造结果。
+- **E2E 独立**：QA 维护 `e2e/**`；可先搭 Playwright 骨架、fixture、seed，随模块可用逐步启用 E2E-01—06，不阻塞业务模块。
 - **G2 并行**：G2 评审与模块编码并行；G2 通过不是开始编码的硬门禁，但**契约变更**必须确认。各模块不得把未冻结的跨模块假设写进正式实现。
 - **合并**：各模块独立分支、独立提交；默认不合并 / 不推送，等用户选择。
 
