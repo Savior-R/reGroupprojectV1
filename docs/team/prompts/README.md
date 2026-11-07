@@ -22,7 +22,18 @@
 | 5 | Score/QA | M7 统计 + E2E / `feat/m7-e2e` | `requirements/M7-教师评测与数据统计.md`；`design/07`、`09`、`10`；`implementation/06-M7-实现设计.md` | `server/src/main/java/com/shijiangtai/m7teacher/**`、`V6*`、`frontend/src/views/grading/**`、`views/stats/**`、`e2e/**` | M4 `EvaluationTerminalEvent`、M3 提交件 | E2E 骨架可先搭；M7 最终分 / 统计依赖 M4；跨模块 E2E fixture 由各 Owner 提供 |
 | 6 | Architecture / Foundation | G2 设计冻结（非业务模块） | `design/11-概要设计评审.md`、`design/00`、`02`、`12`、`12`、`13`、`14`、`15` | 仅评审 / 契约文档，按评审结论由各 Owner 改实现 | 各模块设计 | 先关闭 02 / 03 / 10 / 12 的契约缺口；冻结后才允许各模块 G3 |
 
-## 3. 各 Owner 的启动前置（按顺序）
+## 3. 已生成提示词
+
+| Owner | 文件 |
+|---|---|
+| Foundation / M1 | [`01-foundation-m1.md`](01-foundation-m1.md) |
+| Course/Question / M2 + M5 | [`02-course-m2-m5.md`](02-course-m2-m5.md) |
+| AI / M4 | [`03-ai-m4.md`](03-ai-m4.md) |
+| Media/Training / M6 | [`04-media-m6.md`](04-media-m6.md) |
+| Score/QA / M7 + E2E | [`05-score-m7-e2e.md`](05-score-m7-e2e.md) |
+| Architecture / Foundation / G2 | [`06-architecture-g2.md`](06-architecture-g2.md) |
+
+## 4. 各 Owner 的启动前置（按顺序）
 
 1. **G2 设计复审**：Architecture/Foundation 主持；M1 新增邮箱 / 微信登录、M2/M5、M3 提交契约、M4 manifest / 回调、M6 训练、M7 终态事件逐项确认。
 2. **Foundation / M1**：实现邮箱验证码、微信扫码、OAuth 引导注册；先落 `V13__m1_login_methods.sql` 与认证契约；再补组织 / 建校。
@@ -31,7 +42,7 @@
 5. **Media/Training / M6**：在 M3 训练 session 与 M4 训练报告可用后开发；训练保留 1 个月由 M6 负责。
 6. **Score/QA / M7+E2E**：先搭 Playwright / 测试骨架与种子数据；`EvaluationTerminalEvent` 冻结后实现评分 / 最终分 / 统计 / CSV。
 
-## 4. 通用禁止项
+## 5. 通用禁止项
 
 - 不得改其他 Owner 的模块、迁移、测试或 owner 表。
 - 不得在 main 直接开发；不得 force push；不得把 secrets / 真实 key 写入仓库。
@@ -39,7 +50,7 @@
 - 不得伪造测试结果；测试失败必须报告命令与输出。
 - 不得把本次 M1 文档授权推广到 M2—M7 的实现授权。
 
-## 5. 生成后的检查
+## 6. 生成后的检查
 
 每份提示词发送前确认：
 
