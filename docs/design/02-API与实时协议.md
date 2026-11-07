@@ -1,7 +1,7 @@
 # 02 API 与实时协议
 
 > 上位文档：[需求规格说明书](../requirements/需求规格说明书.md)、[00 总体设计](00-总体设计.md)、[01 数据模型与迁移](01-数据模型与迁移.md)
-> 版本：V1.6（讨论稿）　状态：待评审　更新日期：2026-11-03
+> 版本：V1.7（讨论稿）　状态：待评审　更新日期：2026-11-07
 > 范围：M1—M7；M8 暂缓
 > 风格：REST / JSON + WebSocket + Redis Streams；Java 提供公开 API，Python 只提供内部 AI API
 
@@ -12,7 +12,7 @@
 - 时间：REST 使用 ISO 8601 UTC；课堂事件 / WS 使用 session 相对毫秒 `at_ms`。
 - HTTP 方法：GET 查询、POST 创建 / 动作、PUT 整体更新、PATCH 局部更新、DELETE 删除或退出。
 - 认证：`Authorization: Bearer <JWT>`；WebSocket 使用短时效 ticket。
-- 公开接口：注册、登录、注册选项、健康检查；其余默认需要认证。
+- 公开接口：注册、密码 / 邮箱验证码登录、邮箱验证码发送、微信扫码 / 回调 / 状态 / ticket exchange、注册选项、健康检查；其余默认需要认证。
 
 ## 2. 认证与网关
 
@@ -23,14 +23,22 @@
 - Java 使用 Spring Security 7.1 + OAuth2 Resource Server 校验 JWT；`/api/**` 为 stateless resource server；`/internal/**` 使用单独 filter chain，要求内部 token。
 - URL 级权限由自定义 `AuthorizationManager` 查询 `api_permissions` + `account_type_permissions`；service 层仍做资源级权限。
 - 管理员未绑定学校时 `school_id` 为空；建校后返回新 token。
+- 用户名密码、邮箱验证码、微信扫码三种登录方式签发同一 claims 的 JWT；OAuth / 邮箱均不改变 token 有效期与角色范围。
 
 ### 2.2 Nginx `auth_request`
 
 ```nginx
 # 公开接口：不经过 auth_request
-location = /api/v1/auth/login    { proxy_pass http://java_app; }
-location = /api/v1/auth/register { proxy_pass http://java_app; }
-location ^~ /api/v1/public/      { proxy_pass http://java_app; }
+location = /api/v1/auth/login               { proxy_pass http://java_app; }
+location = /api/v1/auth/login/email         { proxy_pass http://java_app; }
+location = /api/v1/auth/email/code          { proxy_pass http://java_app; }
+location = /api/v1/auth/oauth/wechat/qr     { proxy_pass http://java_app; }
+location = /api/v1/auth/oauth/wechat/callback { proxy_pass http://java_app; }
+location = /api/v1/auth/oauth/wechat/status { proxy_pass http://java_app; }
+location = /api/v1/auth/oauth/wechat/exchange { proxy_pass http://java_app; }
+location = /api/v1/auth/oauth/wechat/register { proxy_pass http://java_app; }
+location = /api/v1/auth/register            { proxy_pass http://java_app; }
+location ^~ /api/v1/public/                 { proxy_pass http://java_app; }
 location = /actuator/health      { proxy_pass http://java_app; }
 
 # 受保护 API
@@ -192,7 +200,19 @@ location = /_auth {
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | POST | `/api/v1/auth/register` | 公开 | 注册；必须确认 `account_type`，注册后不可变更；无类型切换接口 |
-| POST | `/api/v1/auth/login` | 公开 | 登录，返回 JWT |
+| POST | `/api/v1/auth/login` | 公开 | 用户名 + 密码登录，返回 JWT |
+| POST | `/api/v1/auth/email/code` | 公开 | 发送邮箱登录验证码；统一 202，不暴露邮箱是否存在 |
+| POST | `/api/v1/auth/login/email` | 公开 | 邮箱 + 验证码登录，返回 JWT |
+| POST | `/api/v1/auth/email/bind/code` | 登录 | 向待绑定邮箱发送验证码 |
+| POST | `/api/v1/auth/email/bind` | 登录 | 校验验证码并绑定 / 换绑邮箱 |
+| DELETE | `/api/v1/auth/email` | 登录 | 解绑邮箱（需当前密码） |
+| GET | `/api/v1/auth/oauth/wechat/qr` | 公开 | 创建微信扫码 state / 授权 URL，返回二维码内容与过期时间 |
+| GET | `/api/v1/auth/oauth/wechat/callback` | 公开（微信回调） | 微信 code + state 回调；服务端换 openid / unionid，不返回 token |
+| GET | `/api/v1/auth/oauth/wechat/status` | 公开 | 轮询扫码状态；授权后返回一次性 ticket |
+| POST | `/api/v1/auth/oauth/wechat/exchange` | 公开 | login_ticket 换 JWT |
+| POST | `/api/v1/auth/oauth/wechat/register` | 公开（registration_ticket） | OAuth 引导注册：创建账号 + 绑定微信 |
+| POST | `/api/v1/auth/oauth/wechat/bind` | 登录 | 登录后绑定微信（需扫码 ticket） |
+| DELETE | `/api/v1/auth/oauth/wechat` | 登录 | 解绑微信（需当前密码；最后一个登录方式拒绝） |
 | GET | `/api/v1/auth/me` | 登录 | 当前账号信息 |
 | GET | `/api/v1/public/schools` | 公开 | 注册可选学校 |
 | GET | `/api/v1/public/schools/{school_id}/majors` | 公开 | 学校专业 |
@@ -210,6 +230,42 @@ location = /_auth {
 | POST | `/api/v1/admin/classes/import` | `admin:org` | CSV / Excel 导入；整批回滚 |
 | GET | `/api/v1/admin/teachers` | `admin:teacher_majors` | 本校教师列表 |
 | PUT | `/api/v1/admin/teachers/{account_id}/majors` | `admin:teacher_majors` | 修改教师专业范围 |
+
+#### 4.1.1 邮箱验证码与微信扫码
+
+```json
+POST /api/v1/auth/email/code
+{"email":"user@example.com","purpose":"login"}
+→ 202 {"accepted":true}
+
+POST /api/v1/auth/login/email
+{"email":"user@example.com","code":"123456"}
+→ 200 {"token":"...","expires_at":"...","me":{...}}
+```
+
+```json
+GET /api/v1/auth/oauth/wechat/qr
+→ 200 {"state":"...","authorize_url":"https://open.weixin.qq.com/connect/qrconnect?...",
+        "expires_at":"..."}
+
+GET /api/v1/auth/oauth/wechat/status?state=...
+→ 200 {"status":"pending|scanned|authorized|needs_registration|expired|failed",
+        "ticket":"..."}          # authorized 时一次性 login_ticket
+                                  # needs_registration 时 registration_ticket
+
+POST /api/v1/auth/oauth/wechat/exchange
+{"ticket":"..."} → 200 {"token":"...","expires_at":"...","me":{...}}
+
+POST /api/v1/auth/oauth/wechat/register
+{"ticket":"...","account_type":"student","username":"张三","password":"********",
+ "school_id":"...","major_id":"...","class_id":"..."} → 201 {"token":"...","me":{...}}
+```
+
+- 需登录的绑定 / 解绑接口使用 `auth:self` 权限码（M1 seed）；公开登录 / 扫码 / 回调接口不写入 `api_permissions`，由 Nginx 白名单 + Spring `permitAll` 放行。
+- 所有失败统一 `UNAUTHORIZED` 或 `VALIDATION_ERROR`，不区分邮箱 / 账号 / 微信身份是否存在。
+- 验证码限流：重发 60 秒；邮箱 5 次 / 小时；IP 20 次 / 小时；超限 429 `RATE_LIMITED`。
+- 微信 state / ticket 过期、重放、provider 失败：`VALIDATION_ERROR` / `SERVICE_UNAVAILABLE`；不签发 JWT。
+- `auth_login_events` 记录 method / provider / success / ip / user_agent；响应与日志不含验证码、access token、JWT 以外的敏感值。
 
 ### 4.2 M2 课程
 
@@ -619,6 +675,10 @@ Idempotency-Key: {job_id}
 | `INTERNAL_ERROR` | 500 | 内部错误 |
 | `SERVICE_UNAVAILABLE` | 503 | 依赖服务不可用 |
 | `USERNAME_TAKEN` | 409 | 用户名已占用 |
+| `EMAIL_TAKEN` | 409 | 邮箱已绑定其他账号（统一文案，不泄露账号） |
+| `OAUTH_IDENTITY_TAKEN` | 409 | 微信身份已绑定其他账号 |
+| `OAUTH_STATE_INVALID` | 400 | state / ticket 过期、重放或已使用 |
+| `OAUTH_PROVIDER_UNAVAILABLE` | 503 | 微信 / 邮件服务不可用 |
 | `SCHOOL_ALREADY_BOUND` | 409 | 管理员已绑定学校 |
 | `CLASS_NOT_MATCHED` | 422 | 无匹配班级 |
 | `CLASS_DISABLED` | 422 | 班级已停用，不能注册 / 加入 |
@@ -722,7 +782,7 @@ location /ws/ {
 
 - `client_max_body_size`：材料上传路由 25 MB，屏幕截图路由 5 MB；录像走 MinIO 预签名直传，Nginx 不代理大文件。
 - MinIO：独立 HTTPS 子域，预签名 URL 指向公网 HTTPS host；配置 CORS；Nginx 不代理大文件。
-- 限流：登录、注册、AI 触发接口分别 `limit_req`；登录 / 注册默认 5 次 / 分钟，burst 5。
+- 限流：登录、注册、邮箱验证码、微信二维码、AI 触发接口分别 `limit_req`；登录 / 注册默认 5 次 / 分钟，burst 5；邮箱验证码 60 秒重发、邮箱 5 次 / 小时、IP 20 次 / 小时；微信二维码按 IP 限流。
 - 清掉外部 `X-Account-*` / `X-Internal-Token`；`/internal/` 公网 `deny all`。
 
 ## 10. OpenAPI 与契约测试
