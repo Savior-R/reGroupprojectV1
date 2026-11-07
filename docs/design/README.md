@@ -59,7 +59,7 @@ Java 业务（M1/M2/M3/M5/M6/M7）
 | D4 | 实时协议 | WebSocket 由 Java 持有；Python 只提供流式 ASR / LLM 的临时连接；控制 WS 断线 30 秒 grace + 重连快照；页面刷新 / 录制器丢失 / Java 重启不恢复 | 课堂状态机与评测时间基准 |
 | D5 | AI / OCR / ASR | 统一适配层；DeepSeek `deepseek-flash` 负责文本与关键帧视觉；阿里云 Paraformer 实时 ASR + Qwen-OCR；OCR / ASR 云服务可替换；限流、重试、成本上限 | M3 实时分析、M4 评测 |
 | D6 | 多租户 | 所有业务表带 `school_id`；管理员与学校一对一；跨校一律拒绝 | 数据隔离与索引 |
-| D7 | 身份认证 | JWT / JWS（HS256、2 小时、Bearer）；Java Spring Security 7.1 + OAuth2 Resource Server；URL 级 `AuthorizationManager` + 资源级权限；WebSocket 握手用 ticket；不做 refresh | M1、M3、M7 |
+| D7 | 身份认证 | JWT / JWS（HS256、2 小时、Bearer）；密码 / 邮箱验证码 / 微信扫码登录；Java Spring Security 7.1 + OAuth2 Resource Server；URL 级 `AuthorizationManager` + 资源级权限；WebSocket 握手用 ticket；不做 refresh | M1、M3、M7 |
 | D8 | 非功能目标 | 已确认演示目标：3 个并发课堂、20 分钟；ASR < 1 s、LLM 首 token < 2 s、OCR < 2 s、M4 < 90 s；4 vCPU / 8 GB 起 | 容量、成本、部署 |
 | D9 | 前端技术栈 | Vue 3 + Vite + Pinia + Vue Router；Element Plus + ECharts | 页面、录制、回放、图表 |
 | D10 | 部署形态 | Docker Compose：Nginx + Java 业务 + Python AI（API / worker）+ PostgreSQL + Redis + MinIO；生产环境再评估 K8s | 启动、演示、运维 |
