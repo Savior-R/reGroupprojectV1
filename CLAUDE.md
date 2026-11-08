@@ -4,7 +4,9 @@
 
 ## 当前默认 Owner
 
-- 当前使用者：**M3 Owner**，负责 M3A 任务配置、M3B 课堂 / 面试 / WebSocket；M3 总集成。
+- 当前使用者：**M1 Owner（Foundation）**，负责 M1 账号 / 组织 / 认证、`shared` / 安全 / 网关 / 迁移基线。
+- `m1auth/**`、`shared/**`、`nginx/**`、`docker-compose.yml`、`application*.yml`、`build.gradle.kts` 均属本人负责范围，无需跨模块确认；`m2course` / `m3classroom` / `m4eval` / `m5question` / `m6training` / `m7teacher` 属他人，禁止直接修改。
+- 前端共享层（`frontend/src/router/**`、`layouts/**`、`stores/auth.ts`、`services/**`）与 `e2e/**` 属 **Score/QA Owner（成员 E，待填）**；`router.ts` 中 M1 路由由本人在其缺位期间代为实现，归属不变，待其追认。
 - M3C 录制 / 回放由 Media/Training Owner 负责。
 - 其他模块 owner 以 `docs/team/01-模块归属与修改规则.md` 第 2 节为准；姓名未填时使用角色名。
 - 其他成员使用 Agent 时，把“当前使用者”替换为自己的角色；跨模块确认规则不变。
