@@ -261,11 +261,11 @@ POST /api/v1/auth/oauth/wechat/register
  "school_id":"...","major_id":"...","class_id":"..."} → 201 {"token":"...","me":{...}}
 ```
 
-- 需登录的绑定 / 解绑接口使用 `auth:self` 权限码（M1 seed）；公开登录 / 扫码 / 回调接口不写入 `api_permissions`，由 Nginx 白名单 + Spring `permitAll` 放行。
+- 需登录的绑定 / 解绑接口使用 `auth:self` 权限码（M1 seed）；公开登录 / 扫码 / 回调接口不写入 `api_permissions`，由 Nginx 白名单 + Spring `permitAll` 放行。**当前实现为「角色 + JWT 主体归属」校验（操作对象取自 token，不接受前端传 account_id），`api_permissions` 表驱动授权尚未接入，`auth:self` 作为契约占位保留。**
 - 所有失败统一 `UNAUTHORIZED` 或 `VALIDATION_ERROR`，不区分邮箱 / 账号 / 微信身份是否存在。
 - 验证码限流：重发 60 秒；邮箱 5 次 / 小时；IP 20 次 / 小时；超限 429 `RATE_LIMITED`。
 - 微信 state / ticket 过期、重放、provider 失败：`VALIDATION_ERROR` / `SERVICE_UNAVAILABLE`；不签发 JWT。
-- `auth_login_events` 记录 method / provider / success / ip / user_agent；响应与日志不含验证码、access token、JWT 以外的敏感值。
+- `auth_login_events` 记录 `event_type`（`login` / `bind` / `unbind`）/ method / provider / success / ip / user_agent；响应与日志不含验证码、access token、JWT 以外的敏感值。
 
 ### 4.2 M2 课程
 
@@ -683,6 +683,7 @@ Idempotency-Key: {job_id}
 | `CLASS_NOT_MATCHED` | 422 | 无匹配班级 |
 | `CLASS_DISABLED` | 422 | 班级已停用，不能注册 / 加入 |
 | `MAJOR_DISABLED` | 422 | 专业已停用 |
+| `LAST_LOGIN_METHOD` | 422 | 不能解绑最后一个可用登录方式 |
 | `COURSE_ARCHIVED` | 422 | 课程已归档 |
 | `COURSE_MAJOR_MISMATCH` | 422 | 课程专业范围不符 |
 | `COURSE_NAME_TAKEN` | 409 | 课程名称在本校已存在 |
