@@ -16,6 +16,7 @@ import {
   updateMajor,
 } from '../../api/auth'
 import type { ClassView, ImportErrorRow, MajorView, SchoolView } from '../../api/auth'
+import AdminShell from './AdminShell.vue'
 
 /** 学校与组织（FR-M1-04 / 03 §3.9 /admin/org）：专业 / 班级维护，停用不删除。 */
 
@@ -126,7 +127,8 @@ onMounted(reload)
 </script>
 
 <template>
-  <div class="org-page">
+  <AdminShell>
+    <div class="org-page">
     <h2>学校与组织</h2>
     <p class="tip">
       当前学校：{{ school?.name ?? '未创建' }}；专业与班级停用后不再出现在注册选项，已有学生关系保留。
@@ -250,7 +252,8 @@ onMounted(reload)
         <el-table-column prop="message" label="问题" />
       </el-table>
     </el-dialog>
-  </div>
+    </div>
+  </AdminShell>
 </template>
 
 <style scoped>

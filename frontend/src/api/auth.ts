@@ -39,6 +39,23 @@ authClient.interceptors.request.use((config) => {
   return config
 })
 
+/**
+ * 统一把后端 `{ code, message }` 里的 message 提到 `error.message`。
+ *
+ * 否则页面 catch 到的是 Axios 默认文案（如 "Request failed with status code 409"），
+ * 用户看不到「用户名已被占用」「验证码错误」这类真正有用的提示。
+ */
+authClient.interceptors.response.use(
+  (response) => response,
+  (error: { response?: { data?: { message?: string } }; message?: string }) => {
+    const message = error.response?.data?.message
+    if (message) {
+      error.message = message
+    }
+    return Promise.reject(error)
+  },
+)
+
 // --------------------------------------------------------------------- 类型
 
 export type AccountType = 'student' | 'teacher' | 'admin'

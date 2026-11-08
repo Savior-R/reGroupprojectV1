@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { listAdminMajors, listTeachers, updateTeacherMajors } from '../../api/auth'
 import type { MajorView, TeacherRow } from '../../api/auth'
+import AdminShell from './AdminShell.vue'
 
 /** 教师管理（FR-M1-08 / 03 §3.9 /admin/teachers）：管理员修改本校教师专业范围。 */
 
@@ -43,7 +44,8 @@ onMounted(reload)
 </script>
 
 <template>
-  <div class="teachers-page">
+  <AdminShell>
+    <div class="teachers-page">
     <h2>教师管理</h2>
     <p class="tip">
       仅可修改本校教师的专业范围；教师本人不能修改自己的专业。变更后旧关系失效但保留历史。
@@ -90,7 +92,8 @@ onMounted(reload)
         <el-button type="primary" @click="save">保存</el-button>
       </template>
     </el-dialog>
-  </div>
+    </div>
+  </AdminShell>
 </template>
 
 <style scoped>

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   bindEmail,
@@ -8,19 +7,18 @@ import {
   createWechatQr,
   me,
   sendBindCode,
-  setToken,
   unbindEmail,
   unbindWechat,
   wechatStatus,
 } from '../../api/auth'
 import type { AccountView } from '../../api/auth'
+import AdminShell from './AdminShell.vue'
 
 /**
  * 账号安全（FR-M1-09 / FR-M1-11 / 03 §3.9 /settings/security）：
  * 绑定 / 换绑 / 解绑邮箱与微信，均需当前密码 + 重新验证。
  */
 
-const router = useRouter()
 const account = ref<AccountView | null>(null)
 const loading = ref(false)
 const countdown = ref(0)
@@ -149,20 +147,14 @@ async function removeWechat(): Promise<void> {
 }
 
 onMounted(reload)
-
-/** 退出登录：只清客户端 token，无服务端吊销（03 §3.8）。 */
-function logout(): void {
-  setToken(null)
-  void router.push('/login')
-}
 </script>
 
 <template>
-  <div class="security-page">
-    <div class="page-head">
-      <h2>账号安全</h2>
-      <el-button size="small" @click="logout">退出登录</el-button>
-    </div>
+  <AdminShell>
+    <div class="security-page">
+      <div class="page-head">
+        <h2>账号安全</h2>
+      </div>
     <p class="tip">账号类型注册后不可变更；绑定 / 解绑均需重新验证。</p>
 
     <el-card v-if="account" class="card">
@@ -224,7 +216,8 @@ function logout(): void {
         </div>
       </el-form>
     </el-card>
-  </div>
+    </div>
+  </AdminShell>
 </template>
 
 <style scoped>
