@@ -3,8 +3,8 @@ package com.shijiangtai.m3classroom.contract;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.shijiangtai.m3classroom.api.RecordingRequestMapper;
-import com.shijiangtai.m3classroom.api.error.ApiErrorResponse;
-import com.shijiangtai.m3classroom.api.error.GlobalExceptionHandler;
+import com.shijiangtai.shared.infrastructure.web.ApiErrorResponse;
+import com.shijiangtai.shared.infrastructure.web.GlobalExceptionHandler;
 import com.shijiangtai.m3classroom.application.view.MultipartUploadView;
 import com.shijiangtai.m3classroom.application.view.PartUrlView;
 import com.shijiangtai.m3classroom.application.view.RecordingStreamView;

@@ -3,6 +3,8 @@ name: shijiangtai
 services:
   postgres:
     image: postgres:18-alpine
+    # 开机 / Docker Desktop 重启后自动拉起；数据在命名卷 postgres-data 中
+    restart: unless-stopped
     environment:
       POSTGRES_DB: shijiangtai
       POSTGRES_USER: shijiangtai
@@ -88,6 +90,10 @@ services:
 
   app:
     build: ./server
+    # 容器内也要拿到 M1_JWT_SECRET / M1_EMAIL_CODE_SECRET / M1_INTERNAL_TOKEN / M1_MAIL_*；
+    # spring.config.import 读的是工作目录下的 .env，容器内没有该文件，故用 env_file 注入。
+    env_file:
+      - ./server/.env
     environment:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/shijiangtai?stringtype=unspecified
@@ -102,7 +108,8 @@ services:
       M3_MINIO_BUCKET: shijiangtai
       M3_AI_BASE_URL: http://ai:8001
       M3_AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-dev-service-token}
-    ports: ["8080:8080"]
+    # 宿主机 8090 → 容器 8080：8080 已被本机其他项目（file-transfer-nginx-1）占用
+    ports: ["8090:8080"]
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -126,6 +133,23 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
     command: ["gradle", "test", "--no-daemon", "--console=plain"]
+
+  # Nginx 网关（可选，02 §2.2）：验证 auth_request 链路时启用
+  # docker compose --profile gateway up -d nginx  →  http://localhost:8081
+  # 默认不启动：本机 8080 已被其他项目占用，日常直连 app:8080 即可
+  nginx:
+    profiles: ["gateway"]
+    image: nginx:1.27-alpine
+    ports: ["8081:80"]
+    # 与 app 共用同一份 .env，保证内部令牌一致（否则 /_auth 一律 401）
+    env_file:
+      - ./server/.env
+    environment:
+      JAVA_UPSTREAM: app:8080
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+    depends_on:
+      app: { condition: service_started }
 
 volumes:
   postgres-data:

@@ -1,3 +1,5 @@
 .idea
 .superpowers/
 backend/storage/
+.env
+.env.local

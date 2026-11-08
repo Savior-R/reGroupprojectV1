@@ -1,4 +1,4 @@
-package com.shijiangtai.m3classroom.api.error;
+package com.shijiangtai.shared.infrastructure.web;
 
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
@@ -14,6 +14,10 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
+/**
+ * 全局异常映射（02 §8.1、15 §3.1 {@code shared/infrastructure/web}）。
+ * Controller 不写 try/catch，统一由这里转成 {@link ApiErrorResponse}。
+ */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
