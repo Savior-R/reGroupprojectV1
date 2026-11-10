@@ -8,7 +8,9 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
+  ElOption,
   ElPagination,
+  ElSelect,
   ElSwitch,
   ElTable,
   ElTableColumn,
@@ -22,11 +24,18 @@ import {
   removeStudent,
 } from '../../api/courses'
 import type { BatchAddStudentsResult, CourseStudentView } from '../../api/courses'
+import { listPublicClasses } from '../../api/auth'
+import type { ClassView } from '../../api/auth'
+import { useAuthStore } from '../../stores/auth'
 
 /** 课程学生名单：按班级批量加人（允许部分成功）、按账号单个加人、移出学生、查看历史。 */
 
+/** 后端 `student_account_id` 是 UUID，先在本地拦一次，避免把随手输入的文本发到接口换回 400。 */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const route = useRoute()
 const router = useRouter()
+const auth = useAuthStore()
 const courseId = String(route.params.courseId ?? '')
 
 const students = ref<CourseStudentView[]>([])
@@ -39,6 +48,7 @@ const studentAccountId = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
 const batchResult = ref<BatchAddStudentsResult | null>(null)
+const classes = ref<ClassView[]>([])
 
 const METHOD_LABELS: Record<CourseStudentView['join_method'], string> = {
   self: '自主加入',
@@ -78,7 +88,7 @@ async function load(): Promise<void> {
 async function addByClass(): Promise<void> {
   const value = classId.value.trim()
   if (!value) {
-    ElMessage.warning('请填写班级 ID')
+    ElMessage.warning('请选择班级')
     return
   }
   try {
@@ -97,6 +107,10 @@ async function addByAccount(): Promise<void> {
   const value = studentAccountId.value.trim()
   if (!value) {
     ElMessage.warning('请填写学生账号 ID')
+    return
+  }
+  if (!UUID_PATTERN.test(value)) {
+    ElMessage.warning('账号 ID 需为 UUID 格式，例如 00000000-0000-0000-0000-000000000020')
     return
   }
   try {
@@ -133,7 +147,27 @@ function onPageChange(next: number): void {
   void load()
 }
 
-onMounted(load)
+/** 本校班级下拉：M1 公开接口只返回启用中的班级，避免手填 UUID 填错。 */
+async function loadClasses(): Promise<void> {
+  if (!auth.schoolId) {
+    return
+  }
+  try {
+    classes.value = await listPublicClasses(auth.schoolId)
+  } catch {
+    classes.value = []
+  }
+}
+
+function classLabel(item: ClassView): string {
+  const prefix = item.major_name ? `${item.major_name} · ` : ''
+  return `${prefix}${item.grade} ${item.name}`
+}
+
+onMounted(() => {
+  void load()
+  void loadClasses()
+})
 </script>
 
 <template>
@@ -147,7 +181,20 @@ onMounted(load)
       </template>
 
       <div class="course-students__toolbar">
-        <ElInput v-model="classId" placeholder="班级 ID（UUID）批量加人" class="course-students__input" />
+        <ElSelect
+          v-model="classId"
+          filterable
+          clearable
+          placeholder="选择班级批量加人"
+          class="course-students__input"
+        >
+          <ElOption
+            v-for="item in classes"
+            :key="item.id"
+            :label="classLabel(item)"
+            :value="item.id"
+          />
+        </ElSelect>
         <ElButton @click="addByClass">按班级加人</ElButton>
         <ElInput v-model="studentAccountId" placeholder="学生账号 ID（UUID）" class="course-students__input" />
         <ElButton @click="addByAccount">按账号加人</ElButton>

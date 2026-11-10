@@ -226,6 +226,40 @@ class CourseControllerIT extends M2PostgresIT {
     }
 
     @Test
+    void nonUuidMajorIdReturns400InsteadOfInternalError() throws Exception {
+        mockMvc.perform(as(post("/api/v1/courses"), TEACHER, SCHOOL, "TEACHER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\": \"M2 非法专业\", \"major_ids\": [\"打打打\"]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.details.field").value("major_ids[0]"))
+                .andExpect(jsonPath("$.trace_id").exists());
+    }
+
+    @Test
+    void malformedEndAtReturns400InsteadOfInternalError() throws Exception {
+        mockMvc.perform(as(post("/api/v1/courses"), TEACHER, SCHOOL, "TEACHER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\": \"M2 非法日期\", \"major_ids\": [\"" + MAJOR
+                                + "\"], \"end_at\": \"2030-01-01 00:00:00\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.details.field").value("end_at"));
+    }
+
+    @Test
+    void nonUuidAccountIdReturns400InsteadOfInternalError() throws Exception {
+        String courseId = createCourseViaApi("M2 非法账号", MAJOR);
+
+        mockMvc.perform(as(post("/api/v1/courses/{id}/teachers", courseId),
+                        TEACHER, SCHOOL, "TEACHER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"account_id\": \"not-a-uuid\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void studentListOnlyShowsOwnMajorCourses() throws Exception {
         createCourseViaApi("M2 列表-本专业", MAJOR);
         persistCourse("M2 列表-其他专业", MAJOR2, FUTURE, TEACHER);
@@ -273,7 +307,7 @@ class CourseControllerIT extends M2PostgresIT {
         mockMvc.perform(as(post("/api/v1/courses/{id}/students/class", courseId),
                         TEACHER, SCHOOL, "TEACHER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"class_id\": \"" + CLASS + "\"}"))
+                        .content("{\"class_id\": \"" + M2_CLASS + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(2))
                 .andExpect(jsonPath("$.success").value(2))
@@ -282,7 +316,7 @@ class CourseControllerIT extends M2PostgresIT {
         mockMvc.perform(as(post("/api/v1/courses/{id}/students/class", courseId),
                         TEACHER, SCHOOL, "TEACHER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"class_id\": \"" + CLASS + "\"}"))
+                        .content("{\"class_id\": \"" + M2_CLASS + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(0))
                 .andExpect(jsonPath("$.skipped").value(2));
@@ -292,7 +326,7 @@ class CourseControllerIT extends M2PostgresIT {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total").value(2))
                 .andExpect(jsonPath("$.items[0].join_method").value("class"))
-                .andExpect(jsonPath("$.items[0].class_name").value("2024 测试班级"));
+                .andExpect(jsonPath("$.items[0].class_name").value("2024 M2 测试班级"));
     }
 
     @Test
@@ -304,7 +338,7 @@ class CourseControllerIT extends M2PostgresIT {
             mockMvc.perform(as(post("/api/v1/courses/{id}/students/class", courseId),
                             TEACHER, SCHOOL, "TEACHER")
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"class_id\": \"" + CLASS + "\"}"))
+                            .content("{\"class_id\": \"" + M2_CLASS + "\"}"))
                     .andExpect(status().isUnprocessableEntity())
                     .andExpect(jsonPath("$.code").value("CLASS_DISABLED"));
         } finally {
@@ -317,7 +351,7 @@ class CourseControllerIT extends M2PostgresIT {
         jdbc.update("UPDATE m1_auth.classes SET status = :status WHERE id = :id",
                 new MapSqlParameterSource()
                         .addValue("status", active ? "active" : "inactive")
-                        .addValue("id", CLASS));
+                        .addValue("id", M2_CLASS));
     }
 
     @Test

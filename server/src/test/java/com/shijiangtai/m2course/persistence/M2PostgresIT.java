@@ -37,6 +37,16 @@ public abstract class M2PostgresIT {
     protected static final UUID MAJOR2 = uuid("00000000-0000-0000-0000-000000000301");
     protected static final UUID OTHER_MAJOR = uuid("00000000-0000-0000-0000-000000000310");
     protected static final UUID CLASS = uuid("00000000-0000-0000-0000-000000000200");
+    /**
+     * M2 专用班级与学生。
+     *
+     * <p>test-upstream 的 {@link #CLASS} 是 M3 共用夹具，开发库里手工注册的真实账号
+     * （如 demo.student）也会挂在同一个班；「按班级批量加人」这类用例断言的是「全班人数」，
+     * 一旦有人手工注册进该班就会变成假失败。所以 M2 自己建一个只含两名固定学生的班级。
+     */
+    protected static final UUID M2_CLASS = uuid("00000000-0000-0000-0000-000000000201");
+    protected static final UUID M2_STUDENT_A = uuid("00000000-0000-0000-0000-000000000023");
+    protected static final UUID M2_STUDENT_B = uuid("00000000-0000-0000-0000-000000000024");
     /** test-upstream.sql 里的基础课程，M3 用例依赖它，M2 不删也不改。 */
     protected static final UUID BASE_COURSE = uuid("00000000-0000-0000-0000-000000000100");
 
@@ -61,6 +71,11 @@ public abstract class M2PostgresIT {
         insertTeacherMajor(OTHER_SCHOOL_TEACHER, OTHER_MAJOR);
         insertStudentProfile(STUDENT, CLASS);
         insertStudentProfile(STUDENT2, CLASS);
+        insertClass(M2_CLASS, SCHOOL, MAJOR, "2024", "M2 测试班级");
+        insertAccount(M2_STUDENT_A, "m2.student.a", SCHOOL, "student");
+        insertAccount(M2_STUDENT_B, "m2.student.b", SCHOOL, "student");
+        insertStudentProfile(M2_STUDENT_A, M2_CLASS);
+        insertStudentProfile(M2_STUDENT_B, M2_CLASS);
     }
 
     @AfterEach
@@ -112,6 +127,19 @@ public abstract class M2PostgresIT {
                 """, new MapSqlParameterSource()
                 .addValue("accountId", accountId)
                 .addValue("majorId", majorId));
+    }
+
+    protected void insertClass(UUID id, UUID schoolId, UUID majorId, String grade, String name) {
+        jdbc.update("""
+                INSERT INTO m1_auth.classes (id, school_id, major_id, grade, name)
+                VALUES (:id, :schoolId, :majorId, :grade, :name)
+                ON CONFLICT DO NOTHING
+                """, new MapSqlParameterSource()
+                .addValue("id", id)
+                .addValue("schoolId", schoolId)
+                .addValue("majorId", majorId)
+                .addValue("grade", grade)
+                .addValue("name", name));
     }
 
     protected void insertStudentProfile(UUID accountId, UUID classId) {

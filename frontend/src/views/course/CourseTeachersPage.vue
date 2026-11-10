@@ -19,6 +19,9 @@ import type { CourseTeacherView } from '../../api/courses'
 
 /** 课程老师组：组内平权，任何在组教师或本校管理员可增删；至少保留一名有效教师。 */
 
+/** 后端 `account_id` 是 UUID，先在本地拦一次，避免把随手输入的文本发到接口换回 400。 */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 const route = useRoute()
 const router = useRouter()
 const courseId = String(route.params.courseId ?? '')
@@ -49,6 +52,10 @@ async function add(): Promise<void> {
   const value = accountId.value.trim()
   if (!value) {
     ElMessage.warning('请填写教师账号 ID')
+    return
+  }
+  if (!UUID_PATTERN.test(value)) {
+    ElMessage.warning('账号 ID 需为 UUID 格式，例如 00000000-0000-0000-0000-000000000010')
     return
   }
   try {
