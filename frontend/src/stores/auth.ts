@@ -86,7 +86,9 @@ function persistRole(role: DevRole): void {
 }
 
 function resolveInitialRole(): DevRole {
-  return readStoredRole() ?? readQueryRole() ?? 'student'
+  // An explicit ?dev_role= override wins so direct teacher/student demo URLs
+  // work even after a different role was persisted earlier in the session.
+  return readQueryRole() ?? readStoredRole() ?? 'student'
 }
 
 export const useAuthStore = defineStore('auth', () => {
