@@ -1,0 +1,17 @@
+# 试讲台 —— 校内教学系统
+# 本文件只对遵守 robots 协议的爬虫有效；真正的访问控制由网关限流与服务端鉴权负责。
+#
+# 数据接口（学校 / 专业 / 年级 / 班级）虽为公开读取，但不欢迎批量镜像。
+
+User-agent: *
+# 全部 API 与鉴权相关路径不允许抓取
+Disallow: /api/
+Disallow: /admin/
+Disallow: /settings/
+Disallow: /login
+Disallow: /register
+
+# 首页与静态资源可抓
+Allow: /$
+Allow: /favicon.svg
+Allow: /icons.svg

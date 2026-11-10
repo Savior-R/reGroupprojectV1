@@ -4,11 +4,17 @@
 # 因此受保护路径与 WebSocket 处把清除头一并重写。
 
 limit_req_zone $binary_remote_addr zone=auth_limit:10m rate=5r/m;
+# 公开数据接口（学校 / 专业 / 年级 / 班级）：正常用户点击频率远低于此，
+# 主要用于挡住脚本批量镜像。
+limit_req_zone $binary_remote_addr zone=public_limit:10m rate=30r/m;
 
 server {
     listen 80;
     server_name _;
     client_max_body_size 21m;
+
+    # 默认是 503，语义不对：限流应返回 429（与后端 RATE_LIMITED 一致）
+    limit_req_status 429;
 
     # 外部请求不可伪造身份头：默认清空（/api/ 与 /ws/ 内部另行覆盖）
     proxy_set_header X-Account-Id "";
@@ -52,6 +58,7 @@ server {
         proxy_pass http://${JAVA_UPSTREAM};
     }
     location ^~ /api/v1/public/ {
+        limit_req zone=public_limit burst=20 nodelay;
         proxy_pass http://${JAVA_UPSTREAM};
     }
     location = /actuator/health {

@@ -261,7 +261,9 @@ POST /api/v1/auth/oauth/wechat/register
  "school_id":"...","major_id":"...","class_id":"..."} → 201 {"token":"...","me":{...}}
 ```
 
-- 需登录的绑定 / 解绑接口使用 `auth:self` 权限码（M1 seed）；公开登录 / 扫码 / 回调接口不写入 `api_permissions`，由 Nginx 白名单 + Spring `permitAll` 放行。**当前实现为「角色 + JWT 主体归属」校验（操作对象取自 token，不接受前端传 account_id），`api_permissions` 表驱动授权尚未接入，`auth:self` 作为契约占位保留。**
+- 需登录的绑定 / 解绑接口使用 `auth:self` 权限码（M1 seed）；公开登录 / 扫码 / 回调接口不写入 `api_permissions`，由 Nginx 白名单 + Spring `permitAll` 放行。
+- **URL 级权限由 `PermissionAuthorizationManager` 按 `api_permissions` 表判定**（RBAC）：`/api/v1/auth/**` 与 `/api/v1/admin/**` 已接入（M1）；表中查不到规则一律拒绝（fail closed），避免漏配被默认放行。M2—M7 路径暂用「登录即可」，待各自 owner 核对权限种子后再切换。
+- 数据级校域（跨校拒绝）不属 RBAC 范畴，仍由服务层 `CROSS_SCHOOL_ACCESS` 校验；两者互补：RBAC 管「能不能调这个接口」，数据权限管「能操作哪些行」。
 - 所有失败统一 `UNAUTHORIZED` 或 `VALIDATION_ERROR`，不区分邮箱 / 账号 / 微信身份是否存在。
 - 验证码限流：重发 60 秒；邮箱 5 次 / 小时；IP 20 次 / 小时；超限 429 `RATE_LIMITED`。
 - 微信 state / ticket 过期、重放、provider 失败：`VALIDATION_ERROR` / `SERVICE_UNAVAILABLE`；不签发 JWT。
@@ -784,6 +786,7 @@ location /ws/ {
 - `client_max_body_size`：材料上传路由 25 MB，屏幕截图路由 5 MB；录像走 MinIO 预签名直传，Nginx 不代理大文件。
 - MinIO：独立 HTTPS 子域，预签名 URL 指向公网 HTTPS host；配置 CORS；Nginx 不代理大文件。
 - 限流：登录、注册、邮箱验证码、微信二维码、AI 触发接口分别 `limit_req`；登录 / 注册默认 5 次 / 分钟，burst 5；邮箱验证码 60 秒重发、邮箱 5 次 / 小时、IP 20 次 / 小时；微信二维码按 IP 限流。
+- 公开数据接口（`/api/v1/public/**`）单独一个 `limit_req` zone：**30 次 / 分钟 / IP，burst 20**；命中限流返回 **429**（`limit_req_status 429`，Nginx 默认的 503 语义不对）。这些接口本身免认证，限流是防止组织数据被脚本批量镜像的唯一手段；响应同时带 `Cache-Control: public, max-age=60`，削减正常用户的重复请求。
 - 清掉外部 `X-Account-*` / `X-Internal-Token`；`/internal/` 公网 `deny all`。
 
 ## 10. OpenAPI 与契约测试
