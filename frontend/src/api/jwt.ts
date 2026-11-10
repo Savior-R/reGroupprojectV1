@@ -70,10 +70,13 @@ export function decodeJwt(token: string | null): JwtClaims | null {
   }
 }
 
-/** 登录后应落地的页面：具备管理员角色时按是否已建校区分。 */
+/** 登录后应落地的页面：管理员按是否已建校；学生进任务中心；教师暂无专属首页。 */
 export function homeFor(claims: JwtClaims): string {
   if (isAdmin(claims)) {
     return claims.school_id ? '/admin/org' : '/admin/setup'
+  }
+  if (hasRole(claims, 'student')) {
+    return '/student/tasks'
   }
   return '/settings/security'
 }
