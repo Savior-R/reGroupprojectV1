@@ -787,7 +787,8 @@ location /ws/ {
 - `client_max_body_size`：材料上传路由 25 MB，屏幕截图路由 5 MB；录像走 MinIO 预签名直传，Nginx 不代理大文件。
 - MinIO：独立 HTTPS 子域，预签名 URL 指向公网 HTTPS host；配置 CORS；Nginx 不代理大文件。
 - 限流：登录、注册、邮箱验证码、微信二维码、AI 触发接口分别 `limit_req`；登录 / 注册默认 5 次 / 分钟，burst 5；邮箱验证码 60 秒重发、邮箱 5 次 / 小时、IP 20 次 / 小时；微信二维码按 IP 限流。
-- 公开数据接口（`/api/v1/public/**`）单独一个 `limit_req` zone：**30 次 / 分钟 / IP，burst 20**；命中限流返回 **429**（`limit_req_status 429`，Nginx 默认的 503 语义不对）。这些接口本身免认证，限流是防止组织数据被脚本批量镜像的唯一手段；响应同时带 `Cache-Control: public, max-age=60`，削减正常用户的重复请求。
+- 公开数据接口（`/api/v1/public/**`）单独一个 `limit_req` zone：**30 次 / 分钟 / IP，burst 20**；命中限流返回 **429**（`limit_req_status 429`，Nginx 默认的 503 语义不对），响应体为与后端一致的 JSON `{"code":"RATE_LIMITED",...}`（Nginx 默认 HTML 错误页前端无法解析）。这些接口本身免认证，限流是防止组织数据被脚本批量镜像的唯一手段；响应同时带 `Cache-Control: public, max-age=60`，削减正常用户的重复请求。
+- **限流只存在于网关层**：`docker-compose.yml` 的 `nginx` 服务在 `gateway` profile 下才启动。直连应用端口（本地 `bootRun` 或未启网关的内网访问）没有任何限流，且 dev profile 还接受 `X-Account-*` 请求头身份——**生产必须只暴露网关，不映射应用端口**。本地验证限流需 `docker compose --profile gateway up -d nginx`。
 - 清掉外部 `X-Account-*` / `X-Internal-Token`；`/internal/` 公网 `deny all`。
 
 ## 10. OpenAPI 与契约测试
