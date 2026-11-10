@@ -27,8 +27,15 @@ dependencies {
     implementation("org.apache.poi:poi-ooxml:6.0.0")
     implementation("io.minio:minio:8.5.17")
 
+    // M1 account & auth (03 §3.3 dependencies, §3.6 org import)
+    implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+    implementation("org.springframework.boot:spring-boot-starter-mail")
+    implementation("org.apache.commons:commons-csv:1.14.1")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
+    testImplementation("org.springframework.security:spring-security-test")
     testImplementation("com.tngtech.archunit:archunit-junit5:1.5.1")
 }
 

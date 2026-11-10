@@ -10,3 +10,19 @@ spring:
 m3:
   storage: memory
   ticket-store: memory
+
+# M1：测试固定密钥 + 强制 Mock，绝不真实发信 / 扫码
+m1:
+  internal-token: test-internal-token
+  jwt:
+    secret: test-only-jwt-secret-at-least-32-bytes-long-0001
+  email-code:
+    secret: test-only-email-code-secret
+    # 集成测试会在同一 IP 上连续发码，小时级限流放大以免互相干扰；
+    # 60 秒重发限制保留，仍由 resendWithinSixtySecondsIsRateLimited 覆盖。
+    email-hourly-limit: 1000
+    ip-hourly-limit: 1000
+  mail:
+    mock: true
+  wechat:
+    mock: true

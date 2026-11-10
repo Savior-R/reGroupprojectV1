@@ -1,6 +1,9 @@
 spring:
   application:
     name: shijiangtai-server
+  # M1：本地 .env 覆盖（文件缺失不报错，生产用环境变量）
+  config:
+    import: optional:file:.env[.properties]
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/shijiangtai?stringtype=unspecified}
     username: ${SPRING_DATASOURCE_USERNAME:shijiangtai}
@@ -21,6 +24,21 @@ spring:
     datatype:
       datetime:
         WRITE_DATES_AS_TIMESTAMPS: false
+  mail:
+    host: ${M1_MAIL_HOST:smtp.qq.com}
+    port: ${M1_MAIL_PORT:465}
+    username: ${M1_MAIL_USERNAME:}
+    password: ${M1_MAIL_PASSWORD:}
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: ${M1_MAIL_SSL:true}
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
   servlet:
     multipart:
       max-file-size: 20MB
@@ -37,3 +55,38 @@ management:
 
 m3:
   storage: ${M3_STORAGE:memory}
+
+# ============================================================================
+# M1 账号与身份认证（03 §3.2 / §3.10）
+# 真实凭据在 server/.env（不进仓库）；此处只声明结构与安全默认值
+# ============================================================================
+m1:
+  # 内部服务令牌：Nginx /_auth 调用 /internal/** 时携带；为空则拒绝所有内部请求
+  internal-token: ${M1_INTERNAL_TOKEN:}
+  jwt:
+    # HS256，至少 32 字节；为空时启动校验会拒绝签发
+    secret: ${M1_JWT_SECRET:}
+    ttl: PT2H
+  email-code:
+    # 验证码 HMAC-SHA256 密钥；DB 只存哈希
+    secret: ${M1_EMAIL_CODE_SECRET:}
+    ttl: PT5M
+    max-attempts: 5
+    resend-interval: PT60S
+    email-hourly-limit: 5
+    ip-hourly-limit: 20
+  mail:
+    # true = MockMailSender，不真实发信
+    mock: ${M1_MAIL_MOCK:false}
+    from: ${M1_MAIL_FROM:}
+  wechat:
+    app-id: ${M1_WECHAT_APP_ID:}
+    app-secret: ${M1_WECHAT_APP_SECRET:}
+    redirect-uri: ${M1_WECHAT_REDIRECT_URI:}
+    # 无开放平台资质时为 true，走 MockWeChatProvider
+    mock: ${M1_WECHAT_MOCK:true}
+  oauth:
+    # memory = 单实例内存（开发/测试）；redis = 多实例共享（docker / 生产）
+    store: ${M1_OAUTH_STORE:memory}
+    state-ttl: PT5M
+    ticket-ttl: PT5M

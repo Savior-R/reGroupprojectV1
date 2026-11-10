@@ -2,8 +2,8 @@ package com.shijiangtai.m3classroom.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.shijiangtai.m3classroom.api.error.ApiErrorResponse;
-import com.shijiangtai.m3classroom.api.error.GlobalExceptionHandler;
+import com.shijiangtai.shared.infrastructure.web.ApiErrorResponse;
+import com.shijiangtai.shared.infrastructure.web.GlobalExceptionHandler;
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import org.junit.jupiter.api.Test;
