@@ -1,5 +1,5 @@
 # 试讲台网关（02 §2.2 / 03 §3.3）
-# 由官方 nginx 镜像的 envsubst 注入 ${INTERNAL_SERVICE_TOKEN} 与 ${JAVA_UPSTREAM}。
+# 由官方 nginx 镜像的 envsubst 注入 ${M1_INTERNAL_TOKEN} 与 ${JAVA_UPSTREAM}。
 # 注意：location 内一旦出现 proxy_set_header，就不再继承 server 级设置，
 # 因此受保护路径与 WebSocket 处把清除头一并重写。
 
@@ -15,6 +15,17 @@ server {
 
     # 默认是 503，语义不对：限流应返回 429（与后端 RATE_LIMITED 一致）
     limit_req_status 429;
+
+    # 限流响应必须是 JSON：Nginx 默认返回 HTML 错误页，前端解析不了 {code, message}。
+    # 用 =429 强制状态码，内部 location 返回 200 以避免 error_page 递归。
+    error_page 429 =429 /__rate_limited.json;
+
+    location = /__rate_limited.json {
+        internal;
+        default_type application/json;
+        charset utf-8;
+        return 200 '{"code":"RATE_LIMITED","message":"请求过于频繁，请稍后再试","details":{},"trace_id":null}';
+    }
 
     # 外部请求不可伪造身份头：默认清空（/api/ 与 /ws/ 内部另行覆盖）
     proxy_set_header X-Account-Id "";
