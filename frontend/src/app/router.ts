@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { getToken } from '../api/auth'
 import { decodeJwt, homeFor } from '../api/jwt'
+import { courseRoutes } from '../views/course/course.routes'
 
 /**
  * 路由表（09 §4.1）。
@@ -98,6 +99,9 @@ export const routes: RouteRecordRaw[] = [
     redirect: '/admin/org',
   },
 
+  // M2 课程页面：路由定义在 views/course/course.routes.ts，这里只做一次展开。
+  // M1 已切到 JWT，课程页面同样需要登录态。
+  ...courseRoutes,
   {
     path: '/403',
     name: 'forbidden',
