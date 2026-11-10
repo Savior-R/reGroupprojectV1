@@ -1,17 +1,44 @@
 /**
  * JWT 载荷解码（仅用于前端路由判断）。
  *
- * 不校验签名——签名校验在后端；前端只读取 account_type / school_id 决定
- * 该显示哪个页面。token 被篡改时后端会返回 401，前端随之跳回登录页。
+ * 不校验签名——签名校验在后端；前端只读取 account_type / roles / school_id
+ * 决定该显示哪个页面。token 被篡改时后端会返回 401，前端随之跳回登录页。
+ *
+ * 多角色（V14）：`account_type` 是主身份（注册时确认、不可变），`roles` 是
+ * 本次 token 的授权角色集合（教师可被授予 admin）。判断“能不能进管理端”
+ * 必须用 roles，不能用 account_type。
  */
+
+export type Role = 'student' | 'teacher' | 'admin'
 
 export interface JwtClaims {
   sub: string
-  account_type: 'student' | 'teacher' | 'admin'
+  account_type: Role
+  /** 授权角色集合；旧 token 可能没有该字段，此时回退到 account_type */
+  roles?: Role[]
   school_id?: string | null
   exp?: number
   iat?: number
   jti?: string
+}
+
+/** 当前 token 拥有的角色；旧 token（无 roles）按主身份处理。 */
+export function rolesOf(claims: JwtClaims | null): Role[] {
+  if (!claims) {
+    return []
+  }
+  if (claims.roles && claims.roles.length > 0) {
+    return claims.roles
+  }
+  return claims.account_type ? [claims.account_type] : []
+}
+
+export function hasRole(claims: JwtClaims | null, role: Role): boolean {
+  return rolesOf(claims).includes(role)
+}
+
+export function isAdmin(claims: JwtClaims | null): boolean {
+  return hasRole(claims, 'admin')
 }
 
 function base64UrlDecode(input: string): string {
@@ -43,9 +70,9 @@ export function decodeJwt(token: string | null): JwtClaims | null {
   }
 }
 
-/** 登录后应落地的页面：管理员区分是否已建校。 */
+/** 登录后应落地的页面：具备管理员角色时按是否已建校区分。 */
 export function homeFor(claims: JwtClaims): string {
-  if (claims.account_type === 'admin') {
+  if (isAdmin(claims)) {
     return claims.school_id ? '/admin/org' : '/admin/setup'
   }
   return '/settings/security'

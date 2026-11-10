@@ -19,6 +19,7 @@ server {
     # 外部请求不可伪造身份头：默认清空（/api/ 与 /ws/ 内部另行覆盖）
     proxy_set_header X-Account-Id "";
     proxy_set_header X-Account-Type "";
+    proxy_set_header X-Account-Roles "";
     proxy_set_header X-School-Id "";
     proxy_set_header X-Internal-Token "";
     proxy_set_header Host $host;
@@ -70,6 +71,7 @@ server {
         auth_request /_auth;
         auth_request_set $account_id   $upstream_http_x_account_id;
         auth_request_set $account_type $upstream_http_x_account_type;
+        auth_request_set $account_roles $upstream_http_x_account_roles;
         auth_request_set $school_id    $upstream_http_x_school_id;
 
         proxy_set_header Host $host;
@@ -77,6 +79,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Account-Id   $account_id;
         proxy_set_header X-Account-Type $account_type;
+        proxy_set_header X-Account-Roles $account_roles;
         proxy_set_header X-School-Id    $school_id;
         proxy_set_header X-Internal-Token "";
         proxy_pass http://${JAVA_UPSTREAM};
@@ -91,6 +94,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Account-Id "";
         proxy_set_header X-Account-Type "";
+        proxy_set_header X-Account-Roles "";
         proxy_set_header X-School-Id "";
         proxy_read_timeout 3600s;
         proxy_buffering off;

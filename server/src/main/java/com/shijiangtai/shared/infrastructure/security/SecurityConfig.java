@@ -171,16 +171,27 @@ public class SecurityConfig {
                 .build();
     }
 
-    /** {@code account_type} → {@code ROLE_*}；不把权限列表写进 token（03 §3.3）。 */
+    /**
+     * 角色 claim 映射为 {@code ROLE_*}。
+     *
+     * <p>多角色（V14）：JWT 的 {@code roles} 数组全部映射，如教师兼管理员
+     * → {@code ROLE_TEACHER} + {@code ROLE_ADMIN}；旧 token 无 {@code roles}
+     * 时退回 {@code account_type} 单值。权限列表不写进 token（03 §3.3）。
+     */
     private JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-            String type = jwt.getClaimAsString("account_type");
-            if (type == null || type.isBlank()) {
-                return List.of();
+            java.util.List<String> roles = jwt.getClaimAsStringList("roles");
+            if (roles == null || roles.isEmpty()) {
+                String type = jwt.getClaimAsString("account_type");
+                roles = type == null || type.isBlank() ? java.util.List.of() : java.util.List.of(type);
             }
-            return List.of(new SimpleGrantedAuthority(
-                    "ROLE_" + type.toUpperCase(java.util.Locale.ROOT)));
+            return roles.stream()
+                    .filter(value -> value != null && !value.isBlank())
+                    .map(value -> (org.springframework.security.core.GrantedAuthority)
+                            new SimpleGrantedAuthority(
+                                    "ROLE_" + value.toUpperCase(java.util.Locale.ROOT)))
+                    .toList();
         });
         return converter;
     }

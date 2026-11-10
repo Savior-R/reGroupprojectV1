@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { getToken } from '../api/auth'
-import { decodeJwt, homeFor } from '../api/jwt'
+import { decodeJwt, homeFor, isAdmin } from '../api/jwt'
 
 /**
  * 路由表（09 §4.1）。
@@ -123,8 +123,8 @@ export const router = createRouter({
 /**
  * 守卫（03 §3.9「路由守卫」）：
  * - 无 token → /login
- * - 未绑定管理员 → /admin/setup
- * - 学生 / 教师访问管理端 → 403
+ * - 无 admin 角色访问管理端 → 403（教师被授予 admin 后可进，见 V14）
+ * - 管理员角色但未建校 → /admin/setup
  * - 已登录再访问登录 / 注册页 → 回各自首页
  */
 router.beforeEach((to) => {
@@ -133,7 +133,7 @@ router.beforeEach((to) => {
   if (to.meta.requiresAuth && !claims) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
-  if (to.meta.adminOnly && claims?.account_type !== 'admin') {
+  if (to.meta.adminOnly && !isAdmin(claims)) {
     return { path: '/403' }
   }
   if (to.meta.requiresSchool && !claims?.school_id) {

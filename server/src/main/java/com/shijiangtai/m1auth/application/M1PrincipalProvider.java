@@ -6,7 +6,9 @@ import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SchoolId;
 import com.shijiangtai.shared.infrastructure.security.HeaderIdentity;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -52,7 +54,15 @@ public class M1PrincipalProvider {
             String schoolValue = jwt.getClaimAsString("school_id");
             SchoolId schoolId = schoolValue == null || schoolValue.isBlank()
                     ? null : new SchoolId(UUID.fromString(schoolValue));
-            return new M1Principal(accountId, type, schoolId);
+
+            List<String> roleValues = jwt.getClaimAsStringList("roles");
+            Set<AccountType> roles = roleValues == null || roleValues.isEmpty()
+                    ? Set.of(type)
+                    : roleValues.stream()
+                            .filter(value -> value != null && !value.isBlank())
+                            .map(value -> AccountType.valueOf(value.toUpperCase(Locale.ROOT)))
+                            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            return new M1Principal(accountId, type, schoolId, roles);
         } catch (RuntimeException e) {
             throw new DomainException(ErrorCode.UNAUTHORIZED, "token 内容非法");
         }

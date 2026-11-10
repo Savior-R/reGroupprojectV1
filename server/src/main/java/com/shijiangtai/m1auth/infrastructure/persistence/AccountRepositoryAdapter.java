@@ -82,6 +82,18 @@ public class AccountRepositoryAdapter implements AccountRepository {
 
     @Override
     public Account save(Account account) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("id", account.id().value())
+                .addValue("username", account.username())
+                .addValue("passwordHash", account.passwordHash())
+                .addValue("email", account.email() == null ? null : account.email().value())
+                .addValue("emailVerifiedAt", toOffset(account.emailVerifiedAt()))
+                .addValue("typeCode", account.type().name().toLowerCase(java.util.Locale.ROOT))
+                .addValue("schoolId",
+                        account.schoolId() == null ? null : account.schoolId().value())
+                .addValue("createdAt", toOffset(account.createdAt()))
+                .addValue("updatedAt", toOffset(account.updatedAt()));
+
         jdbc.update("""
                 insert into m1_auth.accounts
                     (id, username, password_hash, email, email_verified_at,
@@ -97,17 +109,16 @@ public class AccountRepositoryAdapter implements AccountRepository {
                     email_verified_at = excluded.email_verified_at,
                     school_id = excluded.school_id,
                     updated_at = excluded.updated_at
-                """, new MapSqlParameterSource()
-                .addValue("id", account.id().value())
-                .addValue("username", account.username())
-                .addValue("passwordHash", account.passwordHash())
-                .addValue("email", account.email() == null ? null : account.email().value())
-                .addValue("emailVerifiedAt", toOffset(account.emailVerifiedAt()))
-                .addValue("typeCode", account.type().name().toLowerCase(java.util.Locale.ROOT))
-                .addValue("schoolId",
-                        account.schoolId() == null ? null : account.schoolId().value())
-                .addValue("createdAt", toOffset(account.createdAt()))
-                .addValue("updatedAt", toOffset(account.updatedAt())));
+                """, params);
+
+        // 主身份角色随账号落库：所有建号路径（注册 / OAuth 引导注册）都经过这里，
+        // 放在仓储层可保证「账号存在 ⇒ 至少有一个角色」，不依赖各服务各自记得写。
+        // on conflict do nothing：不会覆盖已授予的附加角色（如 admin）。
+        jdbc.update("""
+                insert into m1_auth.account_roles (account_id, role_code, granted_by, created_at)
+                values (:id, :typeCode, null, :createdAt)
+                on conflict (account_id, role_code) do nothing
+                """, params);
         return account;
     }
 

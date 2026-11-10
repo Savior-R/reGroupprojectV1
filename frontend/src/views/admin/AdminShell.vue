@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getToken, me, setToken } from '../../api/auth'
 import type { AccountView } from '../../api/auth'
-import { decodeJwt } from '../../api/jwt'
+import { decodeJwt, rolesOf } from '../../api/jwt'
 
 /**
  * M1 管理端外壳（`views/admin/**` 内，不占用 Score/QA 的 `layouts/**`）。
@@ -34,12 +34,14 @@ const links = computed(() =>
     : [{ path: '/admin/setup', label: '创建学校' }],
 )
 
+/** 主身份 + 附加角色：教师兼管理员显示「教师 / 管理员」。 */
 const typeLabel = computed(() => {
-  const type = claims.value?.account_type
-  if (type === 'admin') return '管理员'
-  if (type === 'teacher') return '教师'
-  if (type === 'student') return '学生'
-  return '未登录'
+  const roles = rolesOf(claims.value)
+  if (roles.length === 0) {
+    return '未登录'
+  }
+  const names: Record<string, string> = { admin: '管理员', teacher: '教师', student: '学生' }
+  return roles.map((role) => names[role] ?? role).join(' / ')
 })
 
 onMounted(async () => {
