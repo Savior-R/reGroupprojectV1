@@ -29,7 +29,8 @@ public class InternalAuthController {
     }
 
     /**
-     * @return 200 + {@code X-Account-Id} / {@code X-Account-Type} / {@code X-School-Id}；
+     * @return 200 + {@code X-Account-Id} / {@code X-Account-Type}（主身份）/
+     *     {@code X-Account-Roles}（逗号分隔的授权角色）/ {@code X-School-Id}；
      *     缺少或无效 token 返回 401，由 Nginx 转成对客户端的 401
      */
     @GetMapping("/auth/verify")
@@ -46,6 +47,11 @@ public class InternalAuthController {
             String accountType = jwt.getClaimAsString("account_type");
             if (accountType != null) {
                 headers.set("X-Account-Type", accountType);
+            }
+            // 多角色（V14）：下游按角色集合判定，不能只依赖主身份
+            java.util.List<String> roles = jwt.getClaimAsStringList("roles");
+            if (roles != null && !roles.isEmpty()) {
+                headers.set("X-Account-Roles", String.join(",", roles));
             }
             String schoolId = jwt.getClaimAsString("school_id");
             if (schoolId != null && !schoolId.isBlank()) {

@@ -162,110 +162,166 @@ onUnmounted(() => {
 
 <template>
   <div class="auth-page">
-    <div class="auth-card">
-      <h1>试讲台</h1>
-      <p class="subtitle">登录后进入{{ '' }}对应工作台</p>
-
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="密码登录" name="password">
-          <el-form label-position="top" @submit.prevent="submitPassword">
-            <el-form-item label="用户名（真实姓名）">
-              <el-input v-model="passwordForm.username" placeholder="请输入用户名" />
-            </el-form-item>
-            <el-form-item label="密码">
-              <el-input
-                v-model="passwordForm.password"
-                type="password"
-                show-password
-                placeholder="8—64 位"
-                @keyup.enter="submitPassword"
-              />
-            </el-form-item>
-            <el-button type="primary" :loading="loading" class="submit" @click="submitPassword">
-              登录
-            </el-button>
-          </el-form>
-        </el-tab-pane>
-
-        <el-tab-pane label="邮箱验证码" name="email">
-          <el-form label-position="top" @submit.prevent="submitEmail">
-            <el-form-item label="已验证邮箱">
-              <el-input v-model="emailForm.email" placeholder="user@example.com" />
-            </el-form-item>
-            <el-form-item label="验证码">
-              <div class="code-row">
-                <el-input v-model="emailForm.code" maxlength="6" placeholder="6 位数字" />
-                <el-button :disabled="countdown > 0" @click="requestCode">
-                  {{ countdown > 0 ? `${countdown}s` : '发送验证码' }}
-                </el-button>
-              </div>
-            </el-form-item>
-            <el-button type="primary" :loading="loading" class="submit" @click="submitEmail">
-              登录
-            </el-button>
-            <p class="hint">仅已绑定并验证的邮箱可登录，未绑定的请先用密码登录后绑定。</p>
-          </el-form>
-        </el-tab-pane>
-
-        <el-tab-pane label="微信扫码" name="wechat">
-          <div class="qr-area">
-            <el-button v-if="!qr" @click="loadQr">获取二维码</el-button>
-            <template v-else>
-              <p class="qr-url">{{ qr.authorize_url }}</p>
-              <p class="hint">状态：{{ qrStatus }}</p>
-              <div v-if="isMockProvider" class="mock-actions">
-                <el-button size="small" @click="simulateScan(false)">模拟未绑定扫码</el-button>
-                <el-button size="small" @click="simulateScan(true)">模拟已绑定扫码</el-button>
-              </div>
-              <el-button size="small" text @click="loadQr">刷新二维码</el-button>
-            </template>
-          </div>
-        </el-tab-pane>
-      </el-tabs>
-
-      <div class="footer">
-        还没有账号？<router-link to="/register">去注册</router-link>
+    <aside class="brand-panel">
+      <div class="brand-mark">三尺讲台</div>
+      <div class="brand-body">
+        <h1>讲台三分钟，<br />功夫在课外。</h1>
+        <div class="brand-rule"></div>
+        <p>
+          面向师范生的课堂试讲训练与评测平台。录课、复盘、AI 评分与教师点评，
+          在一处完成。
+        </p>
       </div>
-    </div>
+      <p class="brand-foot">AI 智能师范生评测系统</p>
+    </aside>
+
+    <main class="form-panel">
+      <div class="auth-card">
+        <h1>登录</h1>
+        <p class="subtitle">使用用户名密码、邮箱验证码或微信扫码进入</p>
+
+        <el-tabs v-model="activeTab">
+          <el-tab-pane label="密码登录" name="password">
+            <el-form label-position="top" @submit.prevent="submitPassword">
+              <el-form-item label="用户名（真实姓名）">
+                <el-input v-model="passwordForm.username" placeholder="请输入用户名" />
+              </el-form-item>
+              <el-form-item label="密码">
+                <el-input
+                  v-model="passwordForm.password"
+                  type="password"
+                  show-password
+                  placeholder="8—64 位"
+                  @keyup.enter="submitPassword"
+                />
+              </el-form-item>
+              <el-button type="primary" :loading="loading" class="submit" @click="submitPassword">
+                登录
+              </el-button>
+            </el-form>
+          </el-tab-pane>
+
+          <el-tab-pane label="邮箱验证码" name="email">
+            <el-form label-position="top" @submit.prevent="submitEmail">
+              <el-form-item label="已验证邮箱">
+                <el-input v-model="emailForm.email" placeholder="user@example.com" />
+              </el-form-item>
+              <el-form-item label="验证码">
+                <div class="code-row">
+                  <el-input v-model="emailForm.code" maxlength="6" placeholder="6 位数字" />
+                  <el-button :disabled="countdown > 0" @click="requestCode">
+                    {{ countdown > 0 ? `${countdown}s` : '发送验证码' }}
+                  </el-button>
+                </div>
+              </el-form-item>
+              <el-button type="primary" :loading="loading" class="submit" @click="submitEmail">
+                登录
+              </el-button>
+              <p class="hint">仅已绑定并验证的邮箱可登录，未绑定的请先用密码登录后绑定。</p>
+            </el-form>
+          </el-tab-pane>
+
+          <el-tab-pane label="微信扫码" name="wechat">
+            <div class="qr-area">
+              <el-button v-if="!qr" @click="loadQr">获取二维码</el-button>
+              <template v-else>
+                <p class="qr-url">{{ qr.authorize_url }}</p>
+                <p class="hint">状态：{{ qrStatus }}</p>
+                <div v-if="isMockProvider" class="mock-actions">
+                  <el-button size="small" @click="simulateScan(false)">模拟未绑定扫码</el-button>
+                  <el-button size="small" @click="simulateScan(true)">模拟已绑定扫码</el-button>
+                </div>
+                <el-button size="small" text @click="loadQr">刷新二维码</el-button>
+              </template>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+
+        <div class="footer">
+          还没有账号？<router-link to="/register">去注册</router-link>
+        </div>
+      </div>
+    </main>
   </div>
 </template>
 
 <style scoped>
 .auth-page {
+  display: grid;
+  grid-template-columns: 55fr 45fr;
+  min-height: 100vh;
+  background: var(--m1-bg-page);
+}
+
+/* 左侧品牌区：学术气息的来源，靠留白与衬线大字，不用图片 */
+.brand-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 56px 48px;
+  background: var(--m1-bg-subtle);
+  border-right: 1px solid var(--m1-border);
+}
+
+.brand-mark {
+  font-family: var(--m1-font-serif);
+  font-size: 15px;
+  letter-spacing: 0.2em;
+  color: var(--m1-primary);
+}
+
+.brand-body h1 {
+  margin: 0 0 24px;
+  font-size: 34px;
+  line-height: 1.5;
+  color: var(--m1-text-primary);
+}
+
+.brand-rule {
+  width: 48px;
+  height: 2px;
+  margin-bottom: 24px;
+  background: var(--m1-primary);
+}
+
+.brand-body p {
+  max-width: 22em;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--m1-text-secondary);
+}
+
+.brand-foot {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--m1-text-placeholder);
+}
+
+.form-panel {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
-  background: #0f2044;
+  padding: 32px;
 }
 
 .auth-card {
-  width: 420px;
-  padding: 32px;
-  background: #fff;
-  border-radius: 12px;
-  /* 全局被 main.ts 设为 dark；卡片内恢复浅色变量，避免白底上出现深色输入框 */
-  --el-bg-color: #fff;
-  --el-bg-color-overlay: #fff;
-  --el-text-color-primary: #0f2044;
-  --el-text-color-regular: #374151;
-  --el-text-color-placeholder: #9ca3af;
-  --el-border-color: #d1d5db;
-  --el-border-color-light: #e5e7eb;
-  --el-fill-color-blank: #fff;
-  --el-fill-color-light: #f3f4f6;
+  width: 100%;
+  max-width: 420px;
 }
 
 h1 {
   margin: 0 0 4px;
-  font-size: 24px;
-  color: #0f2044;
+  font-size: 26px;
+  color: var(--m1-text-primary);
 }
 
 .subtitle {
   margin: 0 0 20px;
-  color: #6b7280;
   font-size: 13px;
+  color: var(--m1-text-secondary);
 }
 
 .submit {
@@ -279,20 +335,20 @@ h1 {
 
 .hint {
   margin: 8px 0 0;
-  color: #9ca3af;
   font-size: 12px;
   line-height: 1.6;
+  color: var(--m1-text-secondary);
 }
 
 .qr-area {
-  text-align: center;
   padding: 8px 0;
+  text-align: center;
 }
 
 .qr-url {
   word-break: break-all;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--m1-text-secondary);
 }
 
 .mock-actions {
@@ -306,6 +362,33 @@ h1 {
   margin-top: 20px;
   text-align: center;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--m1-text-secondary);
+}
+
+/* 平板及以下：品牌区收成顶部窄条 */
+@media (max-width: 1023px) {
+  .auth-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .brand-panel {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 24px;
+    border-right: none;
+    border-bottom: 1px solid var(--m1-border);
+  }
+
+  .brand-body,
+  .brand-foot {
+    display: none;
+  }
+
+  .form-panel {
+    padding: 24px 16px 40px;
+  }
 }
 </style>

@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { getToken } from '../api/auth'
-import { decodeJwt, homeFor } from '../api/jwt'
+import { decodeJwt, hasRole, homeFor, isAdmin } from '../api/jwt'
 
 /**
  * 路由表（09 §4.1）。
@@ -17,6 +17,8 @@ declare module 'vue-router' {
     requiresAuth?: boolean
     /** 仅管理员可访问 */
     adminOnly?: boolean
+    /** 仅学生可访问（M3 学生端页面，教师端页面待 M3 提供） */
+    studentOnly?: boolean
     /** 管理员已建校才能访问；未建校跳 /admin/setup */
     requiresSchool?: boolean
   }
@@ -25,32 +27,48 @@ declare module 'vue-router' {
 export const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/student/tasks',
+    // 按角色落地：管理员 → 管理端，学生 → 任务中心，教师 → 账号安全
+    redirect: () => {
+      const claims = decodeJwt(getToken())
+      return claims ? homeFor(claims) : '/login'
+    },
   },
+  // 学生任务列表与详情：套应用外壳（顶栏导航 + 退出登录）；
+  // 课堂 / 面试 / 复盘是沉浸式全屏页，保持独立布局
   {
     path: '/student/tasks',
-    name: 'student-tasks',
-    component: () => import('../views/task/StudentTasksPage.vue'),
-  },
-  {
-    path: '/student/tasks/:taskId',
-    name: 'student-task-detail',
-    component: () => import('../views/task/StudentTaskDetailPage.vue'),
+    component: () => import('../views/admin/AdminShell.vue'),
+    meta: { requiresAuth: true, studentOnly: true },
+    children: [
+      {
+        path: '',
+        name: 'student-tasks',
+        component: () => import('../views/task/StudentTasksPage.vue'),
+      },
+      {
+        path: ':taskId',
+        name: 'student-task-detail',
+        component: () => import('../views/task/StudentTaskDetailPage.vue'),
+      },
+    ],
   },
   {
     path: '/student/sessions/:sessionId/classroom',
     name: 'student-classroom',
     component: () => import('../views/classroom/ClassroomPage.vue'),
+    meta: { requiresAuth: true, studentOnly: true },
   },
   {
     path: '/student/sessions/:sessionId/interview',
     name: 'student-interview',
     component: () => import('../views/classroom/InterviewPage.vue'),
+    meta: { requiresAuth: true, studentOnly: true },
   },
   {
     path: '/student/sessions/:sessionId/review',
     name: 'student-review',
     component: () => import('../views/replay/ReviewPage.vue'),
+    meta: { requiresAuth: true, studentOnly: true },
   },
 
   // ------------------------------------------------ M1 账号 / 组织 / 认证
@@ -123,8 +141,9 @@ export const router = createRouter({
 /**
  * 守卫（03 §3.9「路由守卫」）：
  * - 无 token → /login
- * - 未绑定管理员 → /admin/setup
- * - 学生 / 教师访问管理端 → 403
+ * - 无 admin 角色访问管理端 → 403（教师被授予 admin 后可进，见 V14）
+ * - 非学生访问学生端页面 → 403（教师端页面待 M3 提供）
+ * - 管理员角色但未建校 → /admin/setup
  * - 已登录再访问登录 / 注册页 → 回各自首页
  */
 router.beforeEach((to) => {
@@ -133,7 +152,10 @@ router.beforeEach((to) => {
   if (to.meta.requiresAuth && !claims) {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
-  if (to.meta.adminOnly && claims?.account_type !== 'admin') {
+  if (to.meta.adminOnly && !isAdmin(claims)) {
+    return { path: '/403' }
+  }
+  if (to.meta.studentOnly && !hasRole(claims, 'student')) {
     return { path: '/403' }
   }
   if (to.meta.requiresSchool && !claims?.school_id) {

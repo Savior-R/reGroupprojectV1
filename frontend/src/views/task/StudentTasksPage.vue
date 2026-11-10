@@ -146,12 +146,12 @@ onMounted(loadTasks)
   flex-wrap: wrap;
   gap: 16px;
   margin: 12px 0;
-  color: #9ca3af;
+  color: var(--m1-text-secondary);
 }
 
 .task-list-item__students {
   margin: 0 0 12px;
-  color: #9ca3af;
+  color: var(--m1-text-secondary);
 }
 
 .task-state {
