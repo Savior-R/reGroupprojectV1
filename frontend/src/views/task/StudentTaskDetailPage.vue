@@ -285,7 +285,7 @@ onMounted(loadTask)
 
 .task-detail-subtitle {
   margin: 4px 0 0;
-  color: #9ca3af;
+  color: var(--m1-text-secondary);
 }
 
 .task-meta {
@@ -296,7 +296,7 @@ onMounted(loadTask)
 }
 
 .task-meta__item dt {
-  color: #9ca3af;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 

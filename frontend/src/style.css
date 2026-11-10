@@ -1,5 +1,104 @@
+/* ==========================================================================
+   全局主题：浅色 · 护眼 · 学术
+   --------------------------------------------------------------------------
+   设计意图：米白纸感背景 + 墨绿主色 + 衬线标题，降低长时间阅读的视觉疲劳。
+   所有颜色只在这里定义一次，页面通过 var(--m1-*) 引用，禁止硬编码。
+   ========================================================================== */
+
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+
+  /* ---------- 背景层 ---------- */
+  --m1-bg-page: #f7f6f2;        /* 页面底色：微暖米白，不用纯白 */
+  --m1-bg-surface: #ffffff;     /* 卡片、弹窗、输入框 */
+  --m1-bg-subtle: #f1efe9;      /* 表头、次级区域、代码块 */
+  --m1-bg-hover: #edeae2;       /* 悬浮态 */
+
+  /* ---------- 主色：墨绿（学术、沉稳、低饱和） ---------- */
+  --m1-primary: #2f6b5e;
+  --m1-primary-hover: #285a4f;
+  --m1-primary-soft: #e7efec;   /* 选中项底色、标签底色 */
+
+  /* ---------- 辅助强调：赭石 ---------- */
+  --m1-accent: #a8763e;
+  --m1-accent-soft: #f5ede1;
+
+  /* ---------- 文字 ---------- */
+  --m1-text-primary: #1f2a28;   /* 标题 */
+  --m1-text-regular: #3d4a47;   /* 正文 */
+  --m1-text-secondary: #6b7a76; /* 说明、辅助信息 */
+  --m1-text-placeholder: #9aa6a2; /* 占位符、禁用 */
+
+  /* ---------- 描边与分隔 ---------- */
+  --m1-border: #e3e1da;
+  --m1-border-strong: #cfccc1;
+
+  /* ---------- 语义色（用于状态标签，不做大面积背景） ---------- */
+  --m1-success: #3f7d5a;
+  --m1-warning: #b8823a;
+  --m1-danger: #a64b42;
+  --m1-info: #4a6c8c;
+
+  /* ---------- 字体 ---------- */
+  --m1-font-sans: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, -apple-system,
+    sans-serif;
+  --m1-font-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun',
+    serif;
+  --m1-font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+
+  /* ---------- 圆角与阴影 ---------- */
+  --m1-radius-sm: 6px;
+  --m1-radius-md: 8px;
+  --m1-radius-lg: 12px;
+  --m1-radius-full: 999px;
+  /* 阴影只两层，都极淡：学术感靠留白，不靠投影 */
+  --m1-shadow-card: 0 1px 2px rgba(31, 42, 40, 0.04), 0 1px 8px rgba(31, 42, 40, 0.04);
+  --m1-shadow-pop: 0 8px 24px rgba(31, 42, 40, 0.1);
+
+  /* ======================================================================
+     Element Plus 变量对齐：让组件库跟随本主题，而不是它自带的蓝白
+     ====================================================================== */
+  --el-color-primary: var(--m1-primary);
+  --el-color-primary-light-3: #5c8b80;
+  --el-color-primary-light-5: #88afa6;
+  --el-color-primary-light-7: #b4d0c9;
+  --el-color-primary-light-8: #cedfdb;
+  --el-color-primary-light-9: var(--m1-primary-soft);
+  --el-color-primary-dark-2: var(--m1-primary-hover);
+
+  --el-color-success: var(--m1-success);
+  --el-color-warning: var(--m1-warning);
+  --el-color-danger: var(--m1-danger);
+  --el-color-error: var(--m1-danger);
+  --el-color-info: var(--m1-info);
+
+  --el-bg-color: var(--m1-bg-surface);
+  --el-bg-color-page: var(--m1-bg-page);
+  --el-bg-color-overlay: var(--m1-bg-surface);
+  --el-fill-color-blank: var(--m1-bg-surface);
+  --el-fill-color-light: var(--m1-bg-subtle);
+  --el-fill-color-lighter: var(--m1-bg-page);
+  --el-fill-color: var(--m1-bg-subtle);
+
+  --el-text-color-primary: var(--m1-text-primary);
+  --el-text-color-regular: var(--m1-text-regular);
+  --el-text-color-secondary: var(--m1-text-secondary);
+  --el-text-color-placeholder: var(--m1-text-placeholder);
+  --el-text-color-disabled: var(--m1-text-placeholder);
+
+  --el-border-color: var(--m1-border);
+  --el-border-color-light: var(--m1-border);
+  --el-border-color-lighter: var(--m1-border);
+  --el-border-color-extra-light: var(--m1-bg-subtle);
+  --el-border-color-hover: var(--m1-border-strong);
+
+  --el-border-radius-base: var(--m1-radius-md);
+  --el-border-radius-small: var(--m1-radius-sm);
+  --el-border-radius-round: var(--m1-radius-full);
+
+  --el-mask-color: rgba(31, 42, 40, 0.35);
+  --el-box-shadow-light: var(--m1-shadow-card);
+  --el-font-family: var(--m1-font-sans);
 }
 
 html,
@@ -11,7 +110,56 @@ body,
 
 body {
   text-align: left;
-  background: #0b1220;
-  color: #e5e7eb;
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--m1-bg-page);
+  color: var(--m1-text-regular);
+  font-family: var(--m1-font-sans);
+  font-size: 15px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 标题统一衬线，营造学术气质 */
+h1,
+h2,
+h3 {
+  font-family: var(--m1-font-serif);
+  color: var(--m1-text-primary);
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 28px;
+  line-height: 1.35;
+}
+
+h2 {
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+a {
+  color: var(--m1-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--m1-primary-hover);
+  text-decoration: underline;
+}
+
+/* 键盘可达性：不要移除焦点环 */
+:focus-visible {
+  outline: 2px solid var(--m1-primary);
+  outline-offset: 2px;
+}
+
+/* 尊重系统的"减少动效"偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
