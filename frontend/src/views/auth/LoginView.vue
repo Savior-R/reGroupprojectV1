@@ -12,6 +12,7 @@ import {
   wechatStatus,
 } from '../../api/auth'
 import type { AuthResult, QrView } from '../../api/auth'
+import { useAuthStore } from '../../stores/auth'
 
 /** 登录页（03 §3.9 /login）：密码、邮箱验证码、微信扫码三 tab，登录后按角色进入首页。 */
 
@@ -48,6 +49,8 @@ function startCountdown(): void {
 
 function finish(result: AuthResult): void {
   setToken(result.token)
+  // M2/M3 的请求头身份来自这个 store，登录后必须立刻按新 token 同步一次。
+  useAuthStore().syncFromToken()
   const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : null
   if (redirect) {
     void router.push(redirect)
@@ -56,8 +59,8 @@ function finish(result: AuthResult): void {
   if (result.me.account_type === 'admin') {
     void router.push(result.me.school_id ? '/admin/org' : '/admin/setup')
   } else {
-    // 学生 / 教师首页由各自模块提供；M1 先落到账号安全页，可看到本人学校 / 班级 / 专业
-    void router.push('/settings/security')
+    // M2 已上线：学生 / 教师的首页就是课程列表（设计 03 §4.7）。
+    void router.push('/courses')
   }
 }
 

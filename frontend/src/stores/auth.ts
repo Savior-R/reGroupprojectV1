@@ -1,5 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
+import { getToken } from '../api/auth'
+import { decodeJwt } from '../api/jwt'
 import type { AccountType, DevRole } from '../types/api'
 
 /**
@@ -103,6 +105,22 @@ export const useAuthStore = defineStore('auth', () => {
 
   persistRole(initialRole)
 
+  /**
+   * M1 已切 JWT：真实身份以 token 为准，上面的 dev 预设只作为「无 token」时的兜底。
+   *
+   * localStorage 不是响应式依赖，所以不能写成 computed；改为在「登录成功」与
+   * 「页面刷新」两个时机各显式同步一次（见 main.ts、views/auth/LoginView.vue）。
+   */
+  function syncFromToken(): void {
+    const claims = decodeJwt(getToken())
+    if (!claims) {
+      return
+    }
+    accountId.value = claims.sub
+    schoolId.value = claims.school_id ?? ''
+    accountType.value = claims.account_type.toUpperCase() as AccountType
+  }
+
   function setDevIdentity(next: DevRole): void {
     const preset = DEV_IDENTITIES[next]
     role.value = next
@@ -119,6 +137,7 @@ export const useAuthStore = defineStore('auth', () => {
     accountType,
     isTeacher,
     isStudent,
+    syncFromToken,
     setDevIdentity,
   }
 })
