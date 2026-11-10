@@ -19,9 +19,9 @@
 ### 2.1 JWT
 
 - HS256；有效期 2 小时；不做 refresh token。
-- Claims：`sub`（account_id）、`account_type`（student / teacher / admin）、`school_id`（可空）、`exp`、`iat`、`jti`。
+- Claims：`sub`（account_id）、`roles`（授权角色数组，如 `["teacher","admin"]`）、`account_type`（主身份：student / teacher / admin）、`school_id`（可空）、`exp`、`iat`、`jti`。
 - Java 使用 Spring Security 7.1 + OAuth2 Resource Server 校验 JWT；`/api/**` 为 stateless resource server；`/internal/**` 使用单独 filter chain，要求内部 token。
-- URL 级权限由自定义 `AuthorizationManager` 查询 `api_permissions` + `account_type_permissions`；service 层仍做资源级权限。
+- URL 级权限由自定义 `AuthorizationManager` 查询 `api_permissions` + `account_type_permissions`；**token 的 `roles` 可多值，判定取各角色权限的并集**（教师兼管理员，V14）；service 层仍做资源级权限。
 - 管理员未绑定学校时 `school_id` 为空；建校后返回新 token。
 - 用户名密码、邮箱验证码、微信扫码三种登录方式签发同一 claims 的 JWT；OAuth / 邮箱均不改变 token 有效期与角色范围。
 
@@ -228,8 +228,9 @@ location = /_auth {
 | GET / POST | `/api/v1/admin/classes` | `admin:org` | 班级列表 / 新增 |
 | PATCH | `/api/v1/admin/classes/{class_id}` | `admin:org` | 编辑 / 停用班级 |
 | POST | `/api/v1/admin/classes/import` | `admin:org` | CSV / Excel 导入；整批回滚 |
-| GET | `/api/v1/admin/teachers` | `admin:teacher_majors` | 本校教师列表 |
+| GET | `/api/v1/admin/teachers` | `admin:teacher_majors` | 本校教师列表（含 `roles`） |
 | PUT | `/api/v1/admin/teachers/{account_id}/majors` | `admin:teacher_majors` | 修改教师专业范围 |
+| PUT | `/api/v1/admin/teachers/{account_id}/roles` | `admin:roles` | 授予 / 撤销管理员角色（`{"admin":true}`）；不改主身份，需重新登录生效 |
 
 #### 4.1.1 邮箱验证码与微信扫码
 
