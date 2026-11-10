@@ -56,11 +56,6 @@ const loading = ref(false)
 const errorMessage = ref('')
 const createVisible = ref(false)
 
-const STATUS_LABELS: Record<string, string> = {
-  active: '启用',
-  archived: '已归档',
-}
-
 function statusLabel(course: CourseCardView): string {
   if (course.status === 'archived') {
     return '已归档'
@@ -249,10 +244,10 @@ onMounted(load)
         <ElTable v-else :data="courses" row-key="id" stripe>
           <ElTableColumn prop="name" label="课程" min-width="180" />
           <ElTableColumn label="专业" min-width="160">
-            <template #default="{ row }">{{ majorNames(row) }}</template>
+            <template #default="{ row }">{{ majorNames(row as CourseCardView) }}</template>
           </ElTableColumn>
           <ElTableColumn label="老师组" min-width="160">
-            <template #default="{ row }">{{ teacherNames(row) }}</template>
+            <template #default="{ row }">{{ teacherNames(row as CourseCardView) }}</template>
           </ElTableColumn>
           <ElTableColumn prop="student_count" label="学生数" width="90" />
           <ElTableColumn label="结束日期" width="120">
@@ -260,14 +255,14 @@ onMounted(load)
           </ElTableColumn>
           <ElTableColumn label="状态" width="100">
             <template #default="{ row }">
-              <ElTag :type="statusTagType(row)" size="small">{{ statusLabel(row) }}</ElTag>
+              <ElTag :type="statusTagType(row as CourseCardView)" size="small">{{ statusLabel(row as CourseCardView) }}</ElTag>
             </template>
           </ElTableColumn>
           <ElTableColumn label="操作" width="240">
             <template #default="{ row }">
-              <ElButton link type="primary" @click="openCourse(row)">详情</ElButton>
-              <ElButton v-if="row.can_manage" link type="primary" @click="openMembers(row)">学生</ElButton>
-              <ElButton v-if="isAdmin" link type="warning" @click="toggleArchive(row)">
+              <ElButton link type="primary" @click="openCourse(row as CourseCardView)">详情</ElButton>
+              <ElButton v-if="row.can_manage" link type="primary" @click="openMembers(row as CourseCardView)">学生</ElButton>
+              <ElButton v-if="isAdmin" link type="warning" @click="toggleArchive(row as CourseCardView)">
                 {{ row.status === 'archived' ? '恢复' : '归档' }}
               </ElButton>
             </template>

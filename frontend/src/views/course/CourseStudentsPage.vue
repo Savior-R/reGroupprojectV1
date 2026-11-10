@@ -195,7 +195,7 @@ onMounted(load)
         </ElTableColumn>
         <ElTableColumn label="操作" width="110">
           <template #default="{ row }">
-            <ElButton v-if="row.status === 'active'" link type="danger" @click="remove(row)">移出</ElButton>
+            <ElButton v-if="row.status === 'active'" link type="danger" @click="remove(row as CourseStudentView)">移出</ElButton>
           </template>
         </ElTableColumn>
       </ElTable>
