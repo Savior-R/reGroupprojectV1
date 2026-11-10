@@ -28,7 +28,9 @@ import org.springframework.security.web.SecurityFilterChain;
  *   <li>{@code /api/**} stateless，Bearer JWT，HS256 与 {@code JwtTokenIssuer} 同一密钥
  *   <li>公开路径精确列举；邮箱 / 微信绑定、解绑**不**通配放行（01 实现设计 §5 明确要求）
  *   <li>{@code account_type} 映射为 {@code ROLE_STUDENT / ROLE_TEACHER / ROLE_ADMIN}
- *   <li>URL 级细粒度权限（api_permissions 表驱动）为后续接入，当前用角色粗粒度兜底
+ *   <li>URL 级权限由 {@link PermissionAuthorizationManager} 按 {@code api_permissions} 表判定；
+ *       M1 的 {@code /api/v1/auth/**} 与 {@code /api/v1/admin/**} 已接入，
+ *       M2—M7 路径暂用「登录即可」，待各自 owner 核对权限种子后再切换
  * </ul>
  */
 @Configuration
@@ -114,6 +116,7 @@ public class SecurityConfig {
     public SecurityFilterChain apiSecurityFilterChain(
             HttpSecurity http,
             JwtDecoder jwtDecoder,
+            PermissionAuthorizationManager permissionManager,
             org.springframework.beans.factory.ObjectProvider<TestHeaderAuthFilter> testFilter)
             throws Exception {
         http
@@ -125,10 +128,15 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // 公开白名单：不进 api_permissions（02 §4.1.1 明确要求）
                         .requestMatchers(HttpMethod.POST, PUBLIC_POST).permitAll()
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET).permitAll()
-                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/actuator/**").permitAll()
+                        // M1 范围启用表驱动授权（RBAC）
+                        .requestMatchers("/api/v1/admin/**").access(permissionManager)
+                        .requestMatchers("/api/v1/auth/**").access(permissionManager)
+                        // M2—M7 路径暂用「登录即可」，待各自 owner 核对 api_permissions
+                        // 后再逐个切到 access(permissionManager)，避免漏配导致误拒
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt
