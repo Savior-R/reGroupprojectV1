@@ -70,7 +70,7 @@ export function decodeJwt(token: string | null): JwtClaims | null {
   }
 }
 
-/** 登录后应落地的页面：管理员按是否已建校；学生进任务中心；教师暂无专属首页。 */
+/** 登录后应落地的页面：管理员区分是否已建校；学生 / 教师进 M2 课程列表。 */
 export function homeFor(claims: JwtClaims): string {
   if (isAdmin(claims)) {
     return claims.school_id ? '/admin/org' : '/admin/setup'

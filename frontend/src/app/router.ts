@@ -116,6 +116,9 @@ export const routes: RouteRecordRaw[] = [
     redirect: '/admin/org',
   },
 
+  // M2 课程页面：路由定义在 views/course/course.routes.ts，这里只做一次展开。
+  // M1 已切到 JWT，课程页面同样需要登录态。
+  ...courseRoutes,
   {
     path: '/403',
     name: 'forbidden',
