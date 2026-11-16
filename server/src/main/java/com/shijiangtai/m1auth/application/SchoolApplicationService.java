@@ -105,7 +105,7 @@ public class SchoolApplicationService {
     }
 
     static void requireAdmin(M1Principal principal) {
-        if (principal.type() != AccountType.ADMIN) {
+        if (!principal.isAdmin()) {
             throw new DomainException(ErrorCode.ROLE_NOT_ALLOWED, "仅管理员可执行该操作");
         }
     }

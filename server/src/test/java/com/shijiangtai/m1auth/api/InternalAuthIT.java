@@ -75,6 +75,8 @@ class InternalAuthIT extends PostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(header().exists("X-Account-Id"))
                 .andExpect(header().string("X-Account-Type", "student"))
+                // 多角色（V14）：授权角色以逗号分隔透传，下游按集合判定
+                .andExpect(header().string("X-Account-Roles", "student"))
                 .andExpect(header().string("X-School-Id",
                         "00000000-0000-0000-0000-000000000001"));
     }
