@@ -80,7 +80,10 @@ export interface TeacherView {
 export interface AccountView {
   account_id: string
   username: string
+  /** 主身份：注册时确认，不可变更 */
   account_type: AccountType
+  /** 授权角色集合：可能多于主身份（教师兼管理员，V14） */
+  roles: AccountType[]
   school_id: string | null
   school_name: string | null
   email: string | null
@@ -317,6 +320,8 @@ export interface TeacherRow {
   username: string
   school_id: string | null
   majors: Array<{ id: string; name: string }>
+  /** 授权角色集合：主身份 teacher，可叠加 admin（V14） */
+  roles: AccountType[]
 }
 
 export async function listTeachers(): Promise<TeacherRow[]> {
@@ -330,6 +335,21 @@ export async function updateTeacherMajors(
 ): Promise<TeacherRow> {
   const { data } = await authClient.put<TeacherRow>(`/admin/teachers/${accountId}/majors`, {
     major_ids: majorIds,
+  })
+  return data
+}
+
+/**
+ * 授予 / 撤销管理员角色（FR-M1-12）。
+ *
+ * 只叠加 admin，不改主身份；被授权教师需**重新登录**后新角色才进入 JWT。
+ */
+export async function updateTeacherAdminRole(
+  accountId: string,
+  admin: boolean,
+): Promise<TeacherRow> {
+  const { data } = await authClient.put<TeacherRow>(`/admin/teachers/${accountId}/roles`, {
+    admin,
   })
   return data
 }

@@ -28,7 +28,9 @@ import org.springframework.security.web.SecurityFilterChain;
  *   <li>{@code /api/**} stateless，Bearer JWT，HS256 与 {@code JwtTokenIssuer} 同一密钥
  *   <li>公开路径精确列举；邮箱 / 微信绑定、解绑**不**通配放行（01 实现设计 §5 明确要求）
  *   <li>{@code account_type} 映射为 {@code ROLE_STUDENT / ROLE_TEACHER / ROLE_ADMIN}
- *   <li>URL 级细粒度权限（api_permissions 表驱动）为后续接入，当前用角色粗粒度兜底
+ *   <li>URL 级权限由 {@link PermissionAuthorizationManager} 按 {@code api_permissions} 表判定；
+ *       M1 的 {@code /api/v1/auth/**} 与 {@code /api/v1/admin/**} 已接入，
+ *       M2—M7 路径暂用「登录即可」，待各自 owner 核对权限种子后再切换
  * </ul>
  */
 @Configuration
@@ -114,6 +116,7 @@ public class SecurityConfig {
     public SecurityFilterChain apiSecurityFilterChain(
             HttpSecurity http,
             JwtDecoder jwtDecoder,
+            PermissionAuthorizationManager permissionManager,
             org.springframework.beans.factory.ObjectProvider<TestHeaderAuthFilter> testFilter)
             throws Exception {
         http
@@ -125,10 +128,15 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // 公开白名单：不进 api_permissions（02 §4.1.1 明确要求）
                         .requestMatchers(HttpMethod.POST, PUBLIC_POST).permitAll()
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET).permitAll()
-                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/actuator/**").permitAll()
+                        // M1 范围启用表驱动授权（RBAC）
+                        .requestMatchers("/api/v1/admin/**").access(permissionManager)
+                        .requestMatchers("/api/v1/auth/**").access(permissionManager)
+                        // M2—M7 路径暂用「登录即可」，待各自 owner 核对 api_permissions
+                        // 后再逐个切到 access(permissionManager)，避免漏配导致误拒
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt
@@ -163,16 +171,27 @@ public class SecurityConfig {
                 .build();
     }
 
-    /** {@code account_type} → {@code ROLE_*}；不把权限列表写进 token（03 §3.3）。 */
+    /**
+     * 角色 claim 映射为 {@code ROLE_*}。
+     *
+     * <p>多角色（V14）：JWT 的 {@code roles} 数组全部映射，如教师兼管理员
+     * → {@code ROLE_TEACHER} + {@code ROLE_ADMIN}；旧 token 无 {@code roles}
+     * 时退回 {@code account_type} 单值。权限列表不写进 token（03 §3.3）。
+     */
     private JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-            String type = jwt.getClaimAsString("account_type");
-            if (type == null || type.isBlank()) {
-                return List.of();
+            java.util.List<String> roles = jwt.getClaimAsStringList("roles");
+            if (roles == null || roles.isEmpty()) {
+                String type = jwt.getClaimAsString("account_type");
+                roles = type == null || type.isBlank() ? java.util.List.of() : java.util.List.of(type);
             }
-            return List.of(new SimpleGrantedAuthority(
-                    "ROLE_" + type.toUpperCase(java.util.Locale.ROOT)));
+            return roles.stream()
+                    .filter(value -> value != null && !value.isBlank())
+                    .map(value -> (org.springframework.security.core.GrantedAuthority)
+                            new SimpleGrantedAuthority(
+                                    "ROLE_" + value.toUpperCase(java.util.Locale.ROOT)))
+                    .toList();
         });
         return converter;
     }
