@@ -1,18 +1,36 @@
 # 试讲台网关（02 §2.2 / 03 §3.3）
-# 由官方 nginx 镜像的 envsubst 注入 ${INTERNAL_SERVICE_TOKEN} 与 ${JAVA_UPSTREAM}。
+# 由官方 nginx 镜像的 envsubst 注入 ${M1_INTERNAL_TOKEN} 与 ${JAVA_UPSTREAM}。
 # 注意：location 内一旦出现 proxy_set_header，就不再继承 server 级设置，
 # 因此受保护路径与 WebSocket 处把清除头一并重写。
 
 limit_req_zone $binary_remote_addr zone=auth_limit:10m rate=5r/m;
+# 公开数据接口（学校 / 专业 / 年级 / 班级）：正常用户点击频率远低于此，
+# 主要用于挡住脚本批量镜像。
+limit_req_zone $binary_remote_addr zone=public_limit:10m rate=30r/m;
 
 server {
     listen 80;
     server_name _;
     client_max_body_size 21m;
 
+    # 默认是 503，语义不对：限流应返回 429（与后端 RATE_LIMITED 一致）
+    limit_req_status 429;
+
+    # 限流响应必须是 JSON：Nginx 默认返回 HTML 错误页，前端解析不了 {code, message}。
+    # 用 =429 强制状态码，内部 location 返回 200 以避免 error_page 递归。
+    error_page 429 =429 /__rate_limited.json;
+
+    location = /__rate_limited.json {
+        internal;
+        default_type application/json;
+        charset utf-8;
+        return 200 '{"code":"RATE_LIMITED","message":"请求过于频繁，请稍后再试","details":{},"trace_id":null}';
+    }
+
     # 外部请求不可伪造身份头：默认清空（/api/ 与 /ws/ 内部另行覆盖）
     proxy_set_header X-Account-Id "";
     proxy_set_header X-Account-Type "";
+    proxy_set_header X-Account-Roles "";
     proxy_set_header X-School-Id "";
     proxy_set_header X-Internal-Token "";
     proxy_set_header Host $host;
@@ -52,6 +70,7 @@ server {
         proxy_pass http://${JAVA_UPSTREAM};
     }
     location ^~ /api/v1/public/ {
+        limit_req zone=public_limit burst=20 nodelay;
         proxy_pass http://${JAVA_UPSTREAM};
     }
     location = /actuator/health {
@@ -63,6 +82,7 @@ server {
         auth_request /_auth;
         auth_request_set $account_id   $upstream_http_x_account_id;
         auth_request_set $account_type $upstream_http_x_account_type;
+        auth_request_set $account_roles $upstream_http_x_account_roles;
         auth_request_set $school_id    $upstream_http_x_school_id;
 
         proxy_set_header Host $host;
@@ -70,6 +90,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Account-Id   $account_id;
         proxy_set_header X-Account-Type $account_type;
+        proxy_set_header X-Account-Roles $account_roles;
         proxy_set_header X-School-Id    $school_id;
         proxy_set_header X-Internal-Token "";
         proxy_pass http://${JAVA_UPSTREAM};
@@ -84,6 +105,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Account-Id "";
         proxy_set_header X-Account-Type "";
+        proxy_set_header X-Account-Roles "";
         proxy_set_header X-School-Id "";
         proxy_read_timeout 3600s;
         proxy_buffering off;

@@ -224,37 +224,30 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: #0f2044;
-  padding: 24px 0;
+  padding: 40px 16px;
+  background: var(--m1-bg-page);
 }
 
 .auth-card {
-  width: 520px;
+  width: 100%;
+  max-width: 520px;
   padding: 32px;
-  background: #fff;
-  border-radius: 12px;
-  /* 全局被 main.ts 设为 dark；卡片内恢复浅色变量 */
-  --el-bg-color: #fff;
-  --el-bg-color-overlay: #fff;
-  --el-text-color-primary: #0f2044;
-  --el-text-color-regular: #374151;
-  --el-text-color-placeholder: #9ca3af;
-  --el-border-color: #d1d5db;
-  --el-border-color-light: #e5e7eb;
-  --el-fill-color-blank: #fff;
-  --el-fill-color-light: #f3f4f6;
+  background: var(--m1-bg-surface);
+  border: 1px solid var(--m1-border);
+  border-radius: var(--m1-radius-lg);
+  box-shadow: var(--m1-shadow-card);
 }
 
 h1 {
   margin: 0 0 8px;
   font-size: 22px;
-  color: #0f2044;
+  color: var(--m1-text-primary);
 }
 
 .tip {
-  color: #6b7280;
-  font-size: 13px;
   margin-bottom: 16px;
+  color: var(--m1-text-secondary);
+  font-size: 13px;
 }
 
 .submit {
@@ -266,10 +259,16 @@ h1 {
   margin-top: 16px;
   text-align: center;
   font-size: 13px;
-  color: #6b7280;
+  color: var(--m1-text-secondary);
 }
 
 :deep(.el-select) {
   width: 100%;
+}
+
+@media (max-width: 767px) {
+  .auth-card {
+    padding: 24px 16px;
+  }
 }
 </style>
