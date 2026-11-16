@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { router } from './router'
 
 describe('router', () => {
-  it('registers the error routes and the root redirect', () => {
+  it('registers the error routes and a role-aware root redirect', () => {
     const routes = router.getRoutes()
+    const root = routes.find((route) => route.path === '/')
 
-    expect(routes.find((route) => route.path === '/')?.redirect).toBe('/student/tasks')
+    // 根路径按角色落地（管理员 → 管理端、学生 → 任务中心、教师 → 账号安全），
+    // 未登录时统一去登录页——不能再固定跳 /student/tasks，否则管理员会撞 403
+    expect(typeof root?.redirect).toBe('function')
+    expect((root?.redirect as () => string)()).toBe('/login')
+
     expect(routes.some((route) => route.path === '/403')).toBe(true)
     expect(routes.some((route) => route.path === '/404')).toBe(true)
     expect(routes.some((route) => route.path === '/:pathMatch(.*)*')).toBe(true)
