@@ -88,9 +88,17 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 
   // 未登录：保留 dev 身份，M3 页面可脱离 M1 登录独立调试
   const auth = useAuthStore()
-  config.headers.set('X-Account-Id', auth.accountId)
-  config.headers.set('X-School-Id', auth.schoolId)
-  config.headers.set('X-Account-Type', auth.accountType)
+  // Allow module-specific identity overrides (M7 demo seed) while keeping the
+  // shared dev-identity default for every other page.
+  if (!config.headers.has('X-Account-Id')) {
+    config.headers.set('X-Account-Id', auth.accountId)
+  }
+  if (!config.headers.has('X-School-Id')) {
+    config.headers.set('X-School-Id', auth.schoolId)
+  }
+  if (!config.headers.has('X-Account-Type')) {
+    config.headers.set('X-Account-Type', auth.accountType)
+  }
   return config
 })
 
