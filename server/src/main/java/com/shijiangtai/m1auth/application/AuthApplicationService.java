@@ -3,6 +3,7 @@ package com.shijiangtai.m1auth.application;
 import com.shijiangtai.m1auth.application.port.PasswordHasher;
 import com.shijiangtai.m1auth.domain.Account;
 import com.shijiangtai.m1auth.domain.AccountRepository;
+import com.shijiangtai.m1auth.domain.AccountRoleRepository;
 import com.shijiangtai.m1auth.domain.AuthLoginEvent;
 import com.shijiangtai.m1auth.domain.AuthMethodRepository;
 import com.shijiangtai.m1auth.domain.EmailAddress;
@@ -25,6 +26,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +46,7 @@ public class AuthApplicationService {
     private static final String LOGIN_FAILED = "用户名或密码错误";
 
     private final AccountRepository accounts;
+    private final AccountRoleRepository accountRoles;
     private final ProfileRepository profiles;
     private final OrganizationRepository organization;
     private final SchoolAdminRepository schoolAdmins;
@@ -54,6 +57,7 @@ public class AuthApplicationService {
 
     public AuthApplicationService(
             AccountRepository accounts,
+            AccountRoleRepository accountRoles,
             ProfileRepository profiles,
             OrganizationRepository organization,
             SchoolAdminRepository schoolAdmins,
@@ -62,6 +66,7 @@ public class AuthApplicationService {
             JwtTokenIssuer tokens,
             Clock clock) {
         this.accounts = accounts;
+        this.accountRoles = accountRoles;
         this.profiles = profiles;
         this.organization = organization;
         this.schoolAdmins = schoolAdmins;
@@ -171,6 +176,10 @@ public class AuthApplicationService {
     /** 供其他服务复用：账号 + 角色档案视图。 */
     @Transactional(readOnly = true)
     public AccountView view(Account account) {
+        return view(account, accountRoles.findRoles(account.id()));
+    }
+
+    private AccountView view(Account account, Set<AccountType> roles) {
         SchoolId effectiveSchool = effectiveSchool(account);
         String schoolName = effectiveSchool == null ? null
                 : organization.findSchoolById(effectiveSchool).map(School::name).orElse(null);
@@ -184,6 +193,10 @@ public class AuthApplicationService {
                 account.id().value(),
                 account.username(),
                 account.type().name().toLowerCase(Locale.ROOT),
+                roles.stream()
+                        .map(role -> role.name().toLowerCase(Locale.ROOT))
+                        .sorted()
+                        .toList(),
                 effectiveSchool == null ? null : effectiveSchool.value(),
                 schoolName,
                 account.email() == null ? null : account.email().value(),
@@ -194,12 +207,13 @@ public class AuthApplicationService {
 
     // ------------------------------------------------------------------ 内部
 
-    /** 签发 JWT：三种登录方式共用，claims 一致（M1-T14）。 */
+    /** 签发 JWT：三种登录方式共用，claims 一致（M1-T14）。角色集合决定可行使的权限。 */
     AuthResult issue(Account account) {
         SchoolId effectiveSchool = effectiveSchool(account);
+        Set<AccountType> roles = accountRoles.findRoles(account.id());
         JwtTokenIssuer.IssuedToken issued =
-                tokens.issue(account.id(), account.type(), effectiveSchool);
-        return new AuthResult(issued.token(), issued.expiresAt(), view(account));
+                tokens.issue(account.id(), account.type(), effectiveSchool, roles);
+        return new AuthResult(issued.token(), issued.expiresAt(), view(account, roles));
     }
 
     /** 管理员学校归属以 school_admins 为准；其他人取 accounts.school_id（03 §3.4）。 */
@@ -323,6 +337,7 @@ public class AuthApplicationService {
             UUID accountId,
             String username,
             String accountType,
+            List<String> roles,
             UUID schoolId,
             String schoolName,
             String email,

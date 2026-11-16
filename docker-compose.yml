@@ -109,6 +109,8 @@ services:
       M3_AI_BASE_URL: http://ai:8001
       M3_AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-dev-service-token}
     # 宿主机 8090 → 容器 8080：8080 已被本机其他项目（file-transfer-nginx-1）占用
+    # 仅本地调试需要；生产请删除此行，只经 nginx 网关暴露。
+    # 直连本端口会绕过限流，且 dev profile 接受 X-Account-* 请求头身份。
     ports: ["8090:8080"]
     depends_on:
       postgres: { condition: service_healthy }

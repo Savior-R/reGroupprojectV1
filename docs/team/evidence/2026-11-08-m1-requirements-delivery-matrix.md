@@ -10,26 +10,29 @@
 > **修订记录**
 > - 17:20 初版（FR 7 已实现 / 4 部分）
 > - 17:45 增量：补前端导入 UI（FR-M1-04 闭环）、修复「登录失败审计被事务回滚」缺陷、补 `LoginAuditIT` 5 用例、补微信登录失败审计。FR 变为 **8 已实现 / 3 部分**，M1 用例 **81 / 0 失败**。
+> - 11-10 增量：**多角色（V14 `account_roles`）**——`account_type` 保留为主身份，新增授权角色集合；管理员可给本校教师授予 / 撤销 `admin`，权限判定取并集。补 FR-M1-12、M1-T16 与 `TeacherRoleIT` 7 用例；RBAC 判定改为多角色并集。M1 用例 **95 / 0 失败**，全量 **791 / 0 失败**。
 
 ---
 
 ## 0. 一页结论
 
-### 0.1 功能需求（FR-M1-01 — FR-M1-11）
+### 0.1 功能需求（FR-M1-01 — FR-M1-12）
 
 | 状态 | 数量 | 编号 |
 |---|---|---|
-| ✅ 已实现 | **8** | FR-M1-01、02、03、**04**、05、06、08、09 |
-| 🟡 部分实现 | **3** | FR-M1-07（权限码未表驱动）、FR-M1-10（unionid 未用于关联、真实微信未验证）、FR-M1-11（绑定/解绑审计缺契约支撑、解绑最后方式在当前模型不可达） |
+| ✅ 已实现 | **9** | FR-M1-01、02、03、**04**、05、06、08、09、**12** |
+| 🟡 部分实现 | **3** | FR-M1-07（表驱动已接入，M2—M7 待各 owner 核对）、FR-M1-10（unionid 未用于关联、真实微信按 Mock 验收）、FR-M1-11（绑定/解绑审计缺 `event_type` 契约、解绑最后方式在当前模型不可达） |
 | ❌ 未实现 | **0** | — |
 
 > FR-M1-04 已于 17:45 补齐前端导入入口（原为「后端有、前端无」）。
+> FR-M1-07 已于 11-09 接入 `PermissionAuthorizationManager`（fail closed），M2—M7 路径保留 `authenticated()` 待各 owner 核对。
+> FR-M1-12 于 11-10 新增（多角色：教师兼管理员）。
 
-### 0.2 验收用例（docs/design/10 §6.1 M1-T01—T15）
+### 0.2 验收用例（docs/design/10 §6.1 M1-T01—T16）
 
 | 状态 | 数量 | 编号 |
 |---|---|---|
-| ✅ 已被自动化覆盖 | **9** | T01、T02、T03、T04、T05、T06、T11、T12、T13 |
+| ✅ 已被自动化覆盖 | **10** | T01、T02、T03、T04、T05、T06、T11、T12、T13、**T16** |
 | 🟡 部分覆盖 | **5** | T07（课程侧属 M2）、T09 / T10（仅后端断言，无 E2E）、T14（解绑最后方式不可达，需文档定口径）、T15（登录审计已补断言；绑定/解绑审计待 `event_type` 契约） |
 | ❌ 未覆盖 | **1** | T08（账号抽屉只读 E2E） |
 
@@ -215,6 +218,18 @@
 | **绑定 / 解绑写审计事件** | 🟡 | 微信 / 邮箱的绑定、解绑**均未写** `auth_login_events`；原因是该表无事件类型列（`ck_login_method` 只允许 password/email/wechat），需 `V14` 加 `event_type` 后落地（escalate §1.5）。**登录**审计已完整：密码 / 邮箱 / 微信的成功与失败四路都写，且失败事件已修复「被事务回滚」缺陷 |
 | 解绑最后一个登录方式时拒绝 | ❌ | 当前模型不可达：`Account.passwordHash` 强制非空（`Account.java:32`）、DB 列非空、本轮不支持清空密码。建议改文档口径（escalate §4.1），而非写死代码 |
 | 异常：ticket 过期/已用、类型缺失、学校/专业/班级无效、冲突、身份已绑、解绑唯一方式 | 🟡 | 除「解绑唯一方式」外全部有；该分支不可达 → 未写 |
+
+### FR-M1-12 多角色：教师叠加管理员权限（P0）— ✅ 已实现（2026-11-10 新增）
+
+| 需求条款 | 状态 | 实现证据 |
+|---|---|---|
+| 主身份与授权角色分离 | ✅ | `accounts.account_type_id`（主身份，不可变）+ `account_roles(account_id, role_code)`（可叠加）；V14 回填既有账号 |
+| 管理员可授予 / 撤销本校教师的 admin 角色 | ✅ | `AdminTeacherController#updateRoles` → `TeacherMajorService#updateAdminRole`；权限码 `admin:roles` |
+| 授权判定取并集 | ✅ | `PermissionAuthorizationManager.resolveRoles` 逐个 `roleHasPermission` 任一命中即放行；`JwtAuthenticationConverter` 映射多个 `ROLE_*` |
+| 只能本校教师、不能给自己、不能给学生 | ✅ | `TeacherMajorService#updateAdminRole` 三重校验；`TeacherRoleIT` 的 `cannotGrantToSelf` / `cannotGrantToStudent` / `cannotGrantToTeacherOfAnotherSchool` |
+| 不改主身份、不新建 `school_admins` | ✅ | 只写 `account_roles`；`effectiveSchool` 对非 ADMIN 主身份取 `accounts.school_id` |
+| 角色随 JWT 下发，需重新登录生效 | ✅ | `JwtTokenIssuer` 写 `roles` claim；`tokenIsPermissionSnapshotUntilRelogin` 断言旧 token 权限不变 |
+| 前端可视化 | ✅ | `TeachersView.vue` 「管理权限」开关；`api/auth.ts#updateTeacherAdminRole`；守卫与导航改用 `rolesOf/isAdmin` |
 
 ---
 
