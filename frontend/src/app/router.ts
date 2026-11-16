@@ -70,6 +70,31 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('../views/replay/ReviewPage.vue'),
     meta: { requiresAuth: true, studentOnly: true },
   },
+  {
+    path: '/student/results',
+    name: 'student-results',
+    component: () => import('../views/grading/StudentResultsPage.vue'),
+  },
+  {
+    path: '/student/results/:submissionId',
+    name: 'student-result-detail',
+    component: () => import('../views/grading/StudentResultDetailPage.vue'),
+  },
+  {
+    path: '/teacher/courses/:courseId/tasks/:taskId/grading',
+    name: 'task-grading',
+    component: () => import('../views/grading/TaskGradingPage.vue'),
+  },
+  {
+    path: '/teacher/courses/:courseId/tasks/:taskId/stats',
+    name: 'task-stats',
+    component: () => import('../views/stats/TaskStatsPage.vue'),
+  },
+  {
+    path: '/teacher/courses/:courseId/stats',
+    name: 'course-stats',
+    component: () => import('../views/stats/CourseStatsPage.vue'),
+  },
 
   // ------------------------------------------------ M1 账号 / 组织 / 认证
   {
