@@ -48,4 +48,14 @@ public final class AdminRequests {
     public record UpdateTeacherMajorsRequest(
             @NotEmpty(message = "至少保留一个有效专业") List<UUID> majorIds) {
     }
+
+    /**
+     * 授予 / 撤销管理员角色（FR-M1-12）。
+     *
+     * <p>{@code admin=true} 叠加管理员角色（教师兼管理员），{@code false} 撤销；
+     * 主身份不变，只能操作本校教师。
+     */
+    public record UpdateTeacherRolesRequest(
+            @NotNull(message = "admin 必填") Boolean admin) {
+    }
 }
