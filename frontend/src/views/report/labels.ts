@@ -73,6 +73,7 @@ export const REASON_LABELS: Record<string, string> = {
   REFERENCE_MISSING: '未提供参考材料，准确性按可见内容评估',
   EMPTY_EVENTS: '没有课堂事件，互动结论置信度降低',
   OCR_LOW_CONFIDENCE: 'OCR 置信度偏低',
+  ZERO_WEIGHT_DIMENSION_MISSING: '零权重维度缺失，仅提示且不影响总分',
   DIMENSION_FAILED: '部分维度评测失败',
   DIMENSION_TIMEOUT: '部分维度评测超时',
   INVALID_MODEL_OUTPUT: '模型输出不合规，相关维度已跳过',

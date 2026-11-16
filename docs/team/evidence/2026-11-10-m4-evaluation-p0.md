@@ -183,3 +183,27 @@ cd frontend
 npm ci
 npm run build
 ```
+
+## 7. 2026-11-16 本机复测
+
+环境：Windows 11 + Git Bash；JDK 25.0.1 + Gradle 9.5.0（临时 toolchain 覆盖，未改构建文件）；Python 3.13.15（`ai/.venv`）；Node 24 / npm 11。仍然**没有运行中的 Docker / PostgreSQL / Redis / MinIO**。
+
+| 项 | 命令 | 结果 |
+|---|---|---|
+| Java M4 UT | `gradle cleanTest test --tests "com.shijiangtai.m4eval.*"` | **22 passed**（EvaluationPolicy 8 / ResultValidator 8 / WeightDefaults 6） |
+| Python mock | `pytest tests/evaluation` | **26 passed in 0.27s** |
+| 前端单测 | `npx vitest run` | **18 files / 143 tests passed** |
+| 前端构建 | `npm run build` | **通过**（仅既有 >500 kB chunk 警告） |
+
+Mock 评测 capability 演示（确定性 mock provider，样本课堂）：
+
+- `completed`：free 五维（内容 82.0 / 表达 72.1 / 互动 80.2 / 板书 81.1 / 时间 90.1），按权重合成总分 **80.7**，4 条问题 + 4 条建议。
+- `partial`：缺音频 → `AUDIO_MISSING`，4 维、**无总分**，问题 / 建议仍保留。
+- `failed`：无转写 / 帧 / 事件且 `duration_ms=0` → 0 维、无总分。
+- `interview`：三维（内容 / 表达 / 时间），总分 **73.9**。
+
+报告前端视觉验证：用临时 mock API + headless Edge 渲染 `EvaluationReportPanel`（未改 `router.ts`，`frontend/.m4demo` 演示入口已删除），确认 completed 状态（总分 / 雷达 / 维度卡 / 建议）与 partial 状态（无总分、缺失维度警告、缺失轴标注）均按契约渲染。
+
+本次唯一代码修改：`frontend/src/views/report/labels.ts` 补充 `ZERO_WEIGHT_DIMENSION_MISSING` 中文文案（此前会直接显示英文码），属 M4 报告页路径。
+
+仍未执行（结论不变）：真实 DeepSeek provider（`ai/.env` 的 `DEEPSEEK_API_KEY` 为空，`real_provider_smoke.py` 直接报缺 key 并退出 2）、PostgreSQL / Redis / MinIO 集成测试、契约测试、E2E、M4-T10 性能。
