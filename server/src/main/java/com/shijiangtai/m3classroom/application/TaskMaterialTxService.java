@@ -26,7 +26,7 @@ public class TaskMaterialTxService {
     @Transactional
     public ReferenceMaterial attach(TaskId taskId, ReferenceMaterial material) {
         Task task = findTask(taskId);
-        task.assertDraft();
+        task.assertEditable();
         if (task.draft().mode() == TaskMode.INTERVIEW) {
             throw new DomainException(ErrorCode.MATERIAL_NOT_APPLICABLE,
                     "结构化面试不需要参考材料");
@@ -40,7 +40,7 @@ public class TaskMaterialTxService {
     @Transactional
     public ReferenceMaterial clear(TaskId taskId) {
         Task task = findTask(taskId);
-        task.assertDraft();
+        task.assertEditable();
         ReferenceMaterial old = task.referenceMaterial();
         task.removeMaterial(clockProvider.now());
         taskRepository.save(task);

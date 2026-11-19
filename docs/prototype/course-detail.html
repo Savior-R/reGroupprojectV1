@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>课程详情 · 语文教学论 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .course-back {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      color: var(--text-3);
+      font-size: 11px;
+    }
+
+    .course-back a {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text-2);
+    }
+
+    .course-back a:hover {
+      color: var(--accent);
+    }
+
+    .course-back [data-icon] svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    /* Course hero */
+    .course-hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 30px;
+      overflow: hidden;
+      margin-bottom: 22px;
+      padding: 28px 30px;
+      border-radius: var(--r-lg);
+      background:
+        radial-gradient(520px 260px at 82% -10%, rgba(224, 164, 74, 0.13), transparent 65%),
+        radial-gradient(520px 300px at 0% 110%, rgba(42, 103, 88, 0.5), transparent 65%),
+        linear-gradient(140deg, #173f36, #0d2d26);
+      color: #eef3ee;
+      box-shadow: var(--shadow-2);
+    }
+
+    .course-hero::after {
+      position: absolute;
+      right: -70px;
+      bottom: -120px;
+      width: 300px;
+      height: 300px;
+      border: 1px solid rgba(238, 243, 238, 0.1);
+      border-radius: 50%;
+      box-shadow: 0 0 0 28px rgba(238, 243, 238, 0.025);
+      content: "";
+      pointer-events: none;
+    }
+
+    .course-hero__main {
+      position: relative;
+      z-index: 1;
+      min-width: 0;
+    }
+
+    .course-hero .eyebrow {
+      color: rgba(238, 243, 238, 0.55);
+    }
+
+    .course-hero .eyebrow::before {
+      background: #e6b45d;
+    }
+
+    .course-hero h1 {
+      margin-top: 12px;
+      color: #f5f7f2;
+      font-size: clamp(34px, 4vw, 52px);
+      line-height: 1.16;
+      letter-spacing: 0.01em;
+    }
+
+    .course-hero__lead {
+      max-width: 52em;
+      margin-top: 10px;
+      color: rgba(238, 243, 238, 0.62);
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .course-hero__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .course-hero__meta .chip {
+      min-height: 25px;
+      padding: 2px 9px;
+      border-color: rgba(238, 243, 238, 0.16);
+      background: rgba(238, 243, 238, 0.07);
+      color: rgba(238, 243, 238, 0.72);
+      font-size: 10px;
+    }
+
+    .course-hero__side {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .course-hero__watermark {
+      color: rgba(238, 243, 238, 0.1);
+      font-family: var(--font-serif);
+      font-size: 150px;
+      font-weight: 600;
+      line-height: 0.8;
+      letter-spacing: -0.08em;
+      user-select: none;
+    }
+
+    .course-hero__actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 7px;
+    }
+
+    .course-hero .btn--primary {
+      border-color: #e0a44a;
+      background: #e0a44a;
+      color: #1b1408;
+    }
+
+    .course-hero .btn--primary:hover {
+      border-color: #ecb65f;
+      background: #ecb65f;
+      color: #1b1408;
+    }
+
+    .course-hero .btn--secondary {
+      border-color: rgba(238, 243, 238, 0.2);
+      background: rgba(238, 243, 238, 0.08);
+      color: rgba(238, 243, 238, 0.82);
+    }
+
+    .course-hero .btn--secondary:hover {
+      border-color: rgba(238, 243, 238, 0.34);
+      background: rgba(238, 243, 238, 0.14);
+      color: #f5f7f2;
+    }
+
+    body[data-role="student"] .teacher-only {
+      display: none !important;
+    }
+
+    body[data-role="teacher"] .student-only {
+      display: none !important;
+    }
+
+    /* Layout */
+    .detail-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .detail-main,
+    .detail-aside {
+      display: grid;
+      gap: 16px;
+    }
+
+    /* Course tasks */
+    .course-task-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .course-task-card__head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .course-task-card__head h2 {
+      font-size: 21px;
+    }
+
+    .course-task-card__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .course-task-card__head .segmented {
+      background: var(--paper-0);
+    }
+
+    .course-task-list {
+      display: grid;
+    }
+
+    .course-task {
+      position: relative;
+      display: grid;
+      grid-template-columns: 3px minmax(0, 1fr) 150px;
+      gap: 14px;
+      padding: 15px 18px 15px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .course-task:last-child {
+      border-bottom: 0;
+    }
+
+    .course-task__rail {
+      border-radius: 0 2px 2px 0;
+      background: var(--line-strong);
+    }
+
+    .course-task[data-course-task-state="assigned"] .course-task__rail {
+      background: var(--accent);
+    }
+
+    .course-task[data-course-task-state="in_progress"] .course-task__rail {
+      background: var(--gold);
+    }
+
+    .course-task[data-course-task-state="submitted"] .course-task__rail {
+      background: var(--success);
+    }
+
+    .course-task__main {
+      min-width: 0;
+    }
+
+    .course-task__top {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+
+    .course-task__mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text-3);
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .course-task__mode [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      color: var(--accent);
+    }
+
+    .course-task h3 {
+      margin-top: 7px;
+      font-size: 17px;
+      line-height: 1.35;
+    }
+
+    .course-task__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 13px;
+      margin-top: 7px;
+      color: var(--text-2);
+      font-size: 9.5px;
+    }
+
+    .course-task__meta span {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .course-task__meta [data-icon] svg {
+      width: 11px;
+      height: 11px;
+      color: var(--text-3);
+    }
+
+    .course-task__side {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 7px;
+      text-align: right;
+    }
+
+    .course-task__due {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .course-task__due--urgent {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .course-task__score {
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 22px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    .course-task__score small {
+      color: var(--text-3);
+      font-family: var(--font-sans);
+      font-size: 8px;
+      font-weight: 400;
+    }
+
+    .course-task--teacher {
+      grid-template-columns: 3px minmax(0, 1fr) 130px 54px 176px;
+      align-items: center;
+    }
+
+    .course-task__progress {
+      min-width: 0;
+    }
+
+    .course-task__progress-head {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+    }
+
+    .course-task__progress .progress {
+      height: 4px;
+    }
+
+    .course-task__avg {
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 17px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      text-align: right;
+    }
+
+    .course-task__avg--muted {
+      color: var(--text-3);
+      font-family: var(--font-sans);
+      font-size: 9px;
+      font-weight: 400;
+    }
+
+    .course-task__actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .course-task__actions .action-danger {
+      color: var(--danger);
+    }
+
+    .course-task__actions .action-danger:hover {
+      border-color: var(--danger);
+      background: var(--danger-soft, rgba(168, 68, 47, 0.08));
+    }
+
+    /* Aside */
+    .aside-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .aside-card .card-head,
+    .aside-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .course-info {
+      display: grid;
+      gap: 0;
+    }
+
+    .course-info__row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 10.5px;
+    }
+
+    .course-info__row:last-child {
+      border-bottom: 0;
+    }
+
+    .course-info__row dt {
+      color: var(--text-3);
+    }
+
+    .course-info__row dd {
+      margin: 0;
+      color: var(--text);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .teacher-mini {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .teacher-mini:last-child {
+      border-bottom: 0;
+    }
+
+    .teacher-mini__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .teacher-mini__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .teacher-mini__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .score-summary {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .score-summary strong {
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 36px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    .score-summary strong small {
+      color: var(--text-3);
+      font-family: var(--font-sans);
+      font-size: 9px;
+      font-weight: 400;
+    }
+
+    .score-summary span {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .todo-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .todo {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .todo:last-child {
+      border-bottom: 0;
+    }
+
+    .todo__dot {
+      width: 6px;
+      height: 6px;
+      flex: none;
+      margin-top: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .todo__dot--gold {
+      background: var(--gold);
+    }
+
+    .todo__dot--green {
+      background: var(--success);
+    }
+
+    .todo strong {
+      display: block;
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .todo span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .course-note {
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--paper-0);
+    }
+
+    .course-note h2 {
+      font-size: 16px;
+    }
+
+    .course-note p {
+      margin-top: 7px;
+      color: var(--text-2);
+      font-size: 10.5px;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 1180px) {
+      .course-hero {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .course-hero__side {
+        flex-direction: row;
+        align-items: flex-end;
+      }
+
+      .course-hero__watermark {
+        display: none;
+      }
+
+      .detail-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .detail-aside {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 900px) {
+      .detail-aside {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .course-task--teacher {
+        grid-template-columns: 3px minmax(0, 1fr) 54px 140px;
+      }
+
+      .course-task--teacher .course-task__progress {
+        display: none;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .course-hero {
+        padding: 22px;
+      }
+
+      .course-hero__side {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .course-task {
+        grid-template-columns: 3px minmax(0, 1fr);
+      }
+
+      .course-task__side {
+        grid-column: 2;
+        align-items: flex-start;
+        text-align: left;
+      }
+
+      .course-task--teacher {
+        grid-template-columns: 3px minmax(0, 1fr);
+      }
+
+      .course-task--teacher .course-task__avg,
+      .course-task--teacher .course-task__actions {
+        grid-column: 2;
+        justify-content: flex-start;
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body data-role="student" data-nav="courses">
+
+  <div data-app-header></div>
+
+  <main class="page">
+    <div class="course-back">
+      <a href="courses.html"><span data-icon="arrow-left"></span>课程</a>
+      <span class="breadcrumb__sep">/</span>
+      <span>语文教学论</span>
+    </div>
+
+    <section class="course-hero">
+      <div class="course-hero__main">
+        <p class="eyebrow">CHN 2401 · 2026 秋季学期 · 课程详情</p>
+        <h1>语文教学论</h1>
+        <p class="course-hero__lead">
+          面向汉语言文学（师范）专业的语文教学法课程，覆盖阅读教学、写作教学与课堂实践。
+          课程以试讲任务为主线，结合 AI 评测与教师评分，形成可回看的教学能力证据。
+        </p>
+        <div class="course-hero__meta">
+          <span class="chip"><span data-icon="users"></span>32 名学生</span>
+          <span class="chip"><span data-icon="clipboard"></span>6 个任务</span>
+          <span class="chip"><span data-icon="podium"></span>王宁 / 李静</span>
+          <span class="chip"><span data-icon="calendar"></span>2027-01-15 结课</span>
+          <span class="chip"><span data-icon="check-circle"></span>启用中</span>
+        </div>
+      </div>
+      <div class="course-hero__side">
+        <span class="course-hero__watermark" aria-hidden="true">语</span>
+        <div class="course-hero__actions student-only">
+          <a class="btn btn--primary" href="student-course-results.html"><span data-icon="chart"></span>我的成绩</a>
+          <a class="btn btn--secondary" href="student-training.html"><span data-icon="sparkles"></span>去训练</a>
+        </div>
+        <div class="course-hero__actions teacher-only">
+          <a class="btn btn--primary" href="teacher-tasks.html"><span data-icon="clipboard"></span>课程任务</a>
+          <a class="btn btn--secondary" href="teacher-course-students.html"><span data-icon="users"></span>学生管理</a>
+          <a class="btn btn--secondary" href="stats.html"><span data-icon="chart"></span>课程统计</a>
+        </div>
+      </div>
+    </section>
+
+    <div data-panel-group="course-detail-role">
+      <!-- ================= STUDENT ================= -->
+      <div data-panel="student">
+        <div class="stat-strip" style="margin-bottom:18px">
+          <div class="stat"><div class="stat__label">我的进度</div><div class="stat__value stat__value--brand">68%</div><div class="stat__meta">已完成 4 / 6 个任务</div></div>
+          <div class="stat"><div class="stat__label">待完成</div><div class="stat__value stat__value--accent">2</div><div class="stat__meta">1 个即将截止</div></div>
+          <div class="stat"><div class="stat__label">已提交</div><div class="stat__value">4</div><div class="stat__meta">含 1 个待评分</div></div>
+          <div class="stat"><div class="stat__label">课程平均分</div><div class="stat__value">84.2</div><div class="stat__meta">已完成任务</div></div>
+        </div>
+
+        <div class="detail-grid">
+          <div class="detail-main">
+            <section class="course-task-card" id="tasks">
+              <div class="course-task-card__head">
+                <div>
+                  <h2>当前课程任务</h2>
+                  <p>按截止时间排序 · 点击任务进入课前检查 / 回看 / 报告</p>
+                </div>
+                <div class="segmented" data-tabs="course-task-state" role="tablist" aria-label="任务状态">
+                  <button type="button" role="tab" aria-selected="true" data-tab="all">全部 <span class="count">4</span></button>
+                  <button type="button" role="tab" aria-selected="false" data-tab="assigned">待开始 <span class="count">2</span></button>
+                  <button type="button" role="tab" aria-selected="false" data-tab="submitted">已提交 <span class="count">2</span></button>
+                </div>
+              </div>
+              <div class="course-task-list">
+                <article class="course-task" data-course-task-state="assigned">
+                  <span class="course-task__rail"></span>
+                  <div class="course-task__main">
+                    <div class="course-task__top"><span class="course-task__mode"><span data-icon="podium"></span>自由试讲</span><span class="badge badge--accent">待开始</span></div>
+                    <h3>荷塘月色</h3>
+                    <div class="course-task__meta"><span><span data-icon="clock"></span>20 分钟</span><span><span data-icon="users"></span>3 名虚拟学生</span><span><span data-icon="camera"></span>三路录制</span></div>
+                  </div>
+                  <div class="course-task__side">
+                    <span class="course-task__due course-task__due--urgent">11-18 23:59 截止</span>
+                    <a class="btn btn--primary btn--sm" href="student-task-detail.html">课前检查 <span data-icon="arrow-right"></span></a>
+                  </div>
+                </article>
+
+                <article class="course-task" data-course-task-state="assigned">
+                  <span class="course-task__rail"></span>
+                  <div class="course-task__main">
+                    <div class="course-task__top"><span class="course-task__mode"><span data-icon="message"></span>结构化面试</span><span class="badge badge--accent">待开始</span></div>
+                    <h3>教师资格证结构化面试 · 模拟</h3>
+                    <div class="course-task__meta"><span><span data-icon="clock"></span>5 分钟</span><span><span data-icon="clipboard"></span>2 道题</span><span><span data-icon="camera"></span>两路录制</span></div>
+                  </div>
+                  <div class="course-task__side">
+                    <span class="course-task__due">11-22 23:59 截止</span>
+                    <a class="btn btn--primary btn--sm" href="student-task-detail.html">课前检查 <span data-icon="arrow-right"></span></a>
+                  </div>
+                </article>
+
+                <article class="course-task" data-course-task-state="in_progress">
+                  <span class="course-task__rail"></span>
+                  <div class="course-task__main">
+                    <div class="course-task__top"><span class="course-task__mode"><span data-icon="book-open"></span>情景试讲</span><span class="badge badge--warning">进行中</span></div>
+                    <h3>少年闰土</h3>
+                    <div class="course-task__meta"><span><span data-icon="clock"></span>15 分钟</span><span><span data-icon="users"></span>2 名虚拟学生</span><span><span data-icon="camera"></span>已录制 08:42</span></div>
+                  </div>
+                  <div class="course-task__side">
+                    <span class="course-task__due">录制中断风险</span>
+                    <a class="btn btn--primary btn--sm" href="classroom.html">返回课堂 <span data-icon="arrow-right"></span></a>
+                  </div>
+                </article>
+
+                <article class="course-task" data-course-task-state="submitted">
+                  <span class="course-task__rail"></span>
+                  <div class="course-task__main">
+                    <div class="course-task__top"><span class="course-task__mode"><span data-icon="podium"></span>自由试讲</span><span class="badge badge--success">已提交</span></div>
+                    <h3>古诗二首 · 模拟考核</h3>
+                    <div class="course-task__meta"><span><span data-icon="calendar"></span>11-14 提交</span><span><span data-icon="chart"></span>最终分 86.7</span></div>
+                  </div>
+                  <div class="course-task__side">
+                    <span class="course-task__score">86.7 <small>/ 100</small></span>
+                    <a class="btn btn--secondary btn--sm" href="report.html">查看报告</a>
+                  </div>
+                </article>
+              </div>
+              <div class="card-foot" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <span class="xs faint">显示当前学期 4 个任务 · 共 6 个</span>
+                <a class="btn btn--ghost btn--sm" href="student-tasks.html">查看全部任务 <span data-icon="arrow-right"></span></a>
+              </div>
+            </section>
+
+            <section class="course-note">
+              <h2>课程说明</h2>
+              <p>本课程采用“真实试讲 + 虚拟学生 + AI 评测 + 教师评分”的组合方式。每个任务都需要完成课堂录制并在截止时间前提交；提交后回放只读，AI 报告通常 1—3 分钟生成。</p>
+            </section>
+          </div>
+
+          <aside class="detail-aside">
+            <section class="aside-card">
+              <div class="card-head">
+                <div class="card-head__main"><h2 class="card-title">课程信息</h2><p class="card-sub">CHN 2401 · 2026 秋</p></div>
+                <span class="badge badge--success">启用中</span>
+              </div>
+              <div class="card-body">
+                <dl class="course-info">
+                  <div class="course-info__row"><dt>学分</dt><dd>3.0</dd></div>
+                  <div class="course-info__row"><dt>专业范围</dt><dd>汉语言文学（师范）</dd></div>
+                  <div class="course-info__row"><dt>老师组</dt><dd>王宁、李静</dd></div>
+                  <div class="course-info__row"><dt>学生</dt><dd>32 人</dd></div>
+                  <div class="course-info__row"><dt>结束日期</dt><dd>2027-01-15</dd></div>
+                </dl>
+              </div>
+            </section>
+
+            <section class="aside-card">
+              <div class="card-head">
+                <div class="card-head__main"><h2 class="card-title">老师组</h2><p class="card-sub">可联系课程教师</p></div>
+              </div>
+              <div class="card-body" style="padding-top:6px;padding-bottom:6px">
+                <div class="teacher-mini"><span class="avatar avatar--sm avatar--gold">王</span><div class="teacher-mini__main"><strong>王宁</strong><span>主讲 · 语文教学论</span></div><a class="chip" href="#" data-toast="发送站内消息（原型演示）。">消息</a></div>
+                <div class="teacher-mini"><span class="avatar avatar--sm avatar--cinnabar">李</span><div class="teacher-mini__main"><strong>李静</strong><span>老师组 · 微格实训</span></div><a class="chip" href="#" data-toast="发送站内消息（原型演示）。">消息</a></div>
+              </div>
+            </section>
+
+            <section class="aside-card">
+              <div class="card-head">
+                <div class="card-head__main"><h2 class="card-title">我的成绩</h2><p class="card-sub">本课程已完成任务</p></div>
+                <a class="chip" href="student-course-results.html">详情</a>
+              </div>
+              <div class="card-body">
+                <div class="score-summary"><strong>84.2 <small>/ 100</small></strong><span>已完成 4 个任务</span></div>
+                <div class="data-inline" style="margin-top:6px"><strong>4 / 6 任务</strong><span>68%</span></div>
+                <p class="xs faint" style="margin-top:10px;line-height:1.6">最终分 = AI 分 × 70% + 教师分 × 30%；待评分任务不计入平均。</p>
+                <a class="btn btn--secondary btn--block btn--sm" href="student-course-results.html" style="margin-top:11px">查看课程成绩</a>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </div>
+
+      <!-- ================= TEACHER ================= -->
+      <div data-panel="teacher" hidden>
+        <div class="stat-strip" style="margin-bottom:18px">
+          <div class="stat"><div class="stat__label">在课学生</div><div class="stat__value">32</div><div class="stat__meta">已绑定班级</div></div>
+          <div class="stat"><div class="stat__label">课程任务</div><div class="stat__value">6</div><div class="stat__meta">5 个已发布</div></div>
+          <div class="stat"><div class="stat__label">待批提交</div><div class="stat__value stat__value--accent">12</div><div class="stat__meta">需要教师评分</div></div>
+          <div class="stat"><div class="stat__label">课程平均分</div><div class="stat__value stat__value--brand">82.4</div><div class="stat__meta">已完成样本</div></div>
+        </div>
+
+        <div class="detail-grid">
+          <div class="detail-main">
+            <section class="course-task-card" id="teacher-tasks">
+              <div class="course-task-card__head">
+                <div>
+                  <h2>当前课程任务</h2>
+                  <p>发布 / 关闭状态一览 · 直接进入评分或统计</p>
+                </div>
+                <a class="btn btn--primary btn--sm" href="task-editor.html"><span data-icon="plus"></span>新建任务</a>
+              </div>
+              <div class="course-task-list">
+                <article class="course-task course-task--teacher" data-course-task-state="submitted">
+                  <span class="course-task__rail"></span>
+                  <div class="course-task__main">
+                    <div class="course-task__top"><span class="course-task__mode"><span data-icon="podium"></span>自由试讲</span><span class="badge badge--success">已发布</span></div>
+                    <h3>荷塘月色</h3>
+                    <div class="course-task__meta"><span><span data-icon="clock"></span>20 分钟</span><span><span data-icon="users"></span>3 名虚拟学生</span><span><span data-icon="calendar"></span>11-18 截止</span></div>
+                  </div>
+                  <div class="course-task__progress">
+                    <div class="course-task__progress-head"><span>18 / 28</span><span>64%</span></div>
+                  </div>
+                  <span class="course-task__avg">82.4</span>
+                  <div class="course-task__actions"><a class="btn btn--secondary btn--xs" href="grading.html">评分</a><a class="btn btn--ghost btn--xs" href="stats.html">统计</a><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="delete-task-modal" data-task-name="荷塘月色">删除</button></div>
+                </article>
+
+                <article class="course-task course-task--teacher" data-course-task-state="submitted">
+                  <span class="course-task__rail"></span>
+                  <div class="course-task__main">
+                    <div class="course-task__top"><span class="course-task__mode"><span data-icon="message"></span>结构化面试</span><span class="badge badge--success">已发布</span></div>
+                    <h3>教师资格证结构化面试</h3>
+                    <div class="course-task__meta"><span><span data-icon="clock"></span>5 分钟</span><span><span data-icon="clipboard"></span>2 道题</span><span><span data-icon="calendar"></span>11-22 截止</span></div>
+                  </div>
+                  <div class="course-task__progress">
+                    <div class="course-task__progress-head"><span>8 / 28</span><span>29%</span></div>
+                  </div>
+                  <span class="course-task__avg">86.1</span>
+                  <div class="course-task__actions"><a class="btn btn--secondary btn--xs" href="grading.html">评分</a><a class="btn btn--ghost btn--xs" href="stats.html">统计</a><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="delete-task-modal" data-task-name="教师资格证结构化面试">删除</button></div>
+                </article>
+
+                <article class="course-task course-task--teacher" data-course-task-state="assigned">
+                  <span class="course-task__rail"></span>
+                  <div class="course-task__main">
+                    <div class="course-task__top"><span class="course-task__mode"><span data-icon="book-open"></span>情景试讲</span><span class="badge badge--success">已发布</span></div>
+                    <h3>少年闰土</h3>
+                    <div class="course-task__meta"><span><span data-icon="clock"></span>15 分钟</span><span><span data-icon="users"></span>2 名虚拟学生</span><span><span data-icon="calendar"></span>11-16 发布</span></div>
+                  </div>
+                  <div class="course-task__progress">
+                    <div class="course-task__progress-head"><span>0 / 28</span><span>0%</span></div>
+                  </div>
+                  <span class="course-task__avg course-task__avg--muted">—</span>
+                  <div class="course-task__actions"><a class="btn btn--secondary btn--xs" href="grading.html">评分</a><a class="btn btn--ghost btn--xs" href="stats.html">统计</a><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="delete-task-modal" data-task-name="少年闰土">删除</button></div>
+                </article>
+              </div>
+              <div class="card-foot" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                <span class="xs faint">显示 3 个任务 · 共 6 个</span>
+                <a class="btn btn--ghost btn--sm" href="teacher-tasks.html">查看全部任务 <span data-icon="arrow-right"></span></a>
+              </div>
+            </section>
+
+            <section class="course-note">
+              <h2>课程管理</h2>
+              <p>课程任务发布后配置锁定；已关闭任务仍保留回放与报告。管理员不参与任务与评测，只维护课程元数据。</p>
+            </section>
+          </div>
+
+          <aside class="detail-aside">
+            <section class="aside-card">
+              <div class="card-head">
+                <div class="card-head__main"><h2 class="card-title">课程信息</h2><p class="card-sub">CHN 2401 · 2026 秋</p></div>
+                <span class="badge badge--success">启用中</span>
+              </div>
+              <div class="card-body">
+                <dl class="course-info">
+                  <div class="course-info__row"><dt>学分</dt><dd>3.0</dd></div>
+                  <div class="course-info__row"><dt>专业范围</dt><dd>汉语言文学（师范）</dd></div>
+                  <div class="course-info__row"><dt>老师组</dt><dd>王宁、李静</dd></div>
+                  <div class="course-info__row"><dt>学生</dt><dd>32 人</dd></div>
+                  <div class="course-info__row"><dt>结束日期</dt><dd>2027-01-15</dd></div>
+                </dl>
+                <a class="btn btn--secondary btn--block btn--sm" href="courses.html?role=teacher" style="margin-top:11px">返回课程列表</a>
+              </div>
+            </section>
+
+            <section class="aside-card">
+              <div class="card-head">
+                <div class="card-head__main"><h2 class="card-title">老师组</h2><p class="card-sub">2 名教师</p></div>
+              </div>
+              <div class="card-body" style="padding-top:6px;padding-bottom:6px">
+                <div class="teacher-mini"><span class="avatar avatar--sm avatar--gold">王</span><div class="teacher-mini__main"><strong>王宁</strong><span>主讲 · 可管理课程</span></div><span class="badge badge--success">owner</span></div>
+                <div class="teacher-mini"><span class="avatar avatar--sm avatar--cinnabar">李</span><div class="teacher-mini__main"><strong>李静</strong><span>老师组 · 可评分</span></div><span class="badge">member</span></div>
+              </div>
+            </section>
+
+            <section class="aside-card">
+              <div class="card-head">
+                <div class="card-head__main"><h2 class="card-title">教师待办</h2><p class="card-sub">按截止时间排序</p></div>
+                <span class="badge badge--accent">4</span>
+              </div>
+              <div class="card-body" style="padding-top:6px;padding-bottom:6px">
+                <div class="todo-list">
+                  <div class="todo"><span class="todo__dot"></span><div><strong>荷塘月色 · 8 份待批</strong><span>11-18 截止 · 语文教学论</span></div></div>
+                  <div class="todo"><span class="todo__dot todo__dot--gold"></span><div><strong>检查「少年闰土」提交</strong><span>0 / 28 已提交</span></div></div>
+                  <div class="todo"><span class="todo__dot todo__dot--green"></span><div><strong>查看 3 份 AI 报告</strong><span>结构化面试 · 已完成</span></div></div>
+                </div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Delete task modal -->
+  <div class="overlay" data-overlay-for="delete-task-modal"></div>
+  <div class="modal" id="delete-task-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="delete-task-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="delete-task-title">删除课程任务</div>
+        <div class="drawer__sub">仅课程 owner 可删除；删除前请确认任务状态。</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="delete-task-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--danger">
+        <span data-icon="alert-triangle"></span>
+        <div>删除「<strong id="delete-task-name">该任务</strong>」后，任务会从课程中移除，学生端不再显示，不能再开始新试讲；已提交的回放、AI 报告、教师评分与最终分保留只读。此操作不可撤销。</div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="delete-task-modal">取消</button>
+      <button class="btn btn--danger-solid" type="button" id="confirm-delete-task" data-close="delete-task-modal" data-toast="课程任务已删除（原型演示）。">删除任务</button>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const role = new URLSearchParams(window.location.search).get("role");
+      const picked = ["student", "teacher"].includes(role) ? role : "student";
+      document.body.dataset.role = picked;
+      document.body.dataset.nav = "courses";
+      document.querySelectorAll('[data-panel-group="course-detail-role"] [data-panel]').forEach(function (panel) {
+        panel.hidden = panel.dataset.panel !== picked;
+      });
+    })();
+  </script>
+  <script src="assets/site.js"></script>
+  <script>
+    document.querySelectorAll('[data-tabs="course-task-state"] [data-tab]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        const state = button.dataset.tab;
+        document.querySelectorAll('[data-panel="student"] [data-course-task-state]').forEach(function (task) {
+          const show = state === "all" || (state === "assigned" && task.dataset.courseTaskState === "assigned") || (state === "submitted" && task.dataset.courseTaskState === "submitted");
+          task.hidden = !show;
+        });
+      });
+    });
+
+    let pendingTaskCard = null;
+    document.querySelectorAll('[data-open="delete-task-modal"]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        pendingTaskCard = button.closest(".course-task");
+        document.getElementById("delete-task-name").textContent = button.dataset.taskName;
+      });
+    });
+
+    document.getElementById("confirm-delete-task").addEventListener("click", function () {
+      if (!pendingTaskCard) return;
+      pendingTaskCard.remove();
+      pendingTaskCard = null;
+      const remaining = document.querySelectorAll('[data-panel="teacher"] .course-task--teacher').length;
+      const foot = document.querySelector('[data-panel="teacher"] .course-task-card .card-foot .xs');
+      if (foot) foot.textContent = "显示 " + remaining + " 个任务 · 共 6 个";
+    });
+  </script>
+</body>
+</html>

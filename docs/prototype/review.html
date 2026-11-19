@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>回看与提交 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .review-workspace {
+      display: flex;
+      min-height: 0;
+      flex: 1;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .replay-stage {
+      position: relative;
+      display: flex;
+      min-height: 0;
+      flex: 1;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-lg);
+      background:
+        radial-gradient(ellipse at 50% 0%, rgba(224, 164, 74, 0.075), transparent 55%),
+        linear-gradient(160deg, #12221d, #09130f);
+      box-shadow: var(--shadow-stage);
+    }
+
+    .replay-stage__label {
+      position: absolute;
+      top: 14px;
+      left: 16px;
+      z-index: 2;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-pill);
+      background: rgba(7, 16, 14, 0.66);
+      color: var(--stage-muted);
+      font-size: 9px;
+    }
+
+    .replay-stage__label [data-icon] svg {
+      width: 11px;
+      height: 11px;
+      color: var(--stage-amber);
+    }
+
+    .replay-screen {
+      position: relative;
+      width: calc(100% - 44px);
+      max-width: 1040px;
+      aspect-ratio: 16 / 9;
+      max-height: calc(100% - 28px);
+      overflow: hidden;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-sm);
+      background: var(--stage-0);
+    }
+
+    .replay-slide {
+      display: flex;
+      height: 100%;
+      flex-direction: column;
+      justify-content: center;
+      padding: 8%;
+      background:
+        radial-gradient(ellipse at 50% 0%, rgba(224, 164, 74, 0.07), transparent 60%),
+        var(--stage-0);
+    }
+
+    .replay-slide__eyebrow {
+      color: var(--stage-amber);
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.18em;
+    }
+
+    .replay-slide h2 {
+      margin-top: 12px;
+      color: #f3f0e7;
+      font-size: clamp(30px, 4vw, 58px);
+      line-height: 1.1;
+    }
+
+    .replay-slide p {
+      margin-top: 10px;
+      color: rgba(243, 240, 231, 0.42);
+      font-size: clamp(9px, 1vw, 13px);
+      letter-spacing: 0.08em;
+    }
+
+    .replay-slide__rule {
+      width: 54px;
+      height: 2px;
+      margin-top: 22px;
+      background: var(--stage-red);
+    }
+
+    .replay-camera {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      width: clamp(140px, 16vw, 210px);
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 1px solid var(--stage-line-strong);
+      border-radius: var(--r-xs);
+      background:
+        radial-gradient(ellipse at 50% 30%, rgba(224, 164, 74, 0.1), transparent 55%),
+        var(--stage-2);
+    }
+
+    .replay-camera__figure {
+      position: absolute;
+      top: 18%;
+      left: 50%;
+      width: 28%;
+      height: 34%;
+      border: 1px solid rgba(233, 238, 233, 0.26);
+      border-radius: 50%;
+      background: rgba(233, 238, 233, 0.08);
+      transform: translateX(-50%);
+    }
+
+    .replay-camera__figure::after {
+      position: absolute;
+      top: 106%;
+      left: 50%;
+      width: 190%;
+      height: 120%;
+      border: 1px solid rgba(233, 238, 233, 0.18);
+      border-radius: 50% 50% 6px 6px;
+      background: rgba(233, 238, 233, 0.055);
+      content: "";
+      transform: translateX(-50%);
+    }
+
+    .replay-camera__label {
+      position: absolute;
+      bottom: 5px;
+      left: 6px;
+      color: var(--stage-muted);
+      font-size: 7px;
+    }
+
+    .player {
+      flex: none;
+      padding: 10px 14px 12px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-lg);
+      background: var(--stage-1);
+    }
+
+    .player__timeline {
+      position: relative;
+      height: 20px;
+      cursor: pointer;
+    }
+
+    .player__track {
+      position: absolute;
+      top: 9px;
+      right: 0;
+      left: 0;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--stage-3);
+    }
+
+    .player__fill {
+      position: absolute;
+      top: 9px;
+      left: 0;
+      width: 43%;
+      height: 3px;
+      border-radius: 2px;
+      background: linear-gradient(90deg, var(--stage-amber), #f0cd8c);
+    }
+
+    .player__thumb {
+      position: absolute;
+      top: 6px;
+      left: 43%;
+      width: 9px;
+      height: 9px;
+      border: 2px solid var(--stage-1);
+      border-radius: 50%;
+      background: var(--stage-amber);
+      box-shadow: 0 0 0 1px var(--stage-amber);
+      transform: translateX(-50%);
+    }
+
+    .player__marker {
+      position: absolute;
+      top: 4px;
+      width: 1px;
+      height: 13px;
+      background: rgba(233, 238, 233, 0.4);
+    }
+
+    .player__marker:nth-child(3) { left: 18%; }
+    .player__marker:nth-child(4) { left: 36%; }
+    .player__marker:nth-child(5) { left: 58%; }
+    .player__marker:nth-child(6) { left: 72%; }
+
+    .player__controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .player__play {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid var(--stage-amber);
+      border-radius: 50%;
+      background: var(--stage-amber);
+      color: #1b1408;
+    }
+
+    .player__play svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .player__time {
+      color: var(--stage-text);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .player__time span {
+      color: var(--stage-faint);
+    }
+
+    .player__controls .spacer {
+      flex: 1;
+    }
+
+    .player__controls .btn {
+      color: var(--stage-muted);
+    }
+
+    .player__speed {
+      height: 28px;
+      padding: 0 24px 0 9px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-xs);
+      background: var(--stage-2);
+      color: var(--stage-muted);
+      font-size: 9px;
+    }
+
+    /* Aside */
+    .aside-scroll {
+      display: flex;
+      min-height: 0;
+      flex: 1;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+
+    .submit-card {
+      flex: none;
+      overflow: hidden;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-lg);
+      background: var(--stage-1);
+    }
+
+    .submit-card__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--stage-line);
+    }
+
+    .submit-card__head strong {
+      color: var(--stage-text);
+      font-family: var(--font-serif);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .submit-card__body {
+      padding: 14px 16px;
+    }
+
+    .stream-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .stream-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 9px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-sm);
+      background: var(--stage-2);
+    }
+
+    .stream-item [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      color: var(--stage-green);
+    }
+
+    .stream-item__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .stream-item__main strong {
+      display: block;
+      color: var(--stage-text);
+      font-size: 9.5px;
+      font-weight: 500;
+    }
+
+    .stream-item__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--stage-faint);
+      font-size: 8px;
+    }
+
+    .submit-note {
+      margin-top: 12px;
+      color: var(--stage-faint);
+      font-size: 8.5px;
+      line-height: 1.55;
+    }
+
+    .submit-card__foot {
+      padding: 12px 16px 14px;
+      border-top: 1px solid var(--stage-line);
+      background: var(--stage-2);
+    }
+
+    .event-card {
+      overflow: hidden;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-lg);
+      background: var(--stage-1);
+    }
+
+    .event-card__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--stage-line);
+    }
+
+    .event-card__head strong {
+      color: var(--stage-text);
+      font-family: var(--font-serif);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .event-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--stage-line);
+    }
+
+    .event-filter {
+      padding: 3px 7px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-pill);
+      background: transparent;
+      color: var(--stage-faint);
+      font-size: 8px;
+    }
+
+    .event-filter.is-active {
+      border-color: var(--stage-amber);
+      background: rgba(224, 164, 74, 0.1);
+      color: var(--stage-amber);
+    }
+
+    .event-list {
+      max-height: 300px;
+      overflow-y: auto;
+      padding: 4px 14px 10px;
+    }
+
+    .event {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--stage-line);
+      cursor: pointer;
+    }
+
+    .event:last-child {
+      border-bottom: 0;
+    }
+
+    .event:hover .event__text {
+      color: var(--stage-text);
+    }
+
+    .event.is-active {
+      background: rgba(224, 164, 74, 0.055);
+    }
+
+    .event__time {
+      width: 34px;
+      flex: none;
+      color: var(--stage-faint);
+      font-family: var(--font-mono);
+      font-size: 8px;
+    }
+
+    .event__dot {
+      width: 6px;
+      height: 6px;
+      flex: none;
+      margin-top: 5px;
+      border-radius: 50%;
+      background: var(--stage-muted);
+    }
+
+    .event__dot--teacher { background: var(--stage-green); }
+    .event__dot--student { background: var(--stage-amber); }
+    .event__dot--discipline { background: var(--stage-red); }
+
+    .event__text {
+      color: var(--stage-muted);
+      font-size: 9px;
+      line-height: 1.5;
+    }
+
+    .event__text strong {
+      display: block;
+      color: var(--stage-text);
+      font-size: 9.5px;
+      font-weight: 500;
+    }
+
+    @media (max-width: 1100px) {
+      .stage-main {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .stage-aside {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body class="stage">
+  <div class="stage-shell">
+    <header class="stage-bar">
+      <a class="stage-bar__back" href="student-task-detail.html"><span data-icon="arrow-left"></span>返回任务</a>
+      <div class="stage-bar__brand">
+        <span class="seal seal--sm" aria-hidden="true">三</span>
+        <span>三尺讲台</span>
+      </div>
+      <div class="stage-title">
+        回看与提交
+        <span class="stage-title__sub">荷塘月色 · 自由试讲 / 林小雨</span>
+      </div>
+      <div class="stage-meta">
+        <span class="stage-meta__item stage-meta__item--ok"><span data-icon="check-circle"></span>三路录制已上传</span>
+        <span class="stage-meta__item mono">总时长 12:48</span>
+      </div>
+      <div class="stage-bar__actions">
+        <button class="btn btn--ghost btn--sm" type="button" data-toast="复制回放链接（原型演示）。"><span data-icon="external"></span>分享</button>
+        <button class="btn btn--primary btn--sm" type="button" data-open="submit-modal"><span data-icon="check"></span>提交</button>
+      </div>
+    </header>
+
+    <div class="stage-main">
+      <div class="review-workspace">
+        <section class="replay-stage" aria-label="课堂回放">
+          <span class="replay-stage__label"><span data-icon="monitor"></span>屏幕主画面 · 回放</span>
+          <div class="replay-screen">
+            <div class="replay-slide">
+              <p class="replay-slide__eyebrow">部编版 · 八年级上册 · 第一课时</p>
+              <h2>荷塘月色</h2>
+              <p>朱自清 / 1927 · 月下荷塘的初读感受</p>
+              <div class="replay-slide__rule"></div>
+            </div>
+            <div class="replay-camera" aria-label="摄像头小窗">
+              <div class="replay-camera__figure" aria-hidden="true"></div>
+              <span class="replay-camera__label">摄像头</span>
+            </div>
+          </div>
+        </section>
+
+        <div class="player">
+          <div class="player__timeline" id="player-timeline" aria-label="播放进度">
+            <span class="player__track"></span>
+            <span class="player__fill" id="player-fill" style="width:43%"></span>
+            <span class="player__thumb" id="player-thumb" style="left:43%"></span>
+            <span class="player__marker"></span>
+            <span class="player__marker"></span>
+            <span class="player__marker"></span>
+            <span class="player__marker"></span>
+          </div>
+          <div class="player__controls">
+            <button class="player__play" type="button" id="play-toggle" aria-label="播放">
+              <span data-icon="play" id="play-icon"></span>
+            </button>
+            <span class="player__time"><span id="current-time">05:30</span> <span>/ 12:48</span></span>
+            <span class="spacer"></span>
+            <select class="player__speed" aria-label="播放倍速">
+              <option>0.5×</option>
+              <option>1.0×</option>
+              <option>1.5×</option>
+              <option>2.0×</option>
+            </select>
+            <button class="icon-btn" type="button" aria-label="音量" data-toast="音量控制（原型演示）。"><span data-icon="volume"></span></button>
+            <button class="icon-btn" type="button" aria-label="全屏" data-toast="进入全屏（原型演示）。"><span data-icon="fullscreen"></span></button>
+          </div>
+        </div>
+      </div>
+
+      <aside class="stage-aside">
+        <div class="aside-scroll">
+          <section class="submit-card">
+            <div class="submit-card__head">
+              <strong>提交本次试讲</strong>
+              <span class="badge badge--success">可提交</span>
+            </div>
+            <div class="submit-card__body">
+              <div class="stream-list">
+                <div class="stream-item"><span data-icon="check-circle"></span><div class="stream-item__main"><strong>摄像头</strong><span>4 片 · 38.2 MB · uploaded</span></div></div>
+                <div class="stream-item"><span data-icon="check-circle"></span><div class="stream-item__main"><strong>屏幕</strong><span>4 片 · 72.6 MB · uploaded</span></div></div>
+                <div class="stream-item"><span data-icon="check-circle"></span><div class="stream-item__main"><strong>麦克风</strong><span>4 片 · 11.4 MB · uploaded</span></div></div>
+              </div>
+              <p class="submit-note">三路录制已完成上传。提交后回放只读，不能重做；本次将进入 AI 评测队列。</p>
+            </div>
+            <div class="submit-card__foot">
+              <button class="btn btn--primary btn--block" type="button" data-open="submit-modal"><span data-icon="check"></span>提交本次试讲</button>
+              <a class="btn btn--ghost btn--sm btn--block" href="student-task-detail.html" style="margin-top:7px">重做本次试讲</a>
+            </div>
+          </section>
+
+          <section class="event-card">
+            <div class="event-card__head">
+              <strong>课堂事件</strong>
+              <span class="badge">6 条</span>
+            </div>
+            <div class="event-filters">
+              <button class="event-filter is-active" type="button">全部</button>
+              <button class="event-filter" type="button">教师</button>
+              <button class="event-filter" type="button">学生</button>
+              <button class="event-filter" type="button">纪律</button>
+            </div>
+            <div class="event-list">
+              <div class="event" data-time="00:00" data-percent="0">
+                <span class="event__time">00:00</span><span class="event__dot"></span>
+                <div class="event__text"><strong>课堂开始</strong>开始录制，进入导入环节</div>
+              </div>
+              <div class="event" data-time="00:12" data-percent="18">
+                <span class="event__time">00:12</span><span class="event__dot event__dot--teacher"></span>
+                <div class="event__text"><strong>教师提问</strong>“泻”与“流”的表达差异</div>
+              </div>
+              <div class="event" data-time="00:28" data-percent="28">
+                <span class="event__time">00:28</span><span class="event__dot event__dot--student"></span>
+                <div class="event__text"><strong>周予安举手</strong>学生请求回答问题</div>
+              </div>
+              <div class="event is-active" data-time="00:42" data-percent="43">
+                <span class="event__time">00:42</span><span class="event__dot event__dot--student"></span>
+                <div class="event__text"><strong>学生回答</strong>“月光像水一样倾下来”</div>
+              </div>
+              <div class="event" data-time="01:10" data-percent="58">
+                <span class="event__time">01:10</span><span class="event__dot event__dot--discipline"></span>
+                <div class="event__text"><strong>纪律提醒</strong>提醒后排学生专注</div>
+              </div>
+              <div class="event" data-time="12:48" data-percent="100">
+                <span class="event__time">12:48</span><span class="event__dot"></span>
+                <div class="event__text"><strong>课堂结束</strong>结束录制，等待上传完成</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Submit modal -->
+  <div class="overlay" data-overlay-for="submit-modal"></div>
+  <div class="modal" id="submit-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="submit-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="submit-title">提交本次试讲？</div>
+        <div class="drawer__sub">荷塘月色 · 自由试讲 · 12:48</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="submit-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--note">
+        <span data-icon="info"></span>
+        <div><div class="alert__title">三路录制已就绪</div><span>提交后进入 AI 评测队列，通常 1—3 分钟完成；回放只读，不能重做。</span></div>
+      </div>
+      <label class="check-row" style="margin-top:16px">
+        <input type="checkbox" checked hidden>
+        <span class="check-box"><span data-icon="check"></span></span>
+        <span>我已确认本次录制完整，并同意提交。</span>
+      </label>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="submit-modal">继续检查</button>
+      <a class="btn btn--primary" href="report.html"><span data-icon="check"></span>确认提交</a>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+  <script>
+    const playToggle = document.getElementById("play-toggle");
+    const playIcon = document.getElementById("play-icon");
+    let playing = false;
+
+    playToggle.addEventListener("click", function () {
+      playing = !playing;
+      playIcon.innerHTML = window.PrototypeUI.icon(playing ? "pause" : "play");
+      playToggle.setAttribute("aria-label", playing ? "暂停" : "播放");
+      window.PrototypeUI.toast(playing ? "播放回放（原型演示）。" : "已暂停（原型演示）。");
+    });
+
+    document.querySelectorAll(".event").forEach(function (event) {
+      event.addEventListener("click", function () {
+        document.querySelectorAll(".event").forEach(function (item) {
+          item.classList.remove("is-active");
+        });
+        event.classList.add("is-active");
+        const percent = event.dataset.percent + "%";
+        document.getElementById("player-fill").style.width = percent;
+        document.getElementById("player-thumb").style.left = percent;
+        document.getElementById("current-time").textContent = event.dataset.time;
+        window.PrototypeUI.toast("已定位到 " + event.dataset.time + "（原型演示）。");
+      });
+    });
+  </script>
+</body>
+</html>

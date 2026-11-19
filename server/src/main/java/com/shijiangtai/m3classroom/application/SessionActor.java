@@ -750,6 +750,8 @@ public final class SessionActor {
     public synchronized void fail(FailureReason reason) {
         Objects.requireNonNull(reason, "reason");
         if (session.status() == SessionStatus.SUBMITTED
+                || session.status() == SessionStatus.SELECTED
+                || session.status() == SessionStatus.EVALUATED
                 || session.status() == SessionStatus.CANCELLED
                 || session.status() == SessionStatus.FAILED) {
             return;

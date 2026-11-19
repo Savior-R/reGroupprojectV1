@@ -10,11 +10,19 @@ import com.shijiangtai.shared.domain.SchoolId;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Locale;
 import java.util.UUID;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+/**
+ * Dev / test 兜底身份：直接读取 {@code X-Account-*} 请求头。
+ *
+ * <p>生产（默认 / docker）不再注册；M2–M7 统一注入 {@link
+ * com.shijiangtai.m1auth.application.M1CurrentUserProvider}，以 JWT 为准。
+ */
 @Component
+@Profile({"test", "dev"})
 public class HeaderCurrentUserProvider implements CurrentUserProvider {
 
     @Override

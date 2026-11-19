@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 评测报告 · 荷塘月色 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .report-layout {
+      display: grid;
+      grid-template-columns: 352px minmax(0, 1fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .score-card {
+      position: sticky;
+      top: 30px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-2);
+    }
+
+    .score-card::before {
+      display: block;
+      height: 4px;
+      background: linear-gradient(90deg, var(--brand), var(--gold));
+      content: "";
+    }
+
+    .score-card__head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 20px 22px 0;
+    }
+
+    .score-card__head .eyebrow {
+      color: var(--accent);
+    }
+
+    .score-card__seal {
+      display: grid;
+      place-items: center;
+      width: 46px;
+      height: 46px;
+      flex: none;
+      border: 1.5px solid var(--accent);
+      border-radius: 3px;
+      color: var(--accent);
+      font-family: var(--font-serif);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      line-height: 1.2;
+      text-align: center;
+      transform: rotate(5deg);
+      opacity: 0.78;
+    }
+
+    .score-card__score {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 12px 22px 0;
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 68px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .score-card__score small {
+      color: var(--text-3);
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 400;
+      letter-spacing: 0;
+    }
+
+    .score-card__delta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 9px 22px 0;
+      color: var(--success);
+      font-size: 10px;
+    }
+
+    .score-card__delta [data-icon] svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    .score-card__radar {
+      display: flex;
+      justify-content: center;
+      padding: 10px 12px 4px;
+    }
+
+    .score-card__radar svg {
+      width: 260px;
+      height: 260px;
+    }
+
+    .score-card__meta {
+      display: grid;
+      gap: 0;
+      margin: 0 22px;
+      padding: 10px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .score-meta-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 7px 0;
+      font-size: 10.5px;
+    }
+
+    .score-meta-row dt {
+      color: var(--text-3);
+    }
+
+    .score-meta-row dd {
+      margin: 0;
+      color: var(--text);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .score-card__foot {
+      padding: 14px 22px 20px;
+      border-top: 1px solid var(--line);
+      background: var(--paper-0);
+    }
+
+    .report-main {
+      display: grid;
+      gap: 16px;
+    }
+
+    /* Dimension cards */
+    .dimension-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .dimension-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .dimension-card--wide {
+      grid-column: 1 / -1;
+    }
+
+    .dimension-card__head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .dimension-card__head h3 {
+      font-size: 16px;
+    }
+
+    .dimension-card__score {
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 28px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    .dimension-card__weight {
+      color: var(--text-3);
+      font-size: 9px;
+      font-weight: 400;
+    }
+
+    .dimension-card__subs {
+      display: grid;
+      gap: 9px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .dimension-card__sub {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 44px;
+      align-items: baseline;
+      gap: 10px;
+      padding: 3px 0;
+      border-bottom: 1px dotted var(--line);
+    }
+
+    .dimension-card__sub:last-child {
+      border-bottom: 0;
+    }
+
+    .dimension-card__sub dt {
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .dimension-card__sub dd {
+      display: contents;
+    }
+
+    .dimension-card__sub span {
+      color: var(--text-2);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+
+    .dimension-card__sub--warn span {
+      color: var(--gold);
+    }
+
+    .dimension-card__note {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 10px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .dimension-card__note [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      color: var(--success);
+    }
+
+    /* Suggestions */
+    .suggestions {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .suggestions__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .suggestions__head h2 {
+      font-size: 20px;
+    }
+
+    .suggestions__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .severity-filter {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .severity-chip {
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-pill);
+      background: transparent;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .severity-chip.is-active {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .suggestion-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .suggestion {
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .suggestion:last-child {
+      border-bottom: 0;
+    }
+
+    .suggestion__top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .suggestion__rank {
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 9px;
+    }
+
+    .suggestion__time {
+      margin-left: auto;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 9px;
+    }
+
+    .suggestion__evidence {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-left: 3px solid var(--line-strong);
+      border-radius: 2px;
+      background: var(--paper-0);
+      color: var(--text-2);
+      font-size: 10.5px;
+      line-height: 1.65;
+    }
+
+    .suggestion--high .suggestion__evidence {
+      border-left-color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .suggestion--medium .suggestion__evidence {
+      border-left-color: var(--gold);
+      background: var(--gold-soft);
+    }
+
+    .suggestion--low .suggestion__evidence {
+      border-left-color: var(--info);
+      background: var(--info-soft);
+    }
+
+    .suggestion__action {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-top: 9px;
+      color: var(--text);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .suggestion__action [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      margin-top: 2px;
+      color: var(--brand);
+    }
+
+    .suggestion__example {
+      margin-top: 7px;
+      padding: 9px 11px;
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--r-sm);
+      background: rgba(255, 253, 248, 0.5);
+      color: var(--text-3);
+      font-size: 9.5px;
+      line-height: 1.6;
+    }
+
+    .suggestion__example strong {
+      color: var(--text-2);
+      font-weight: 600;
+    }
+
+    .suggestion__foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .suggestion__foot a {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 9.5px;
+      font-weight: 600;
+    }
+
+    .suggestion__foot a svg {
+      width: 11px;
+      height: 11px;
+    }
+
+    /* Timeline */
+    .timeline-card {
+      padding: 20px 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .timeline-card__head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .timeline-card__head h2 {
+      font-size: 19px;
+    }
+
+    .timeline-card__head span {
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .timeline-track {
+      position: relative;
+      height: 54px;
+      margin-top: 24px;
+      border-top: 1px solid var(--line-strong);
+    }
+
+    .timeline-axis {
+      position: absolute;
+      top: -5px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      transform: translateX(-50%);
+    }
+
+    .timeline-axis::before {
+      width: 1px;
+      height: 9px;
+      background: var(--line-strong);
+      content: "";
+    }
+
+    .timeline-issue {
+      position: absolute;
+      top: -9px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      transform: translateX(-50%);
+    }
+
+    .timeline-issue__dot {
+      width: 9px;
+      height: 9px;
+      border: 2px solid var(--surface);
+      border-radius: 50%;
+      background: var(--danger);
+      box-shadow: 0 0 0 1px var(--danger);
+    }
+
+    .timeline-issue--medium .timeline-issue__dot {
+      background: var(--gold);
+      box-shadow: 0 0 0 1px var(--gold);
+    }
+
+    .timeline-issue--low .timeline-issue__dot {
+      background: var(--info);
+      box-shadow: 0 0 0 1px var(--info);
+    }
+
+    .timeline-issue span {
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      white-space: nowrap;
+    }
+
+    .timeline-issue strong {
+      color: var(--text-2);
+      font-size: 9px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .timeline-note {
+      margin-top: 18px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    /* Meta */
+    .meta-card {
+      padding: 18px 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--paper-0);
+    }
+
+    .meta-card__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .meta-card__head h2 {
+      font-size: 15px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px 18px;
+      margin-top: 14px;
+    }
+
+    .meta-grid dt {
+      color: var(--text-3);
+      font-size: 8.5px;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-grid dd {
+      margin-top: 2px;
+      color: var(--text-2);
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 1180px) {
+      .report-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .score-card {
+        position: static;
+      }
+
+      .score-card__radar {
+        display: none;
+      }
+
+      .meta-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .dimension-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .dimension-card--wide {
+        grid-column: auto;
+      }
+
+      .suggestions__head {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .suggestion__time {
+        margin-left: 0;
+      }
+
+      .meta-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body data-role="student" data-nav="results">
+  <div data-app-header></div>
+
+  <div class="context-bar">
+    <div class="context-bar__inner">
+      <div class="breadcrumb">
+        <a href="student-results.html">我的成绩</a>
+        <span class="breadcrumb__sep">/</span>
+        <span>荷塘月色</span>
+        <span class="breadcrumb__sep">/</span>
+        <span class="breadcrumb__current">AI 评测报告</span>
+      </div>
+      <div class="context-tabs">
+        <a class="context-tab is-active" href="report.html">评测报告</a>
+        <a class="context-tab" href="review.html">课堂回放</a>
+        <a class="context-tab" href="student-results.html">成绩详情</a>
+      </div>
+    </div>
+  </div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">AI EVALUATION / 评测报告</p>
+        <h1 class="page-title">荷塘月色 · 评测报告</h1>
+        <p class="page-lead">自由试讲 · 20 分钟 · 2026-11-14 14:20 完成 · 仅本人与课程老师组可见</p>
+      </div>
+      <div class="head-actions">
+        <span class="badge badge--success">已完成</span>
+        <a class="btn btn--secondary" href="student-results.html"><span data-icon="arrow-left"></span>返回成绩</a>
+        <a class="btn btn--primary" href="review.html"><span data-icon="play"></span>查看回放</a>
+      </div>
+    </header>
+
+    <div class="report-layout">
+      <aside class="score-card">
+        <div class="score-card__head">
+          <div>
+            <p class="eyebrow">AI TOTAL SCORE</p>
+            <span class="badge badge--success" style="margin-top:7px">AI 评测已完成</span>
+          </div>
+          <span class="score-card__seal">已<br>评</span>
+        </div>
+        <div class="score-card__score">82.3 <small>/ 100</small></div>
+        <p class="score-card__delta"><span data-icon="trending-up"></span>高于班级平均 4.1 分 · 本次为 AI 分</p>
+
+        <div class="score-card__radar">
+          <svg viewBox="0 0 240 240" role="img" aria-label="五维能力雷达图：教学内容 85.4、教学表达 81.2、课堂互动 78.6、板书 84.0、时间管理 82.1">
+            <polygon points="120,40 196,95 165,185 75,185 44,95" fill="none" stroke="var(--line)" stroke-width="1"/>
+            <polygon points="120,66.7 170.7,103.3 150,163.3 90,163.3 69.3,103.3" fill="none" stroke="var(--line)" stroke-width="1"/>
+            <polygon points="120,93.3 145.3,111.7 135,141.7 105,141.7 94.7,111.7" fill="none" stroke="var(--line)" stroke-width="1"/>
+            <line x1="120" y1="120" x2="120" y2="40" stroke="var(--line)" stroke-width="1"/>
+            <line x1="120" y1="120" x2="196" y2="95" stroke="var(--line)" stroke-width="1"/>
+            <line x1="120" y1="120" x2="165" y2="185" stroke="var(--line)" stroke-width="1"/>
+            <line x1="120" y1="120" x2="75" y2="185" stroke="var(--line)" stroke-width="1"/>
+            <line x1="120" y1="120" x2="44" y2="95" stroke="var(--line)" stroke-width="1"/>
+            <polygon points="120,52 182,100 157,171 80,174 58,100" fill="rgba(42,103,88,.16)" stroke="var(--brand)" stroke-width="1.8"/>
+            <circle cx="120" cy="52" r="3.2" fill="var(--brand)"/>
+            <circle cx="182" cy="100" r="3.2" fill="var(--brand)"/>
+            <circle cx="157" cy="171" r="3.2" fill="var(--accent)"/>
+            <circle cx="80" cy="174" r="3.2" fill="var(--brand)"/>
+            <circle cx="58" cy="100" r="3.2" fill="var(--brand)"/>
+            <text x="120" y="28" text-anchor="middle" font-size="10" fill="var(--ink-500)">教学内容</text>
+            <text x="214" y="94" text-anchor="middle" font-size="10" fill="var(--ink-500)">教学表达</text>
+            <text x="178" y="214" text-anchor="middle" font-size="10" fill="var(--ink-500)">课堂互动</text>
+            <text x="62" y="214" text-anchor="middle" font-size="10" fill="var(--ink-500)">板书 / PPT</text>
+            <text x="26" y="94" text-anchor="middle" font-size="10" fill="var(--ink-500)">时间管理</text>
+          </svg>
+        </div>
+
+        <dl class="score-card__meta">
+          <div class="score-meta-row"><dt>模式</dt><dd>自由试讲</dd></div>
+          <div class="score-meta-row"><dt>课堂时长</dt><dd class="mono">12:48</dd></div>
+          <div class="score-meta-row"><dt>虚拟学生</dt><dd>3 名</dd></div>
+          <div class="score-meta-row"><dt>报告置信度</dt><dd>高 · 五维完整</dd></div>
+        </dl>
+        <div class="score-card__foot">
+          <a class="btn btn--secondary btn--block" href="review.html"><span data-icon="play"></span>从 00:42 开始回看</a>
+          <p class="xs faint" style="margin-top:8px;text-align:center">建议优先回看课堂互动片段</p>
+        </div>
+      </aside>
+
+      <div class="report-main">
+        <section class="dimension-grid" aria-label="维度得分">
+          <article class="dimension-card">
+            <div class="dimension-card__head"><h3>教学内容</h3><div><span class="dimension-card__score">85.4</span><span class="dimension-card__weight"> · 权重 30%</span></div></div>
+            <div class="dimension-card__subs">
+              <div class="dimension-card__sub"><dt>知识点准确</dt><dd><span>88.0</span></dd></div>
+              <div class="dimension-card__sub"><dt>逻辑清晰</dt><dd><span>84.0</span></dd></div>
+              <div class="dimension-card__sub"><dt>重难点把握</dt><dd><span>84.2</span></dd></div>
+            </div>
+            <p class="dimension-card__note"><span data-icon="check-circle"></span>文本解读准确，环节衔接自然</p>
+          </article>
+
+          <article class="dimension-card">
+            <div class="dimension-card__head"><h3>教学表达</h3><div><span class="dimension-card__score">81.2</span><span class="dimension-card__weight"> · 权重 20%</span></div></div>
+            <div class="dimension-card__subs">
+              <div class="dimension-card__sub"><dt>普通话</dt><dd><span>86.0</span></dd></div>
+              <div class="dimension-card__sub"><dt>语速停顿</dt><dd><span>79.0</span></dd></div>
+              <div class="dimension-card__sub dimension-card__sub--warn"><dt>口头禅</dt><dd><span>74.0</span></dd></div>
+            </div>
+            <p class="dimension-card__note"><span data-icon="info"></span>“然后”出现 6 次，建议用停顿替代</p>
+          </article>
+
+          <article class="dimension-card">
+            <div class="dimension-card__head"><h3>课堂互动</h3><div><span class="dimension-card__score" style="color:var(--accent)">78.6</span><span class="dimension-card__weight"> · 权重 20%</span></div></div>
+            <div class="dimension-card__subs">
+              <div class="dimension-card__sub"><dt>提问设计</dt><dd><span>76.0</span></dd></div>
+              <div class="dimension-card__sub"><dt>追问引导</dt><dd><span>74.0</span></dd></div>
+              <div class="dimension-card__sub"><dt>反馈评价</dt><dd><span>86.0</span></dd></div>
+            </div>
+            <p class="dimension-card__note" style="color:var(--accent)"><span data-icon="target"></span>薄弱维度 · 建议优先改进</p>
+          </article>
+
+          <article class="dimension-card">
+            <div class="dimension-card__head"><h3>板书 / PPT</h3><div><span class="dimension-card__score">84.0</span><span class="dimension-card__weight"> · 权重 15%</span></div></div>
+            <div class="dimension-card__subs">
+              <div class="dimension-card__sub"><dt>结构清晰</dt><dd><span>86.0</span></dd></div>
+              <div class="dimension-card__sub"><dt>字迹 / 排版</dt><dd><span>82.0</span></dd></div>
+            </div>
+            <p class="dimension-card__note"><span data-icon="check-circle"></span>课件层级清楚，重点突出</p>
+          </article>
+
+          <article class="dimension-card dimension-card--wide">
+            <div class="dimension-card__head"><h3>时间管理</h3><div><span class="dimension-card__score">82.1</span><span class="dimension-card__weight"> · 权重 15%</span></div></div>
+            <div class="dimension-card__subs" style="grid-template-columns:repeat(3,minmax(0,1fr));display:grid">
+              <div class="dimension-card__sub"><dt>导入</dt><dd><span>03:12</span></dd></div>
+              <div class="dimension-card__sub"><dt>新授</dt><dd><span>06:20</span></dd></div>
+              <div class="dimension-card__sub"><dt>练习 / 小结</dt><dd><span>03:16</span></dd></div>
+            </div>
+            <p class="dimension-card__note"><span data-icon="info"></span>导入略长，建议压缩到 3 分钟内</p>
+          </article>
+        </section>
+
+        <section class="suggestions">
+          <div class="suggestions__head">
+            <div>
+              <h2>改进建议</h2>
+              <p>按优先级排序 · 点击时间可定位回放</p>
+            </div>
+            <div class="severity-filter">
+              <button class="severity-chip is-active" type="button">全部 3</button>
+              <button class="severity-chip" type="button">高 1</button>
+              <button class="severity-chip" type="button">中 1</button>
+              <button class="severity-chip" type="button">低 1</button>
+            </div>
+          </div>
+          <div class="suggestion-list">
+            <article class="suggestion suggestion--high">
+              <div class="suggestion__top">
+                <span class="suggestion__rank">01</span>
+                <span class="badge badge--danger">高</span>
+                <span class="chip chip--muted">课堂互动</span>
+                <span class="suggestion__time">00:42 — 01:10</span>
+              </div>
+              <p class="suggestion__evidence">“周予安回答后，你立即进入下一段讲解，没有追问或让其他学生补充。该片段只有 1 次师生问答。”</p>
+              <p class="suggestion__action"><span data-icon="target"></span>在关键回答后增加一次追问，并把问题抛回全班，让更多学生参与。</p>
+              <p class="suggestion__example"><strong>可尝试：</strong>“他说‘泻’有倾泻的感觉。还有同学能补充吗？如果换成‘照’或‘流’，效果有什么不同？”</p>
+              <div class="suggestion__foot">
+                <span class="xs faint">证据来自课堂转写与互动事件</span>
+                <a href="review.html?t=42000">回看该片段 <span data-icon="arrow-right"></span></a>
+              </div>
+            </article>
+
+            <article class="suggestion suggestion--medium">
+              <div class="suggestion__top">
+                <span class="suggestion__rank">02</span>
+                <span class="badge badge--warning">中</span>
+                <span class="chip chip--muted">时间管理</span>
+                <span class="suggestion__time">00:00 — 03:12</span>
+              </div>
+              <p class="suggestion__evidence">导入环节用时 3 分 12 秒，占课堂总时长的 25%；原计划建议控制在 3 分钟内。</p>
+              <p class="suggestion__action"><span data-icon="clock"></span>把作者介绍与背景压缩为 1 个问题，尽快进入文本细读。</p>
+              <div class="suggestion__foot">
+                <span class="xs faint">时间轴按音频主时钟对齐</span>
+                <a href="review.html?t=0">回看导入 <span data-icon="arrow-right"></span></a>
+              </div>
+            </article>
+
+            <article class="suggestion suggestion--low">
+              <div class="suggestion__top">
+                <span class="suggestion__rank">03</span>
+                <span class="badge badge--info">低</span>
+                <span class="chip chip--muted">教学表达</span>
+                <span class="suggestion__time">全课</span>
+              </div>
+              <p class="suggestion__evidence">“然后”出现 6 次，集中在环节过渡处；语速整体稳定，停顿略少。</p>
+              <p class="suggestion__action"><span data-icon="mic"></span>在环节切换处用 1—2 秒停顿替代口头连接词，给学生留出消化时间。</p>
+              <div class="suggestion__foot">
+                <span class="xs faint">口头禅检测基于 ASR 文本</span>
+                <a href="review.html?t=65000">回看该片段 <span data-icon="arrow-right"></span></a>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="timeline-card">
+          <div class="timeline-card__head">
+            <h2>问题时间线</h2>
+            <span>3 个问题 · 对应总时长 12:48</span>
+          </div>
+          <div class="timeline-track" aria-hidden="true">
+            <span class="timeline-axis" style="left:0%">00:00</span>
+            <span class="timeline-axis" style="left:25%">03:12</span>
+            <span class="timeline-axis" style="left:50%">06:24</span>
+            <span class="timeline-axis" style="left:75%">09:36</span>
+            <span class="timeline-axis" style="left:100%">12:48</span>
+            <span class="timeline-issue" style="left:5.5%"><span class="timeline-issue__dot"></span><span>00:42</span><strong>互动不足</strong></span>
+            <span class="timeline-issue timeline-issue--medium" style="left:25%"><span class="timeline-issue__dot"></span><span>03:12</span><strong>导入偏长</strong></span>
+            <span class="timeline-issue timeline-issue--low" style="left:58%"><span class="timeline-issue__dot"></span><span>07:25</span><strong>口头禅</strong></span>
+          </div>
+          <p class="timeline-note">点击建议中的「回看该片段」可在回放页按时间定位；时间格式为 mm:ss。</p>
+        </section>
+
+        <section class="meta-card">
+          <div class="meta-card__head">
+            <h2>评测信息</h2>
+            <span class="badge badge--plain">仅本人可见</span>
+          </div>
+          <dl class="meta-grid">
+            <div><dt>模型版本</dt><dd>deepseek-flash</dd></div>
+            <div><dt>Prompt 版本</dt><dd>evaluation-v1.4</dd></div>
+            <div><dt>评分规则</dt><dd>rubric-2026.11</dd></div>
+            <div><dt>配置版本</dt><dd>cfg-1032</dd></div>
+            <div><dt>开始时间</dt><dd>2026-11-14 14:17</dd></div>
+            <div><dt>完成时间</dt><dd>2026-11-14 14:20</dd></div>
+            <div><dt>尝试次数</dt><dd>1</dd></div>
+            <div><dt>报告来源</dt><dd>M4 / evaluation</dd></div>
+          </dl>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script src="assets/site.js"></script>
+</body>
+</html>

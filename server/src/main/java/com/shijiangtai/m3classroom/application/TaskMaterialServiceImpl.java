@@ -58,7 +58,7 @@ public class TaskMaterialServiceImpl implements TaskMaterialService {
             CurrentUser teacher, TaskId taskId, String filename, String mime, byte[] content) {
         Task task = findTask(taskId);
         CourseInfo course = accessPolicy.requireTeacherTask(teacher, task);
-        task.assertDraft();
+        task.assertEditable();
         if (task.draft().mode() == TaskMode.INTERVIEW) {
             throw new DomainException(ErrorCode.MATERIAL_NOT_APPLICABLE,
                     "结构化面试不需要参考材料");

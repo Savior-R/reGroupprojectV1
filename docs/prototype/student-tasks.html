@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的任务 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .tasks-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .task-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .task-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+      transition:
+        transform var(--dur-2) var(--ease),
+        border-color var(--dur-2) var(--ease),
+        box-shadow var(--dur-2) var(--ease);
+    }
+
+    .task-card:hover {
+      border-color: var(--line-strong);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-2);
+    }
+
+    .task-card::before {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 3px;
+      background: var(--line-strong);
+      content: "";
+    }
+
+    .task-card[data-task-status="assigned"]::before {
+      background: var(--accent);
+    }
+
+    .task-card[data-task-status="in_progress"]::before {
+      background: var(--gold);
+    }
+
+    .task-card[data-task-status="submitted"]::before {
+      background: var(--success);
+    }
+
+    .task-card__top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .task-mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-3);
+      font-size: 9.5px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .task-mode [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      color: var(--accent);
+    }
+
+    .task-card h2 {
+      margin-top: 14px;
+      font-size: 22px;
+      line-height: 1.3;
+    }
+
+    .task-card__course {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10.5px;
+    }
+
+    .task-card__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px 14px;
+      margin-top: 14px;
+      color: var(--text-2);
+      font-size: 10.5px;
+    }
+
+    .task-card__meta span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .task-card__meta [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      color: var(--text-3);
+    }
+
+    .task-card__students {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .task-card__students span {
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .task-progress {
+      margin-top: 12px;
+    }
+
+    .task-progress__head {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .task-card__due {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 14px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .task-card__due [data-icon] svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    .task-card__due--urgent {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .task-card__foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+
+    .task-card__score {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 3px;
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 25px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    .task-card__score small {
+      color: var(--text-3);
+      font-family: var(--font-sans);
+      font-size: 9px;
+      font-weight: 400;
+    }
+
+    .task-card__foot-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .task-card--submitted {
+      background:
+        linear-gradient(180deg, rgba(54, 114, 84, 0.035), transparent 40%),
+        var(--surface);
+    }
+
+    .task-card--muted {
+      opacity: 0.72;
+    }
+
+    /* Aside */
+    .side-stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .side-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .side-card .card-head,
+    .side-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .deadline-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .deadline {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .deadline:last-child {
+      border-bottom: 0;
+    }
+
+    .deadline__date {
+      display: grid;
+      width: 34px;
+      height: 38px;
+      flex: none;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: var(--r-xs);
+      background: var(--paper-0);
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    .deadline__date strong {
+      display: block;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .deadline strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .deadline span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .prep-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .prep-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      color: var(--text-2);
+      font-size: 10.5px;
+      line-height: 1.55;
+    }
+
+    .prep-item [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      margin-top: 1px;
+      color: var(--success);
+    }
+
+    .empty-filter {
+      padding: 48px 20px;
+      text-align: center;
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--r-lg);
+      background: rgba(255, 253, 248, 0.5);
+      color: var(--text-3);
+      font-size: 12px;
+    }
+
+    @media (max-width: 1180px) {
+      .tasks-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .side-stack {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 880px) {
+      .task-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .side-stack {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body data-role="student" data-nav="tasks">
+  <div data-app-header></div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">TASKS / 我的任务</p>
+        <h1 class="page-title">我的任务</h1>
+        <p class="page-lead">5 个任务，2 个待开始。先完成「荷塘月色」的课前检查，再进行「教师资格证结构化面试」。</p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn--secondary" href="student-training.html"><span data-icon="sparkles"></span>训练记录</a>
+        <a class="btn btn--secondary" href="student-results.html"><span data-icon="chart"></span>我的成绩</a>
+      </div>
+    </header>
+
+    <div class="tabs-line" data-tabs="task-status" role="tablist" aria-label="任务状态" style="margin-bottom:20px">
+      <button type="button" role="tab" aria-selected="true" data-tab="all">全部 <span class="count">5</span></button>
+      <button type="button" role="tab" aria-selected="false" data-tab="assigned">待开始 <span class="count">2</span></button>
+      <button type="button" role="tab" aria-selected="false" data-tab="in_progress">进行中 <span class="count">1</span></button>
+      <button type="button" role="tab" aria-selected="false" data-tab="submitted">已提交 <span class="count">2</span></button>
+    </div>
+
+    <div class="tasks-layout">
+      <div>
+        <div class="task-grid" id="task-list">
+          <article class="task-card" data-task-status="assigned">
+            <div class="task-card__top">
+              <span class="task-mode"><span data-icon="podium"></span>自由试讲</span>
+              <span class="badge badge--accent">待开始</span>
+            </div>
+            <h2>荷塘月色</h2>
+            <p class="task-card__course">语文教学论 · 王宁 / 李静</p>
+            <div class="task-card__meta">
+              <span><span data-icon="clock"></span>20 分钟</span>
+              <span><span data-icon="users"></span>3 名虚拟学生</span>
+              <span><span data-icon="camera"></span>三路录制</span>
+            </div>
+            <div class="task-card__students">
+              <div class="avatar-stack">
+                <span class="avatar avatar--sm avatar--cinnabar">周</span>
+                <span class="avatar avatar--sm avatar--gold">陈</span>
+                <span class="avatar avatar--sm avatar--blue">许</span>
+              </div>
+              <span>周予安 · 陈一诺 · 许知远</span>
+            </div>
+            <p class="task-card__due task-card__due--urgent"><span data-icon="clock"></span>11 月 18 日 23:59 截止 · 还剩 2 天</p>
+            <div class="task-card__foot">
+              <span class="badge">未开始录制</span>
+              <a class="btn btn--primary btn--sm" href="student-task-detail.html">课前检查 <span data-icon="arrow-right"></span></a>
+            </div>
+          </article>
+
+          <article class="task-card" data-task-status="assigned">
+            <div class="task-card__top">
+              <span class="task-mode"><span data-icon="message"></span>结构化面试</span>
+              <span class="badge badge--accent">待开始</span>
+            </div>
+            <h2>教师资格证结构化面试 · 模拟</h2>
+            <p class="task-card__course">微格教学实训 · 李静</p>
+            <div class="task-card__meta">
+              <span><span data-icon="clock"></span>5 分钟</span>
+              <span><span data-icon="clipboard"></span>2 道题</span>
+              <span><span data-icon="camera"></span>两路录制</span>
+            </div>
+            <p class="task-card__due"><span data-icon="clock"></span>11 月 22 日 23:59 截止 · 还剩 6 天</p>
+            <div class="task-card__foot">
+              <span class="badge">题目逐题展示</span>
+              <a class="btn btn--primary btn--sm" href="student-task-detail.html">课前检查 <span data-icon="arrow-right"></span></a>
+            </div>
+          </article>
+
+          <article class="task-card" data-task-status="in_progress">
+            <div class="task-card__top">
+              <span class="task-mode"><span data-icon="book-open"></span>情景试讲</span>
+              <span class="badge badge--warning">进行中</span>
+            </div>
+            <h2>少年闰土</h2>
+            <p class="task-card__course">微格教学实训 · 李静</p>
+            <div class="task-card__meta">
+              <span><span data-icon="clock"></span>15 分钟</span>
+              <span><span data-icon="users"></span>2 名虚拟学生</span>
+              <span><span data-icon="camera"></span>三路录制</span>
+            </div>
+            <div class="task-progress">
+              <div class="task-progress__head"><span>课堂进行中 · 已录制 08:42 / 20:00</span><span>58%</span></div>
+            </div>
+            <p class="task-card__due"><span data-icon="info"></span>已创建会话，刷新前请先回到课堂结束录制。</p>
+            <div class="task-card__foot">
+              <span class="badge badge--warning">录制中断风险</span>
+              <a class="btn btn--primary btn--sm" href="classroom.html">返回课堂 <span data-icon="arrow-right"></span></a>
+            </div>
+          </article>
+
+          <article class="task-card task-card--submitted" data-task-status="submitted">
+            <div class="task-card__top">
+              <span class="task-mode"><span data-icon="podium"></span>自由试讲</span>
+              <span class="badge badge--success">已提交</span>
+            </div>
+            <h2>古诗二首 · 模拟考核</h2>
+            <p class="task-card__course">语文教学论 · 王宁</p>
+            <div class="task-card__meta">
+              <span><span data-icon="clock"></span>20 分钟</span>
+              <span><span data-icon="calendar"></span>11-14 提交</span>
+            </div>
+            <div class="task-card__foot">
+              <span class="task-card__score">86.7 <small>/ 100</small></span>
+              <div class="task-card__foot-actions">
+                <a class="btn btn--ghost btn--sm" href="review.html">回放</a>
+                <a class="btn btn--secondary btn--sm" href="report.html">查看报告</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="task-card task-card--submitted" data-task-status="submitted">
+            <div class="task-card__top">
+              <span class="task-mode"><span data-icon="podium"></span>自由试讲</span>
+              <span class="badge badge--success">已提交</span>
+            </div>
+            <h2>教师口语 · 朗读训练</h2>
+            <p class="task-card__course">教师口语 · 陈岚</p>
+            <div class="task-card__meta">
+              <span><span data-icon="clock"></span>10 分钟</span>
+              <span><span data-icon="calendar"></span>11-12 提交</span>
+            </div>
+            <div class="task-card__foot">
+              <span class="task-card__score">88.5 <small>/ 100</small></span>
+              <div class="task-card__foot-actions">
+                <a class="btn btn--ghost btn--sm" href="review.html">回放</a>
+                <a class="btn btn--secondary btn--sm" href="student-results.html">查看成绩</a>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="empty-filter" id="task-empty" hidden>
+          当前筛选下没有任务。切换状态或回到「全部」查看。
+        </div>
+        <div class="list-foot">
+          <span class="list-foot__info">共 5 个任务 · 显示 1—5</span>
+          <div class="pagination" aria-label="任务分页">
+            <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+            <button class="pagination__btn is-active" type="button">1</button>
+            <button class="pagination__btn" type="button">2</button>
+            <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+          </div>
+        </div>
+      </div>
+
+      <aside class="side-stack">
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">本周截止</h2>
+              <p class="card-sub">按截止时间排序</p>
+            </div>
+            <span class="badge badge--accent">2</span>
+          </div>
+          <div class="card-body">
+            <div class="deadline-list">
+              <div class="deadline">
+                <span class="deadline__date"><strong>18</strong>NOV</span>
+                <div><strong>荷塘月色 · 自由试讲</strong><span>23:59 截止 · 语文教学论</span></div>
+              </div>
+              <div class="deadline">
+                <span class="deadline__date"><strong>22</strong>NOV</span>
+                <div><strong>教师资格证结构化面试</strong><span>23:59 截止 · 微格教学实训</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">开始前</h2>
+              <p class="card-sub">任务详情页会再次检查</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="prep-list">
+              <div class="prep-item"><span data-icon="check-circle"></span><span>使用 Chrome 或 Edge，确认摄像头 / 麦克风可用。</span></div>
+              <div class="prep-item"><span data-icon="check-circle"></span><span>自由试讲需要共享窗口；请提前打开课件或板书窗口。</span></div>
+              <div class="prep-item"><span data-icon="check-circle"></span><span>录制开始后不可暂停；中途刷新或关闭会丢失本次录制。</span></div>
+              <div class="prep-item"><span data-icon="check-circle"></span><span>结构化面试不显示答案要点，题目逐题展示。</span></div>
+            </div>
+            <a class="btn btn--secondary btn--block btn--sm" href="student-task-detail.html" style="margin-top:14px">查看任务说明</a>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">训练建议</h2>
+              <p class="card-sub">来自最近一次报告</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="alert alert--note" style="padding:11px 12px">
+              <span data-icon="sparkles"></span>
+              <div><span>课堂互动 78.6，建议在「荷塘月色」中增加一次全班提问和一次追问。</span></div>
+            </div>
+            <a class="btn btn--ghost btn--sm" href="student-training.html" style="margin-top:10px">去自由训练 <span data-icon="arrow-right"></span></a>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <script src="assets/site.js"></script>
+  <script>
+    document.querySelectorAll('[data-tabs="task-status"] [data-tab]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        const status = button.dataset.tab;
+        let visible = 0;
+        document.querySelectorAll("[data-task-status]").forEach(function (card) {
+          const show = status === "all" || card.dataset.taskStatus === status;
+          card.hidden = !show;
+          if (show) visible += 1;
+        });
+        document.getElementById("task-empty").hidden = visible > 0;
+      });
+    });
+  </script>
+</body>
+</html>

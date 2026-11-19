@@ -65,13 +65,13 @@ class SessionControllerIT extends PostgresIntegrationTest {
 
     @BeforeEach
     void publishTask() {
-        TaskView view = taskApplicationService.createDraft(teacher(), freeCommandWithStudent());
+        TaskView view = taskApplicationService.create(
+                teacher(), freeCommandWithStudent(),
+                new com.shijiangtai.m3classroom.application.command.MaterialUpload(
+                        "a.txt", "text/plain",
+                        "这是一份足够长的参考材料文本内容，用于测试发布。"
+                                .getBytes(StandardCharsets.UTF_8)));
         taskId = new TaskId(view.taskId());
-        materialService.upload(
-                teacher(), taskId, "a.txt", "text/plain",
-                "这是一份足够长的参考材料文本内容，用于测试发布。"
-                        .getBytes(StandardCharsets.UTF_8));
-        publishService.publish(teacher(), taskId);
     }
 
     @Test
@@ -212,7 +212,7 @@ class SessionControllerIT extends PostgresIntegrationTest {
                 COURSE, TaskMode.INTERVIEW, "结构化面试", null,
                 null, null, null, null, List.of(),
                 new QuestionConfig(List.of(new QuestionId(QUESTION1_ID)), 300));
-        TaskView view = taskApplicationService.createDraft(teacher(), command);
+        TaskView view = taskApplicationService.createPreparedTask(teacher(), command);
         TaskId id = new TaskId(view.taskId());
         publishService.publish(teacher(), id);
         return id;

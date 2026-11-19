@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>课程任务 · 语文教学论 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .tasks-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .tasks-main {
+      display: grid;
+      gap: 16px;
+    }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .filters .input {
+      max-width: 260px;
+    }
+
+    .filters .select {
+      width: 140px;
+    }
+
+    .filters__spacer {
+      flex: 1;
+    }
+
+    .task-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .task-cell strong {
+      color: var(--text);
+      font-family: var(--font-serif);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .task-cell span {
+      color: var(--text-3);
+      font-size: 9px;
+      font-family: var(--font-mono);
+    }
+
+    .task-mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text-2);
+      font-size: 10.5px;
+      white-space: nowrap;
+    }
+
+    .task-mode [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      color: var(--accent);
+    }
+
+    .submit-progress {
+      min-width: 110px;
+    }
+
+    .submit-progress__head {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+    }
+
+    .submit-progress .progress {
+      height: 4px;
+    }
+
+    .avg-score {
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 16px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+
+    .avg-score--muted {
+      color: var(--text-3);
+      font-family: var(--font-sans);
+      font-size: 10px;
+      font-weight: 400;
+    }
+
+    /* Aside */
+    .side-stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .side-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .side-card .card-head,
+    .side-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .course-meta {
+      display: grid;
+      gap: 0;
+    }
+
+    .course-meta__row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 10.5px;
+    }
+
+    .course-meta__row:last-child {
+      border-bottom: 0;
+    }
+
+    .course-meta__row dt {
+      color: var(--text-3);
+    }
+
+    .course-meta__row dd {
+      margin: 0;
+      color: var(--text);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .recent-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .recent {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .recent:last-child {
+      border-bottom: 0;
+    }
+
+    .recent__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .recent__main strong {
+      display: block;
+      overflow: hidden;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .recent__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .quick-links {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+    }
+
+    .quick-link {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      color: var(--text-2);
+      font-size: 10px;
+    }
+
+    .quick-link:hover {
+      border-color: var(--brand);
+      background: var(--brand-wash);
+      color: var(--brand);
+    }
+
+    .quick-link [data-icon] svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    @media (max-width: 1180px) {
+      .tasks-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .side-stack {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 860px) {
+      .side-stack {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .table .actions .action-danger {
+      color: var(--danger);
+    }
+
+    .table .actions .action-danger:hover {
+      color: var(--danger-700);
+    }
+  </style>
+</head>
+<body data-role="teacher" data-nav="courses">
+  <div data-app-header></div>
+
+  <div class="context-bar">
+    <div class="context-bar__inner">
+      <div class="breadcrumb">
+        <a href="courses.html?role=teacher">课程</a>
+        <span class="breadcrumb__sep">/</span>
+        <a href="course-detail.html?role=teacher">语文教学论</a>
+        <span class="breadcrumb__sep">/</span>
+        <span class="breadcrumb__current">任务</span>
+      </div>
+      <div class="context-tabs">
+        <a class="context-tab" href="course-detail.html?role=teacher">课程概览</a>
+        <a class="context-tab is-active" href="teacher-tasks.html">任务</a>
+        <a class="context-tab" href="teacher-course-students.html">学生</a>
+        <a class="context-tab" href="courses.html?role=teacher">老师组</a>
+        <a class="context-tab" href="stats.html">统计</a>
+      </div>
+    </div>
+  </div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">COURSE TASKS / 课程任务</p>
+        <h1 class="page-title">课程任务</h1>
+        <p class="page-lead">语文教学论 · 6 个任务 · 32 名学生。发布后的任务不可修改配置，关闭后学生不能再开始。</p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn--secondary" href="stats.html"><span data-icon="chart"></span>课程统计</a>
+        <a class="btn btn--primary" href="task-editor.html"><span data-icon="plus"></span>新建任务</a>
+      </div>
+    </header>
+
+    <div class="stat-strip" style="margin-bottom:22px">
+      <div class="stat"><div class="stat__label">任务</div><div class="stat__value">6</div><div class="stat__meta">本学期</div></div>
+      <div class="stat"><div class="stat__label">已发布</div><div class="stat__value">5</div><div class="stat__meta">2 个即将截止</div></div>
+      <div class="stat"><div class="stat__label">待批提交</div><div class="stat__value stat__value--accent">12</div><div class="stat__meta">需要教师评分</div></div>
+      <div class="stat"><div class="stat__label">平均分</div><div class="stat__value stat__value--brand">82.4</div><div class="stat__meta">已完成样本</div></div>
+    </div>
+
+    <div class="tasks-layout">
+      <div class="tasks-main">
+        <div class="card">
+          <div class="card-body" style="padding:16px 18px 0">
+            <div class="tabs-line" data-tabs="teacher-task-status" role="tablist" aria-label="任务状态">
+              <button type="button" role="tab" aria-selected="true" data-tab="all">全部 <span class="count">6</span></button>
+              <button type="button" role="tab" aria-selected="false" data-tab="published">已发布 <span class="count">5</span></button>
+              <button type="button" role="tab" aria-selected="false" data-tab="closed">已关闭 <span class="count">1</span></button>
+            </div>
+            <div class="filters">
+              <label class="input-affix" style="flex:1;max-width:260px">
+                <span data-icon="search"></span>
+                <input class="input" type="search" placeholder="搜索课题" aria-label="搜索课题">
+              </label>
+              <select class="select" aria-label="任务模式">
+                <option>全部模式</option>
+                <option>自由试讲</option>
+                <option>情景试讲</option>
+                <option>结构化面试</option>
+              </select>
+              <span class="filters__spacer"></span>
+              <span class="xs faint">按最近更新时间排序</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>任务</th><th>模式</th><th>时长 / 内容</th><th>提交</th><th class="num">平均分</th><th>状态</th><th class="actions">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr data-task-row="published">
+                  <td><div class="task-cell"><strong>荷塘月色</strong><span>TASK-014 · 更新于 11-16</span></div></td>
+                  <td><span class="task-mode"><span data-icon="podium"></span>自由试讲</span></td>
+                  <td><span class="small">20 分钟</span><br><span class="xs faint">3 名虚拟学生</span></td>
+                  <td><div class="submit-progress"><div class="submit-progress__head"><span>18 / 28</span><span>64%</span></div></div></td>
+                  <td class="num"><span class="avg-score">82.4</span></td>
+                  <td><span class="badge badge--success">已发布</span></td>
+                  <td class="actions"><a href="grading.html">评分</a><a href="stats.html">统计</a><a href="task-editor.html">详情</a><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="delete-task-modal">删除</button></td>
+                </tr>
+                <tr data-task-row="published">
+                  <td><div class="task-cell"><strong>教师资格证结构化面试</strong><span>TASK-013 · 更新于 11-15</span></div></td>
+                  <td><span class="task-mode"><span data-icon="message"></span>结构化面试</span></td>
+                  <td><span class="small">5 分钟</span><br><span class="xs faint">2 道题</span></td>
+                  <td><div class="submit-progress"><div class="submit-progress__head"><span>8 / 28</span><span>29%</span></div></div></td>
+                  <td class="num"><span class="avg-score">86.1</span></td>
+                  <td><span class="badge badge--success">已发布</span></td>
+                  <td class="actions"><a href="grading.html">评分</a><a href="stats.html">统计</a><a href="task-editor.html">详情</a><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="delete-task-modal">删除</button></td>
+                </tr>
+                <tr data-task-row="published">
+                  <td><div class="task-cell"><strong>少年闰土</strong><span>TASK-015 · 发布于 11-16</span></div></td>
+                  <td><span class="task-mode"><span data-icon="book-open"></span>情景试讲</span></td>
+                  <td><span class="small">15 分钟</span><br><span class="xs faint">2 名虚拟学生</span></td>
+                  <td><div class="submit-progress"><div class="submit-progress__head"><span>0 / 28</span><span>0%</span></div></div></td>
+                  <td class="num"><span class="avg-score avg-score--muted">—</span></td>
+                  <td><span class="badge badge--success">已发布</span></td>
+                  <td class="actions"><a href="grading.html">评分</a><a href="stats.html">统计</a><a href="task-editor.html">详情</a><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="delete-task-modal">删除</button></td>
+                </tr>
+                <tr data-task-row="closed">
+                  <td><div class="task-cell"><strong>古诗二首</strong><span>TASK-011 · 关闭于 11-14</span></div></td>
+                  <td><span class="task-mode"><span data-icon="podium"></span>自由试讲</span></td>
+                  <td><span class="small">20 分钟</span><br><span class="xs faint">3 名虚拟学生</span></td>
+                  <td><div class="submit-progress"><div class="submit-progress__head"><span>28 / 28</span><span>100%</span></div></div></td>
+                  <td class="num"><span class="avg-score">80.9</span></td>
+                  <td><span class="badge">已关闭</span></td>
+                  <td class="actions"><a href="grading.html">评分</a><a href="stats.html">统计</a><a href="task-editor.html">详情</a><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="delete-task-modal">删除</button></td>
+                </tr>
+                <tr data-task-row="published">
+                  <td><div class="task-cell"><strong>教师口语 · 朗读训练</strong><span>TASK-010 · 更新于 11-12</span></div></td>
+                  <td><span class="task-mode"><span data-icon="podium"></span>自由试讲</span></td>
+                  <td><span class="small">10 分钟</span><br><span class="xs faint">2 名虚拟学生</span></td>
+                  <td><div class="submit-progress"><div class="submit-progress__head"><span>24 / 28</span><span>86%</span></div></div></td>
+                  <td class="num"><span class="avg-score">84.7</span></td>
+                  <td><span class="badge badge--success">已发布</span></td>
+                  <td class="actions"><a href="grading.html">评分</a><a href="stats.html">统计</a><a href="task-editor.html">详情</a><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="delete-task-modal">删除</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="list-foot">
+            <span class="list-foot__info">共 6 个任务 · 显示 1—5</span>
+            <div class="pagination" aria-label="任务分页">
+              <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+              <button class="pagination__btn is-active" type="button">1</button>
+              <button class="pagination__btn" type="button">2</button>
+              <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert alert--note">
+          <span data-icon="info"></span>
+          <div><span>新建任务时可以从训练模板填充课题、教材版本、时长、权重与虚拟学生；任务创建后，模板的后续修改不会影响该任务。</span></div>
+        </div>
+      </div>
+
+      <aside class="side-stack">
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">课程信息</h2>
+              <p class="card-sub">CHN 2401 · 2026 秋</p>
+            </div>
+            <span class="badge badge--success">启用中</span>
+          </div>
+          <div class="card-body">
+            <dl class="course-meta">
+              <div class="course-meta__row"><dt>专业范围</dt><dd>汉语言文学（师范）</dd></div>
+              <div class="course-meta__row"><dt>老师组</dt><dd>王宁、李静</dd></div>
+              <div class="course-meta__row"><dt>学生</dt><dd>32 人</dd></div>
+              <div class="course-meta__row"><dt>结束日期</dt><dd>2027-01-15</dd></div>
+            </dl>
+            <a class="btn btn--secondary btn--block btn--sm" href="course-detail.html?role=teacher" style="margin-top:12px">返回课程</a>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">最近提交</h2>
+              <p class="card-sub">学生 · 任务 · 时间</p>
+            </div>
+          </div>
+          <div class="card-body" style="padding-top:6px;padding-bottom:6px">
+            <div class="recent-list">
+              <div class="recent"><span class="avatar avatar--sm avatar--cinnabar">张</span><div class="recent__main"><strong>张晨 · 荷塘月色</strong><span>14:20 · AI 85.0</span></div><span class="badge badge--success">已完成</span></div>
+              <div class="recent"><span class="avatar avatar--sm avatar--gold">李</span><div class="recent__main"><strong>李思远 · 荷塘月色</strong><span>14:25 · 待 AI</span></div><span class="badge badge--warning">待 AI</span></div>
+              <div class="recent"><span class="avatar avatar--sm avatar--blue">王</span><div class="recent__main"><strong>王雨桐 · 结构化面试</strong><span>13:58 · AI 90.2</span></div><span class="badge badge--success">已完成</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">快捷入口</h2>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="quick-links">
+              <a class="quick-link" href="grading.html"><span data-icon="edit"></span>任务评分</a>
+              <a class="quick-link" href="stats.html"><span data-icon="chart"></span>课程统计</a>
+              <a class="quick-link" href="question-bank.html"><span data-icon="message"></span>结构化题库</a>
+              <a class="quick-link" href="teacher-training.html"><span data-icon="layers"></span>训练模板</a>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Delete task modal -->
+  <div class="overlay" data-overlay-for="delete-task-modal"></div>
+  <div class="modal" id="delete-task-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="delete-task-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="delete-task-title">删除课程任务</div>
+        <div class="drawer__sub">仅课程 owner 可删除；删除前请确认任务状态。</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="delete-task-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--danger">
+        <span data-icon="alert-triangle"></span>
+        <div>删除「<strong id="delete-task-name">该任务</strong>」后，任务会从课程中移除，学生端不再显示，不能再开始新试讲；已提交的回放、AI 报告、教师评分与最终分保留只读。此操作不可撤销。</div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="delete-task-modal">取消</button>
+      <button class="btn btn--danger-solid" type="button" id="confirm-delete-task" data-close="delete-task-modal" data-toast="课程任务已删除（原型演示）。">删除任务</button>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+  <script>
+    document.querySelectorAll('[data-tabs="teacher-task-status"] [data-tab]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        const status = button.dataset.tab;
+        document.querySelectorAll("[data-task-row]").forEach(function (row) {
+          row.hidden = status !== "all" && row.dataset.taskRow !== status;
+        });
+      });
+    });
+
+    let pendingTaskRow = null;
+    document.querySelectorAll('[data-open="delete-task-modal"]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        pendingTaskRow = button.closest("tr");
+        const name = pendingTaskRow.querySelector(".task-cell strong").textContent;
+        document.getElementById("delete-task-name").textContent = name;
+      });
+    });
+
+    document.getElementById("confirm-delete-task").addEventListener("click", function () {
+      if (!pendingTaskRow) return;
+      pendingTaskRow.remove();
+      pendingTaskRow = null;
+      const rows = Array.from(document.querySelectorAll("[data-task-row]"));
+      const visible = rows.filter(function (row) { return !row.hidden; }).length;
+      document.querySelector(".list-foot__info").textContent = "共 " + rows.length + " 个任务 · 显示 1—" + visible;
+      document.querySelectorAll('[data-tabs="teacher-task-status"] [data-tab]').forEach(function (tab) {
+        const status = tab.dataset.tab;
+        const count = status === "all" ? rows.length : rows.filter(function (row) { return row.dataset.taskRow === status; }).length;
+        const countEl = tab.querySelector(".count");
+        if (countEl) countEl.textContent = count;
+      });
+    });
+  </script>
+</body>
+</html>

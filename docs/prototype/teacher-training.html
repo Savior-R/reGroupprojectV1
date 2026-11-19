@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>训练模板 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .training-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .template-name {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .template-name__mark {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      flex: none;
+      place-items: center;
+      border-radius: var(--r-sm);
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .template-name__mark--gold {
+      background: var(--gold-soft);
+      color: var(--gold);
+    }
+
+    .template-name__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+
+    .template-name__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .level-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 7px;
+      border-radius: var(--r-pill);
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .level-tag--gold {
+      background: var(--gold-soft);
+      color: var(--gold);
+    }
+
+    .publish-count {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-2);
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+    }
+
+    .publish-count [data-icon] svg {
+      width: 11px;
+      height: 11px;
+      color: var(--text-3);
+    }
+
+    /* Aside */
+    .side-stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .side-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .side-card .card-head,
+    .side-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .quota-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 7px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .quota-head strong {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .course-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .course-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-pill);
+      background: var(--paper-0);
+      color: var(--text-2);
+      font-size: 9px;
+    }
+
+    .course-chip i {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    .publish-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .publish-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .publish-item:last-child {
+      border-bottom: 0;
+    }
+
+    .publish-item__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .publish-item__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .publish-item__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    /* Drawers */
+    .course-check-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .course-check {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .course-check__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .course-check__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .course-check__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    @media (max-width: 1180px) {
+      .training-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .side-stack {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 880px) {
+      .side-stack {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    .table .actions .action-danger {
+      color: var(--danger);
+    }
+
+    .table .actions .action-danger:hover {
+      color: var(--danger-700);
+    }
+  </style>
+</head>
+<body data-role="teacher" data-nav="training-templates">
+  <div data-app-header></div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">TRAINING TEMPLATES / 训练模板</p>
+        <h1 class="page-title">训练模板</h1>
+        <p class="page-lead">个人模板库 8 / 30；发布到课程后学生可见，下架后不可用。已发布的课程在目标课程结束或教师被移出时自动下架。</p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn--primary" href="teacher-template-editor.html"><span data-icon="plus"></span>新建模板</a>
+      </div>
+    </header>
+
+    <div class="stat-strip" style="margin-bottom:22px">
+      <div class="stat"><div class="stat__label">活跃模板</div><div class="stat__value" id="teacher-template-stat">8 <small>/ 30</small></div><div class="stat__meta">个人模板库上限 30</div></div>
+      <div class="stat"><div class="stat__label">已发布课程</div><div class="stat__value">5</div><div class="stat__meta">跨 2 门课程</div></div>
+      <div class="stat"><div class="stat__label">本周训练</div><div class="stat__value">12</div><div class="stat__meta">学生发起</div></div>
+      <div class="stat"><div class="stat__label">模板使用</div><div class="stat__value stat__value--brand">86%</div><div class="stat__meta">近 30 天</div></div>
+    </div>
+
+    <div class="training-layout">
+      <div>
+        <div class="grading-toolbar" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px">
+          <label class="input-affix" style="flex:1;max-width:300px">
+            <span data-icon="search"></span>
+            <input class="input" type="search" placeholder="搜索模板 / 课题" aria-label="搜索模板">
+          </label>
+          <select class="select" style="width:140px" aria-label="档位"><option>全部档位</option><option>进阶</option><option>模拟考核</option></select>
+          <select class="select" style="width:140px" aria-label="状态"><option>全部状态</option><option>active</option></select>
+          <span style="flex:1"></span>
+          <span class="xs faint">按最近更新排序</span>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>模板</th><th>档位</th><th>课题</th><th>状态</th><th>发布课程</th><th>更新时间</th><th class="actions">操作</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><div class="template-name"><span class="template-name__mark">荷</span><div class="template-name__main"><strong>荷塘月色（我的副本）</strong><span>老师模板 · 20 分钟 · 3 人</span></div></div></td>
+                  <td><span class="level-tag">进阶</span></td>
+                  <td>荷塘月色</td>
+                  <td><span class="badge badge--success">active</span></td>
+                  <td><span class="publish-count"><span data-icon="book"></span>3 门课程</span></td>
+                  <td class="xs faint">11-15 16:20</td>
+                  <td class="actions"><a class="btn btn--secondary btn--xs" href="teacher-template-detail.html">查看</a><button class="btn btn--ghost btn--xs" type="button" data-open="publish-drawer">发布</button><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="delete-template-modal">删除</button></td>
+                </tr>
+                <tr>
+                  <td><div class="template-name"><span class="template-name__mark template-name__mark--gold">模</span><div class="template-name__main"><strong>全真模拟 · 我的配置</strong><span>老师模板 · 20 分钟 · 4 人</span></div></div></td>
+                  <td><span class="level-tag level-tag--gold">模拟考核</span></td>
+                  <td>教师资格证 · 全真模拟</td>
+                  <td><span class="badge badge--success">active</span></td>
+                  <td><span class="publish-count"><span data-icon="book"></span>2 门课程</span></td>
+                  <td class="xs faint">11-13 09:18</td>
+                  <td class="actions"><a class="btn btn--secondary btn--xs" href="teacher-template-detail.html">查看</a><button class="btn btn--ghost btn--xs" type="button" data-open="publish-drawer">发布</button><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="delete-template-modal">删除</button></td>
+                </tr>
+                <tr>
+                  <td><div class="template-name"><span class="template-name__mark">少</span><div class="template-name__main"><strong>少年闰土 · 进阶</strong><span>老师模板 · 15 分钟 · 2 人</span></div></div></td>
+                  <td><span class="level-tag">进阶</span></td>
+                  <td>少年闰土</td>
+                  <td><span class="badge badge--success">active</span></td>
+                  <td><span class="publish-count"><span data-icon="book"></span>0 门课程</span></td>
+                  <td class="xs faint">11-08 14:02</td>
+                  <td class="actions"><a class="btn btn--secondary btn--xs" href="teacher-template-detail.html">查看</a><button class="btn btn--ghost btn--xs" type="button" data-open="publish-drawer">发布</button><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="delete-template-modal">删除</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="list-foot">
+            <span class="list-foot__info">共 8 个模板 · 显示 1—3</span>
+            <div class="pagination" aria-label="模板分页">
+              <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+              <button class="pagination__btn is-active" type="button">1</button>
+              <button class="pagination__btn" type="button">2</button>
+              <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="side-stack">
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">模板额度</h2>
+              <p class="card-sub">active 模板上限 30</p>
+            </div>
+            <span class="badge" id="teacher-template-quota-badge">8 / 30</span>
+          </div>
+          <div class="card-body">
+            <div class="quota-head"><span>已使用</span><strong id="teacher-template-quota-used">8 / 30</strong></div>
+            
+            <p class="xs faint" style="margin-top:10px;line-height:1.6">创建、复制共用同一额度；模板上限 30 个。</p>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">发布概览</h2>
+              <p class="card-sub">学生可见的课程</p>
+            </div>
+            <span class="badge badge--success">5</span>
+          </div>
+          <div class="card-body">
+            <div class="course-chips">
+              <span class="course-chip"><i></i>语文教学论</span>
+              <span class="course-chip"><i></i>微格教学实训</span>
+            </div>
+            <div class="publish-list" style="margin-top:12px">
+              <div class="publish-item"><span class="avatar avatar--sm avatar--cinnabar">荷</span><div class="publish-item__main"><strong>荷塘月色（我的副本）</strong><span>语文教学论 · 11-15 发布</span></div><span class="badge badge--success">published</span></div>
+              <div class="publish-item"><span class="avatar avatar--sm avatar--gold">模</span><div class="publish-item__main"><strong>全真模拟 · 我的配置</strong><span>微格教学实训 · 11-13 发布</span></div><span class="badge badge--success">published</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">模板说明</h2>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="note-list" style="display:grid;gap:7px">
+              <div class="xs faint">· 教师模板发布到课程后，学生可在训练首页看到并复制到自己的模板。</div>
+              <div class="xs faint">· 已发布模板的配置只读；先下架再编辑。</div>
+              <div class="xs faint">· 目标课程归档或教师被移出课程时，发布自动下架。</div>
+            </div>
+            <a class="btn btn--secondary btn--block btn--sm" href="task-editor.html" style="margin-top:12px">用模板新建任务</a>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Publish drawer -->
+  <div class="overlay" data-overlay-for="publish-drawer"></div>
+  <aside class="drawer" id="publish-drawer" aria-hidden="true" aria-labelledby="publish-drawer-title">
+    <div class="drawer__head">
+      <div>
+        <div class="drawer__title" id="publish-drawer-title">发布到课程</div>
+        <div class="drawer__sub">荷塘月色（我的副本） · 进阶 · 20 分钟</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="publish-drawer" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="drawer__body">
+      <div class="alert alert--info">
+        <span data-icon="info"></span>
+        <div><span>学生只能在目标课程中看到模板；不显示参考材料、权重与教师备注。</span></div>
+      </div>
+      <div class="course-check-list" style="margin-top:16px">
+        <label class="course-check">
+          <input type="checkbox" checked hidden><span class="check-box"><span data-icon="check"></span></span>
+          <div class="course-check__main"><strong>语文教学论</strong><span>32 名在课学生 · 王宁 / 李静</span></div>
+          <span class="badge badge--success">已发布</span>
+        </label>
+        <label class="course-check">
+          <input type="checkbox" checked hidden><span class="check-box"><span data-icon="check"></span></span>
+          <div class="course-check__main"><strong>微格教学实训</strong><span>28 名在课学生 · 王宁 / 陈岚</span></div>
+          <span class="badge badge--success">已发布</span>
+        </label>
+        <label class="course-check">
+          <input type="checkbox" hidden><span class="check-box"><span data-icon="check"></span></span>
+          <div class="course-check__main"><strong>教师口语</strong><span>36 名在课学生 · 王宁</span></div>
+          <span class="badge">未发布</span>
+        </label>
+      </div>
+      <div class="preview-row" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px">
+        <div class="preview-box" style="padding:12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--paper-0)"><span style="display:block;color:var(--text-3);font-size:9px">虚拟学生</span><strong style="display:block;margin-top:4px;font-family:var(--font-serif);font-size:22px">3 名</strong></div>
+        <div class="preview-box" style="padding:12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--paper-0)"><span style="display:block;color:var(--text-3);font-size:9px">权重</span><strong style="display:block;margin-top:4px;font-family:var(--font-serif);font-size:22px">30 / 20 / 20</strong></div>
+      </div>
+    </div>
+    <div class="drawer__foot">
+      <button class="btn btn--secondary" type="button" data-close="publish-drawer">取消</button>
+      <button class="btn btn--primary" type="button" data-close="publish-drawer" data-toast="发布状态已更新（原型演示）。">保存发布</button>
+    </div>
+  </aside>
+
+  <!-- Delete template modal -->
+  <div class="overlay" data-overlay-for="delete-template-modal"></div>
+  <div class="modal" id="delete-template-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="delete-template-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="delete-template-title">删除训练模板</div>
+        <div class="drawer__sub">已发布模板会先下架；关联任务使用发布时快照。</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="delete-template-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--danger">
+        <span data-icon="alert-triangle"></span>
+        <div>删除「<strong id="delete-template-name">该模板</strong>」后，模板会从个人模板库移除；已发布到课程的模板会先下架，学生端不再显示。该模板关联的训练记录、录像 / 报告与参考材料会一并清理；学生副本与关联任务快照不受影响。此操作不可撤销。</div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="delete-template-modal">取消</button>
+      <button class="btn btn--danger-solid" type="button" id="confirm-delete-template" data-close="delete-template-modal" data-toast="训练模板已删除（原型演示）。">删除模板</button>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+  <script>
+    let pendingTemplateRow = null;
+    let teacherTemplateTotal = 8;
+
+    document.querySelectorAll('[data-open="delete-template-modal"]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        pendingTemplateRow = button.closest("tr");
+        const name = pendingTemplateRow.querySelector(".template-name__main strong").textContent;
+        document.getElementById("delete-template-name").textContent = name;
+      });
+    });
+
+    document.getElementById("confirm-delete-template").addEventListener("click", function () {
+      if (!pendingTemplateRow) return;
+      pendingTemplateRow.remove();
+      pendingTemplateRow = null;
+      teacherTemplateTotal = Math.max(0, teacherTemplateTotal - 1);
+      const rows = document.querySelectorAll("tbody tr").length;
+      document.getElementById("teacher-template-stat").innerHTML = teacherTemplateTotal + ' <small>/ 30</small>';
+      document.getElementById("teacher-template-quota-badge").textContent = teacherTemplateTotal + " / 30";
+      document.getElementById("teacher-template-quota-used").textContent = teacherTemplateTotal + " / 30";
+      document.querySelector(".page-lead").textContent = "个人模板库 " + teacherTemplateTotal + " / 30；发布到课程后学生可见，下架后不可用。已发布的课程在目标课程结束或教师被移出时自动下架。";
+      document.querySelector(".list-foot__info").textContent = "共 " + teacherTemplateTotal + " 个模板 · 显示 1—" + rows;
+    });
+  </script>
+</body>
+</html>

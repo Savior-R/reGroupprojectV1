@@ -613,13 +613,13 @@ class SessionReconnectTest {
     private static Task publishedTask() {
         TaskDraft draft = new TaskDraft(TaskMode.FREE, "荷塘月色", "部编版", 900, 1200,
                 RubricWeights.defaults(TaskMode.FREE), null, List.of(), null);
-        Task task = Task.createDraft(new TaskId(TASK_ID), new CourseId(COURSE_ID),
+        Task task = Task.create(new TaskId(TASK_ID), new CourseId(COURSE_ID),
                 new AccountId(UUID.randomUUID()), draft, NOW);
         TaskSnapshot snapshot = new TaskSnapshotFactory().create(
                 task, new CourseInfo(COURSE_ID, SCHOOL_ID, "语文教学论", true,
                         Instant.parse("2027-06-30T00:00:00Z"), List.of()),
                 List.of(), NOW);
-        task.publish(snapshot, NOW);
+        task.publishInitial(snapshot, null, NOW);
         return task;
     }
 

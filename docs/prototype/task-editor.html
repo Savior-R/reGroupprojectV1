@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新建任务 · 语文教学论 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .editor-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .editor-form {
+      display: grid;
+      gap: 16px;
+    }
+
+    .editor-section {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .editor-section__head {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .editor-section__num {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: none;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: var(--paper-0);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .editor-section__head h2 {
+      font-size: 20px;
+    }
+
+    .editor-section__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10.5px;
+    }
+
+    .editor-section__body {
+      padding: 22px 24px;
+    }
+
+    .mode-cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .mode-card {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 7px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      background: var(--surface);
+      text-align: left;
+      cursor: pointer;
+      transition:
+        border-color var(--dur-1) var(--ease),
+        background var(--dur-1) var(--ease),
+        box-shadow var(--dur-1) var(--ease);
+    }
+
+    .mode-card:hover {
+      border-color: var(--ink-300);
+    }
+
+    .mode-card[aria-selected="true"] {
+      border-color: var(--brand);
+      background: var(--brand-wash);
+      box-shadow: inset 0 0 0 1px var(--brand);
+    }
+
+    .mode-card__icon {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: var(--r-sm);
+      background: var(--paper-2);
+      color: var(--text-2);
+    }
+
+    .mode-card[aria-selected="true"] .mode-card__icon {
+      background: var(--brand);
+      color: var(--on-brand);
+    }
+
+    .mode-card__icon svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .mode-card strong {
+      color: var(--text);
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+
+    .mode-card span {
+      color: var(--text-3);
+      font-size: 9.5px;
+      line-height: 1.5;
+    }
+
+    .template-source {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .template-source [data-icon] svg {
+      width: 15px;
+      height: 15px;
+      color: var(--accent);
+    }
+
+    .template-source__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .template-source__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .template-source__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .question-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .question-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 13px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .question-item__order {
+      display: grid;
+      width: 22px;
+      height: 22px;
+      flex: none;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 9px;
+    }
+
+    .question-item__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .question-item__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.45;
+    }
+
+    .question-item__main span {
+      display: block;
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .question-item__actions {
+      display: flex;
+      gap: 3px;
+      flex: none;
+    }
+
+    .question-item__actions button {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border: 1px solid transparent;
+      border-radius: var(--r-xs);
+      background: transparent;
+      color: var(--text-3);
+    }
+
+    .question-item__actions button:hover {
+      border-color: var(--line);
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .question-item__actions button svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    .question-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .question-foot .xs {
+      color: var(--text-3);
+    }
+
+    .upload-zone {
+      display: flex;
+      min-height: 86px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      padding: 14px;
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--r-md);
+      background: var(--paper-0);
+      color: var(--text-3);
+      text-align: center;
+      cursor: pointer;
+    }
+
+    .upload-zone:hover {
+      border-color: var(--brand);
+      background: var(--brand-wash);
+    }
+
+    .upload-zone [data-icon] svg {
+      width: 18px;
+      height: 18px;
+      color: var(--text-3);
+    }
+
+    .upload-zone strong {
+      color: var(--text-2);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .upload-zone span {
+      font-size: 9px;
+    }
+
+    .upload-file {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-top: 9px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+    }
+
+    .upload-file [data-icon] svg {
+      width: 15px;
+      height: 15px;
+      color: var(--accent);
+    }
+
+    .upload-file__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .upload-file__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .upload-file__main span {
+      display: block;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .student-compact {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .student-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .student-row__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .student-row__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .student-row__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    /* Weights */
+    .weight-stack {
+      display: flex;
+      height: 12px;
+      overflow: hidden;
+      border-radius: var(--r-pill);
+      background: var(--paper-3);
+      margin-bottom: 18px;
+    }
+
+    .weight-stack span {
+      display: block;
+      height: 100%;
+      min-width: 0;
+      transition: width var(--dur-2) var(--ease);
+    }
+
+    .weight-stack span:nth-child(1) { background: var(--brand); }
+    .weight-stack span:nth-child(2) { background: var(--green-500); }
+    .weight-stack span:nth-child(3) { background: var(--gold); }
+    .weight-stack span:nth-child(4) { background: var(--blue-600); }
+    .weight-stack span:nth-child(5) { background: var(--ink-300); }
+
+    .weight-row {
+      display: grid;
+      grid-template-columns: 96px minmax(0, 1fr) 42px;
+      align-items: center;
+      gap: 14px;
+      padding: 8px 0;
+    }
+
+    .weight-row label {
+      color: var(--text-2);
+      font-size: 10.5px;
+    }
+
+    .weight-row input[type="range"] {
+      width: 100%;
+      height: 4px;
+      appearance: none;
+      border-radius: var(--r-pill);
+      background: var(--paper-3);
+      outline: none;
+    }
+
+    .weight-row input[type="range"]::-webkit-slider-thumb {
+      width: 15px;
+      height: 15px;
+      appearance: none;
+      border: 2px solid var(--surface);
+      border-radius: 50%;
+      background: var(--brand);
+      box-shadow: 0 0 0 1px var(--brand);
+      cursor: pointer;
+    }
+
+    .weight-row input[type="range"]::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--surface);
+      border-radius: 50%;
+      background: var(--brand);
+      box-shadow: 0 0 0 1px var(--brand);
+      cursor: pointer;
+    }
+
+    .weight-row output {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      text-align: right;
+    }
+
+    .weight-total {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 10px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .weight-total strong {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .weight-total.is-bad strong {
+      color: var(--danger);
+    }
+
+    .weight-total.is-good strong {
+      color: var(--success);
+    }
+
+    .publish-settings {
+      display: grid;
+      gap: 12px;
+    }
+
+    .publish-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .publish-row:last-child {
+      border-bottom: 0;
+    }
+
+    .publish-row__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .publish-row__main span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    /* Summary */
+    .summary-card {
+      position: sticky;
+      top: 30px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-2);
+    }
+
+    .summary-card::before {
+      display: block;
+      height: 4px;
+      background: linear-gradient(90deg, var(--brand), var(--gold));
+      content: "";
+    }
+
+    .summary-card__head {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .summary-card__head .eyebrow {
+      color: var(--accent);
+    }
+
+    .summary-card__head h2 {
+      margin-top: 6px;
+      font-size: 22px;
+    }
+
+    .summary-card__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .summary-list {
+      display: grid;
+      gap: 0;
+      padding: 6px 20px;
+    }
+
+    .summary-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 10.5px;
+    }
+
+    .summary-row:last-child {
+      border-bottom: 0;
+    }
+
+    .summary-row dt {
+      color: var(--text-3);
+    }
+
+    .summary-row dd {
+      margin: 0;
+      color: var(--text);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .checklist {
+      display: grid;
+      gap: 7px;
+      padding: 14px 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .check-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      color: var(--text-2);
+      font-size: 9.5px;
+      line-height: 1.5;
+    }
+
+    .check-item [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      margin-top: 1px;
+      color: var(--success);
+    }
+
+    .check-item--warn [data-icon] svg {
+      color: var(--gold);
+    }
+
+    .summary-card__foot {
+      padding: 14px 20px 18px;
+      border-top: 1px solid var(--line);
+      background: var(--paper-0);
+    }
+
+    .summary-card__foot .btn + .btn {
+      margin-top: 7px;
+    }
+
+    .summary-card__foot p {
+      margin-top: 8px;
+      color: var(--text-3);
+      font-size: 8.5px;
+      line-height: 1.55;
+      text-align: center;
+    }
+
+    .modal--wide {
+      width: min(720px, 94vw);
+    }
+
+    .template-picker__search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .template-picker__search .input-affix {
+      flex: 1;
+    }
+
+    .template-picker__list {
+      display: grid;
+      gap: 6px;
+      max-height: 320px;
+      margin-top: 12px;
+      padding: 4px;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .template-pick {
+      display: grid;
+      grid-template-columns: 17px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid transparent;
+      border-radius: var(--r-sm);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .template-pick:hover {
+      background: var(--brand-wash);
+    }
+
+    .template-pick.is-selected {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+    }
+
+    .template-pick .radio-dot {
+      width: 15px;
+      height: 15px;
+    }
+
+    .template-pick.is-selected .radio-dot {
+      border-color: var(--brand);
+    }
+
+    .template-pick.is-selected .radio-dot::after {
+      transform: scale(1);
+    }
+
+    .template-pick__main {
+      min-width: 0;
+    }
+
+    .template-pick__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .template-pick__main span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .template-pick__side {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .template-pick__side strong {
+      color: var(--text-2);
+      font-family: var(--font-sans);
+      font-size: 9px;
+      font-weight: 500;
+    }
+
+    .template-picker__empty {
+      padding: 24px 12px;
+      color: var(--text-3);
+      font-size: 10px;
+      text-align: center;
+    }
+
+    .template-picker__foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding-top: 12px;
+    }
+
+    .template-picker__foot .pagination {
+      margin-left: auto;
+    }
+
+    @media (max-width: 1180px) {
+      .editor-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .summary-card {
+        position: static;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .mode-cards {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .editor-section__head,
+      .editor-section__body {
+        padding: 18px;
+      }
+
+      .weight-row {
+        grid-template-columns: 76px minmax(0, 1fr) 38px;
+        gap: 9px;
+      }
+    }
+  </style>
+</head>
+<body data-role="teacher" data-nav="courses">
+  <div data-app-header></div>
+
+  <div class="context-bar">
+    <div class="context-bar__inner">
+      <div class="breadcrumb">
+        <a href="courses.html?role=teacher">课程</a>
+        <span class="breadcrumb__sep">/</span>
+        <a href="course-detail.html?role=teacher">语文教学论</a>
+        <span class="breadcrumb__sep">/</span>
+        <a href="teacher-tasks.html">任务</a>
+        <span class="breadcrumb__sep">/</span>
+        <span class="breadcrumb__current">新建任务</span>
+      </div>
+      <div class="context-tabs">
+        <a class="context-tab" href="course-detail.html?role=teacher">课程概览</a>
+        <a class="context-tab is-active" href="teacher-tasks.html">任务</a>
+        <a class="context-tab" href="stats.html">统计</a>
+      </div>
+    </div>
+  </div>
+
+  <main class="page page--form">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">TASK EDITOR / 新建任务</p>
+        <h1 class="page-title">新建任务</h1>
+        <p class="page-lead">从训练模板填充，或从空白开始。发布后配置锁定，学生将在任务列表中看到。</p>
+      </div>
+      <div class="head-actions">
+        <button class="btn btn--ghost" type="button" data-toast="任务预览（原型演示）。"><span data-icon="eye"></span>预览</button>
+        <button class="btn btn--primary" type="button" data-open="publish-modal"><span data-icon="check-circle"></span>发布任务</button>
+      </div>
+    </header>
+
+    <div class="editor-layout">
+      <div class="editor-form">
+        <section class="editor-section">
+          <div class="editor-section__head">
+            <span class="editor-section__num">01</span>
+            <div>
+              <h2>基本信息</h2>
+              <p>课题、模式与时长；课题发布后不可修改。</p>
+            </div>
+          </div>
+          <div class="editor-section__body">
+            <div class="template-source">
+              <span data-icon="layers"></span>
+              <div class="template-source__main">
+                <strong>从训练模板填充</strong>
+                <span id="template-source-note">未选择模板；可选「荷塘月色（我的副本）」预填课题、时长、权重与虚拟学生</span>
+              </div>
+              <button class="btn btn--secondary btn--sm" type="button" data-open="template-picker-modal"><span data-icon="search"></span>选择模板</button>
+            </div>
+
+            <span class="label" style="margin-bottom:8px">任务模式</span>
+            <div class="mode-cards" data-tabs="editor-mode" role="tablist" aria-label="任务模式">
+              <button class="mode-card" type="button" role="tab" aria-selected="false" data-tab="free">
+                <span class="mode-card__icon"><span data-icon="podium"></span></span>
+                <strong>自由试讲</strong>
+                <span>自选课题、材料与虚拟学生，完整试讲。</span>
+              </button>
+              <button class="mode-card" type="button" role="tab" aria-selected="false" data-tab="scenario">
+                <span class="mode-card__icon"><span data-icon="book-open"></span></span>
+                <strong>情景试讲</strong>
+                <span>设置角色与情境，模拟突发课堂。</span>
+              </button>
+              <button class="mode-card" type="button" role="tab" aria-selected="true" data-tab="interview">
+                <span class="mode-card__icon"><span data-icon="message"></span></span>
+                <strong>结构化面试</strong>
+                <span>从 M5 题库选题，逐题作答。</span>
+              </button>
+            </div>
+
+            <div class="form-grid" style="margin-top:18px">
+              <label class="field">
+                <span class="label">课题 <span class="req">*</span></span>
+                <input class="input" value="教师资格证结构化面试 · 模拟" aria-label="课题">
+              </label>
+              <label class="field">
+                <span class="label">教材版本</span>
+                <input class="input" value="部编版" aria-label="教材版本">
+              </label>
+              <label class="field">
+                <span class="label">面试总时长</span>
+                <select class="select" aria-label="面试总时长">
+                  <option>5 分钟</option>
+                  <option>10 分钟</option>
+                  <option>15 分钟</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="label">已选题目</span>
+                <div class="row"><span class="badge badge--success">2 / 10</span><span class="xs faint">发布时校验题目启用状态</span></div>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="editor-section">
+          <div class="editor-section__head">
+            <span class="editor-section__num">02</span>
+            <div>
+              <h2>内容配置</h2>
+              <p>结构化面试只显示题目；自由 / 情景试讲显示材料与虚拟学生。</p>
+            </div>
+          </div>
+          <div class="editor-section__body">
+            <div data-panel-group="editor-mode">
+              <div data-panel="interview">
+                <div class="question-list">
+                  <div class="question-item">
+                    <span class="question-item__order">1</span>
+                    <div class="question-item__main">
+                      <strong>作为班主任，发现两名学生在课堂上发生争执，你会如何处理？</strong>
+                      <span>班级管理 · 应急应变 · 答案要点 3 条</span>
+                    </div>
+                    <div class="question-item__actions">
+                      <button type="button" aria-label="上移" data-toast="上移题目（原型演示）。"><span data-icon="arrow-left"></span></button>
+                      <button type="button" aria-label="下移" data-toast="下移题目（原型演示）。"><span data-icon="arrow-right"></span></button>
+                      <button type="button" aria-label="移除" data-toast="移除题目（原型演示）。"><span data-icon="x"></span></button>
+                    </div>
+                  </div>
+                  <div class="question-item">
+                    <span class="question-item__order">2</span>
+                    <div class="question-item__main">
+                      <strong>你如何看待“没有教不好的学生，只有不会教的老师”这句话？</strong>
+                      <span>教育理念 · 职业认知 · 答案要点 4 条</span>
+                    </div>
+                    <div class="question-item__actions">
+                      <button type="button" aria-label="上移" data-toast="上移题目（原型演示）。"><span data-icon="arrow-left"></span></button>
+                      <button type="button" aria-label="下移" data-toast="下移题目（原型演示）。"><span data-icon="arrow-right"></span></button>
+                      <button type="button" aria-label="移除" data-toast="移除题目（原型演示）。"><span data-icon="x"></span></button>
+                    </div>
+                  </div>
+                </div>
+                <div class="question-foot">
+                  <span class="xs">最多 10 道；发布后题目与顺序锁定。</span>
+                  <button class="btn btn--secondary btn--sm" type="button" data-open="question-drawer"><span data-icon="search"></span>从题库选题</button>
+                </div>
+              </div>
+
+              <div data-panel="free" hidden>
+                <div class="upload-zone" data-toast="选择参考材料（原型演示）。">
+                  <span data-icon="upload"></span>
+                  <strong>上传参考材料</strong>
+                  <span>支持 .txt / .md，上传后由后端解析文本</span>
+                </div>
+                <div class="upload-file">
+                  <span data-icon="file"></span>
+                  <div class="upload-file__main"><strong>荷塘月色_教学设计.pdf</strong><span>12,400 字 · application/pdf · 已解析</span></div>
+                  <button class="btn btn--ghost btn--xs" type="button" data-toast="移除材料（原型演示）。">移除</button>
+                </div>
+                <div class="student-compact">
+                  <div class="student-row"><span class="avatar avatar--sm avatar--cinnabar">周</span><div class="student-row__main"><strong>周予安</strong><span>活跃型 · 提问率 64%</span></div><span class="xs faint">86%</span></div>
+                  <div class="student-row"><span class="avatar avatar--sm avatar--gold">陈</span><div class="student-row__main"><strong>陈一诺</strong><span>沉稳型 · 正确率 82%</span></div><span class="xs faint">72%</span></div>
+                  <div class="student-row"><span class="avatar avatar--sm avatar--blue">许</span><div class="student-row__main"><strong>许知远</strong><span>内向型 · 注意 48%</span></div><span class="xs faint">48%</span></div>
+                </div>
+                <button class="btn btn--ghost btn--sm" type="button" data-toast="编辑虚拟学生（原型演示）。" style="margin-top:9px"><span data-icon="users"></span>编辑虚拟学生</button>
+              </div>
+
+              <div data-panel="scenario" hidden>
+                <div class="form-grid">
+                  <label class="field"><span class="label">角色</span><input class="input" placeholder="例如：班主任" aria-label="角色"></label>
+                  <label class="field"><span class="label">情境</span><input class="input" placeholder="例如：开学第一课" aria-label="情境"></label>
+                  <label class="field span-2"><span class="label">参考材料</span><div class="upload-zone" data-toast="选择参考材料（原型演示）。"><span data-icon="upload"></span><strong>上传参考材料</strong><span>支持 .txt / .md</span></div></label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="editor-section">
+          <div class="editor-section__head">
+            <span class="editor-section__num">03</span>
+            <div>
+              <h2>评分权重</h2>
+              <p>合计必须为 100；发布后不可修改。权重只影响最终分计算。</p>
+            </div>
+          </div>
+          <div class="editor-section__body">
+            <div class="weight-stack" aria-hidden="true">
+              <span style="width:30%" data-weight-bar="content"></span>
+              <span style="width:20%" data-weight-bar="expression"></span>
+              <span style="width:20%" data-weight-bar="interaction"></span>
+              <span style="width:15%" data-weight-bar="board"></span>
+              <span style="width:15%" data-weight-bar="time"></span>
+            </div>
+            <div class="weight-row">
+              <label for="w-content">教学内容</label>
+              <input id="w-content" type="range" min="0" max="100" value="30" data-weight="content" aria-label="教学内容权重">
+              <output id="o-content">30</output>
+            </div>
+            <div class="weight-row">
+              <label for="w-expression">教学表达</label>
+              <input id="w-expression" type="range" min="0" max="100" value="20" data-weight="expression" aria-label="教学表达权重">
+              <output id="o-expression">20</output>
+            </div>
+            <div class="weight-row">
+              <label for="w-interaction">课堂互动</label>
+              <input id="w-interaction" type="range" min="0" max="100" value="20" data-weight="interaction" aria-label="课堂互动权重">
+              <output id="o-interaction">20</output>
+            </div>
+            <div class="weight-row">
+              <label for="w-board">板书 / PPT</label>
+              <input id="w-board" type="range" min="0" max="100" value="15" data-weight="board" aria-label="板书权重">
+              <output id="o-board">15</output>
+            </div>
+            <div class="weight-row">
+              <label for="w-time">时间管理</label>
+              <input id="w-time" type="range" min="0" max="100" value="15" data-weight="time" aria-label="时间管理权重">
+              <output id="o-time">15</output>
+            </div>
+            <div class="weight-total is-good" id="weight-total">
+              <span>权重合计</span>
+              <strong><span id="weight-sum">100</span> / 100</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="editor-section">
+          <div class="editor-section__head">
+            <span class="editor-section__num">04</span>
+            <div>
+              <h2>发布设置</h2>
+              <p>发布后学生即可在任务列表看到；配置与题目快照锁定。</p>
+            </div>
+          </div>
+          <div class="editor-section__body">
+            <div class="publish-settings">
+              <div class="publish-row">
+                <div class="publish-row__main"><strong>分配范围</strong><span>语文教学论 · 32 名在课学生</span></div>
+                <span class="badge badge--success">全部在课学生</span>
+              </div>
+              <div class="publish-row">
+                <div class="publish-row__main"><strong>截止时间</strong><span>学生需在此时间前提交；关闭后不可开始</span></div>
+                <input class="input" type="date" value="2026-11-22" style="width:160px" aria-label="截止时间">
+              </div>
+              <label class="check-row">
+                <input type="checkbox" checked hidden>
+                <span class="check-box"><span data-icon="check"></span></span>
+                <span>允许学生在任务关闭前继续提交已开始的会话。</span>
+              </label>
+              <label class="check-row">
+                <input type="checkbox" hidden>
+                <span class="check-box"><span data-icon="check"></span></span>
+                <span>发布后通知学生（本轮仅站内提醒，不发送邮件）。</span>
+              </label>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside>
+        <section class="summary-card">
+          <div class="summary-card__head">
+            <p class="eyebrow eyebrow--plain">TASK SUMMARY</p>
+            <h2>任务摘要</h2>
+            <p>教师资格证结构化面试 · 模拟</p>
+          </div>
+          <dl class="summary-list">
+            <div class="summary-row"><dt>来源模板</dt><dd id="summary-template">未选择</dd></div>
+            <div class="summary-row"><dt>模式</dt><dd id="summary-mode">结构化面试</dd></div>
+            <div class="summary-row"><dt>总时长</dt><dd>5 分钟</dd></div>
+            <div class="summary-row"><dt>题目</dt><dd>2 道</dd></div>
+            <div class="summary-row"><dt>权重</dt><dd><span id="summary-weights">30 / 20 / 20 / 15 / 15</span></dd></div>
+            <div class="summary-row"><dt>分配学生</dt><dd>32 人</dd></div>
+            <div class="summary-row"><dt>截止时间</dt><dd>2026-11-22</dd></div>
+          </dl>
+          <div class="checklist">
+            <div class="check-item"><span data-icon="check-circle"></span><span>基本信息完整</span></div>
+            <div class="check-item"><span data-icon="check-circle"></span><span>题目 2 / 10，均有答案要点</span></div>
+            <div class="check-item" id="weight-check"><span data-icon="check-circle"></span><span>权重合计 100%</span></div>
+            <div class="check-item"><span data-icon="check-circle"></span><span>在课学生 32 人</span></div>
+            <div class="check-item check-item--warn"><span data-icon="alert-triangle"></span><span>发布后不可修改配置</span></div>
+          </div>
+          <div class="summary-card__foot">
+            <button class="btn btn--primary btn--block" type="button" data-open="publish-modal"><span data-icon="check-circle"></span>发布任务</button>
+            <p>发布后配置锁定，学生将立即看到该任务。</p>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Template picker modal -->
+  <div class="overlay" data-overlay-for="template-picker-modal"></div>
+  <div class="modal modal--wide" id="template-picker-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="template-picker-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="template-picker-title">从训练模板填充</div>
+        <div class="drawer__sub">搜索并选择一个模板；可预填课题、时长、权重与虚拟学生</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="template-picker-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="template-picker__search">
+        <label class="input-affix">
+          <span data-icon="search"></span>
+          <input class="input" type="search" id="template-picker-search" placeholder="搜索模板 / 课题" aria-label="搜索模板">
+        </label>
+        <select class="select" style="width:140px" aria-label="模板档位">
+          <option>全部档位</option>
+          <option>进阶</option>
+          <option>模拟考核</option>
+        </select>
+      </div>
+      <div class="template-picker__list" id="template-picker-list" role="listbox" aria-label="训练模板列表">
+        <button class="template-pick" type="button" role="option" aria-selected="false" data-template-name="荷塘月色（我的副本）" data-template-detail="进阶 · 20 分钟 · 3 名虚拟学生">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <div class="template-pick__main"><strong>荷塘月色（我的副本）</strong><span>语文教学论 · 王宁 · 进阶 · 20 分钟</span></div>
+          <div class="template-pick__side"><strong>3 门课程</strong><span>更新于 11-15</span></div>
+        </button>
+        <button class="template-pick" type="button" role="option" aria-selected="false" data-template-name="全真模拟 · 我的配置" data-template-detail="模拟考核 · 20 分钟 · 4 名虚拟学生">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <div class="template-pick__main"><strong>全真模拟 · 我的配置</strong><span>微格教学实训 · 模拟考核 · 20 分钟</span></div>
+          <div class="template-pick__side"><strong>2 门课程</strong><span>更新于 11-13</span></div>
+        </button>
+        <button class="template-pick" type="button" role="option" aria-selected="false" data-template-name="少年闰土 · 进阶" data-template-detail="进阶 · 15 分钟 · 2 名虚拟学生">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <div class="template-pick__main"><strong>少年闰土 · 进阶</strong><span>微格教学实训 · 李静 · 进阶 · 15 分钟</span></div>
+          <div class="template-pick__side"><strong>0 门课程</strong><span>更新于 11-08</span></div>
+        </button>
+        <button class="template-pick" type="button" role="option" aria-selected="false" data-template-name="古诗二首 · 进阶" data-template-detail="进阶 · 20 分钟 · 3 名虚拟学生">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <div class="template-pick__main"><strong>古诗二首 · 进阶</strong><span>语文教学论 · 王宁 · 进阶 · 20 分钟</span></div>
+          <div class="template-pick__side"><strong>0 门课程</strong><span>更新于 10-30</span></div>
+        </button>
+        <button class="template-pick" type="button" role="option" aria-selected="false" data-template-name="教师口语 · 朗读模板" data-template-detail="进阶 · 10 分钟 · 2 名虚拟学生">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <div class="template-pick__main"><strong>教师口语 · 朗读模板</strong><span>教师口语 · 陈岚 · 进阶 · 10 分钟</span></div>
+          <div class="template-pick__side"><strong>1 门课程</strong><span>更新于 10-28</span></div>
+        </button>
+      </div>
+      <div class="template-picker__empty" id="template-picker-empty" hidden>没有匹配的模板；请调整搜索词。</div>
+      <div class="template-picker__foot">
+        <span class="pagination__info" id="template-picker-info">共 5 个模板 · 第 1 / 1 页</span>
+        <div class="pagination" aria-label="模板列表分页">
+          <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+          <button class="pagination__btn is-active" type="button">1</button>
+          <button class="pagination__btn" type="button" data-toast="第 2 页（原型演示）。">2</button>
+          <button class="pagination__btn" type="button" data-toast="第 3 页（原型演示）。">3</button>
+          <button class="pagination__btn" type="button" data-toast="下一页（原型演示）。" aria-label="下一页">›</button>
+        </div>
+      </div>
+      <div class="lazy-foot">滚动加载更多 · 已显示 5 / 32 个模板</div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="template-picker-modal">取消</button>
+      <button class="btn btn--primary" type="button" id="use-template" data-close="template-picker-modal" disabled><span data-icon="check"></span>使用该模板</button>
+    </div>
+  </div>
+
+  <!-- Question picker drawer -->
+  <div class="overlay" data-overlay-for="question-drawer"></div>
+  <aside class="drawer drawer--wide" id="question-drawer" aria-hidden="true" aria-labelledby="question-drawer-title">
+    <div class="drawer__head">
+      <div>
+        <div class="drawer__title" id="question-drawer-title">从题库选择题目</div>
+        <div class="drawer__sub">本校题库 · 停用题目不会出现在列表</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="question-drawer" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="drawer__body">
+      <div class="row" style="margin-bottom:14px">
+        <label class="input-affix" style="flex:1"><span data-icon="search"></span><input class="input" type="search" placeholder="搜索题干 / 答案要点" aria-label="搜索题目"></label>
+        <select class="select" style="width:150px" aria-label="题目类别"><option>全部类别</option><option>教育理念</option><option>班级管理</option><option>应急应变</option></select>
+      </div>
+      <div class="question-list">
+        <div class="question-item">
+          <span class="question-item__order">01</span>
+          <div class="question-item__main"><strong>作为班主任，发现两名学生在课堂上发生争执，你会如何处理？</strong><span>班级管理 · 应急应变 · 答案要点 3 条</span></div>
+          <span class="badge badge--success">已选</span>
+        </div>
+        <div class="question-item">
+          <span class="question-item__order">02</span>
+          <div class="question-item__main"><strong>你如何看待“没有教不好的学生，只有不会教的老师”这句话？</strong><span>教育理念 · 职业认知 · 答案要点 4 条</span></div>
+          <span class="badge badge--success">已选</span>
+        </div>
+        <div class="question-item">
+          <span class="question-item__order">03</span>
+          <div class="question-item__main"><strong>学生上课玩手机，你提醒后他仍然继续，你会怎么做？</strong><span>班级管理 · 纪律处理 · 答案要点 3 条</span></div>
+          <span class="badge">未选</span>
+        </div>
+        <div class="question-item">
+          <span class="question-item__order">04</span>
+          <div class="question-item__main"><strong>如果公开课上多媒体设备突然故障，你会如何应对？</strong><span>应急应变 · 课堂管理 · 答案要点 2 条</span></div>
+          <span class="badge">未选</span>
+        </div>
+      </div>
+    </div>
+    <div class="drawer__foot">
+      <span class="xs faint" style="margin-right:auto">已选 2 / 10</span>
+      <button class="btn btn--secondary" type="button" data-close="question-drawer">取消</button>
+      <button class="btn btn--primary" type="button" data-close="question-drawer" data-toast="已更新选题（原型演示）。">确定</button>
+    </div>
+  </aside>
+
+  <!-- Publish modal -->
+  <div class="overlay" data-overlay-for="publish-modal"></div>
+  <div class="modal" id="publish-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="publish-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="publish-title">发布任务？</div>
+        <div class="drawer__sub">发布后配置锁定，学生将看到该任务。</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="publish-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="stack" style="gap:8px">
+        <div class="check-item"><span data-icon="check-circle"></span><span>基本信息完整</span></div>
+        <div class="check-item"><span data-icon="check-circle"></span><span>题目 2 道，均有答案要点</span></div>
+        <div class="check-item"><span data-icon="check-circle"></span><span>权重合计 100%</span></div>
+        <div class="check-item"><span data-icon="check-circle"></span><span>在课学生 32 人</span></div>
+      </div>
+      <div class="alert alert--note" style="margin-top:16px">
+        <span data-icon="info"></span>
+        <div><span>分配学生 32 人。发布后配置与题目快照锁定，不能修改；如需调整请关闭后新建任务。</span></div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="publish-modal">取消</button>
+      <a class="btn btn--primary" href="teacher-tasks.html"><span data-icon="check"></span>确认发布</a>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+  <script>
+    const weightInputs = Array.from(document.querySelectorAll("[data-weight]"));
+    const weightBars = Array.from(document.querySelectorAll("[data-weight-bar]"));
+    const weightSum = document.getElementById("weight-sum");
+    const weightTotal = document.getElementById("weight-total");
+    const weightCheck = document.getElementById("weight-check");
+    const summaryWeights = document.getElementById("summary-weights");
+
+    function updateWeights() {
+      let total = 0;
+      const values = {};
+      weightInputs.forEach(function (input) {
+        const value = Number(input.value);
+        values[input.dataset.weight] = value;
+        total += value;
+        document.getElementById("o-" + input.dataset.weight).textContent = value;
+      });
+      weightBars.forEach(function (bar) {
+        const value = values[bar.dataset.weightBar] || 0;
+        bar.style.width = (total > 0 ? (value / total) * 100 : 0) + "%";
+      });
+      weightSum.textContent = total;
+      weightTotal.classList.toggle("is-good", total === 100);
+      weightTotal.classList.toggle("is-bad", total !== 100);
+      summaryWeights.textContent = weightInputs.map(function (input) { return input.value; }).join(" / ");
+      weightCheck.innerHTML = '<span data-icon="' + (total === 100 ? "check-circle" : "alert-triangle") + '"></span><span>权重合计 ' + total + '%' + (total === 100 ? "" : "（需调整为 100）") + "</span>";
+      weightCheck.classList.toggle("check-item--warn", total !== 100);
+      window.PrototypeUI.hydrateIcons(weightCheck);
+    }
+
+    weightInputs.forEach(function (input) { input.addEventListener("input", updateWeights); });
+    updateWeights();
+
+    document.querySelectorAll('[data-tabs="editor-mode"] [data-tab]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        const labels = { free: "自由试讲", scenario: "情景试讲", interview: "结构化面试" };
+        document.getElementById("summary-mode").textContent = labels[button.dataset.tab] || "—";
+      });
+    });
+
+    const templatePicks = Array.from(document.querySelectorAll("[data-template-name]"));
+    const templateSearch = document.getElementById("template-picker-search");
+    const templateEmpty = document.getElementById("template-picker-empty");
+    const templateInfo = document.getElementById("template-picker-info");
+    const useTemplate = document.getElementById("use-template");
+    let selectedTemplate = null;
+
+    templatePicks.forEach(function (pick) {
+      pick.addEventListener("click", function () {
+        templatePicks.forEach(function (item) {
+          item.classList.remove("is-selected");
+          item.setAttribute("aria-selected", "false");
+        });
+        pick.classList.add("is-selected");
+        pick.setAttribute("aria-selected", "true");
+        selectedTemplate = pick;
+        useTemplate.disabled = false;
+      });
+    });
+
+    templateSearch.addEventListener("input", function () {
+      const keyword = templateSearch.value.trim().toLowerCase();
+      let visible = 0;
+      templatePicks.forEach(function (pick) {
+        const match = !keyword || pick.dataset.templateName.toLowerCase().includes(keyword);
+        pick.hidden = !match;
+        if (match) visible += 1;
+      });
+      templateEmpty.hidden = visible > 0;
+      templateInfo.textContent = "共 " + visible + " 个模板 · 第 1 / 1 页";
+    });
+
+    useTemplate.addEventListener("click", function () {
+      if (!selectedTemplate) return;
+      document.getElementById("template-source-note").textContent = "已选择：" + selectedTemplate.dataset.templateName + " · " + selectedTemplate.dataset.templateDetail;
+      document.getElementById("summary-template").textContent = selectedTemplate.dataset.templateName;
+      window.PrototypeUI.toast("已填充模板配置（原型演示）。");
+    });
+  </script>
+</body>
+</html>

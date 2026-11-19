@@ -340,7 +340,7 @@ class RecordingConcurrencyIT extends PostgresIntegrationTest {
     }
 
     private TaskId publishFreeTask() {
-        TaskView view = taskApplicationService.createDraft(
+        TaskView view = taskApplicationService.createPreparedTask(
                 teacher(), freeCommandWithStudent());
         TaskId taskId = new TaskId(view.taskId());
         materialService.upload(

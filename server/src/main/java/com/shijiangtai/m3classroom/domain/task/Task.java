@@ -21,6 +21,8 @@ public final class Task {
     private int configVersion;
     private Instant publishedAt;
     private Instant closedAt;
+    private Instant deletedAt;
+    private AccountId deletedBy;
     private Instant updatedAt;
 
     private Task(
@@ -34,6 +36,8 @@ public final class Task {
             int configVersion,
             Instant publishedAt,
             Instant closedAt,
+            Instant deletedAt,
+            AccountId deletedBy,
             Instant createdAt,
             Instant updatedAt) {
         this.id = id;
@@ -46,19 +50,25 @@ public final class Task {
         this.configVersion = configVersion;
         this.publishedAt = publishedAt;
         this.closedAt = closedAt;
+        this.deletedAt = deletedAt;
+        this.deletedBy = deletedBy;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
 
-    public static Task createDraft(
+    /**
+     * Creates a task that will be published in the same transaction. The instance is not
+     * persisted until {@link #publishInitial(TaskSnapshot, ReferenceMaterial, Instant)} succeeds.
+     */
+    public static Task create(
             TaskId id, CourseId courseId, AccountId createdBy, TaskDraft draft, Instant now) {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(courseId, "courseId");
         Objects.requireNonNull(createdBy, "createdBy");
         Objects.requireNonNull(draft, "draft");
         Objects.requireNonNull(now, "now");
-        return new Task(id, courseId, createdBy, draft, TaskStatus.DRAFT,
-                null, null, 0, null, null, now, now);
+        return new Task(id, courseId, createdBy, draft, TaskStatus.PUBLISHED,
+                null, null, 1, null, null, null, null, now, now);
     }
 
     public static Task rehydrate(
@@ -72,6 +82,8 @@ public final class Task {
             int configVersion,
             Instant publishedAt,
             Instant closedAt,
+            Instant deletedAt,
+            AccountId deletedBy,
             Instant createdAt,
             Instant updatedAt) {
         Objects.requireNonNull(id, "id");
@@ -82,24 +94,47 @@ public final class Task {
         Objects.requireNonNull(createdAt, "createdAt");
         Objects.requireNonNull(updatedAt, "updatedAt");
         return new Task(id, courseId, createdBy, draft, status, referenceMaterial, snapshot,
-                configVersion, publishedAt, closedAt, createdAt, updatedAt);
+                configVersion, publishedAt, closedAt, deletedAt, deletedBy, createdAt, updatedAt);
     }
 
-    public boolean updateDraft(TaskDraft newDraft, Instant now) {
-        assertDraft();
+    /**
+     * Rehydrates a row written before the soft-delete columns existed. New code should
+     * pass deletedAt/deletedBy explicitly.
+     */
+    public static Task rehydrate(
+            TaskId id,
+            CourseId courseId,
+            AccountId createdBy,
+            TaskDraft draft,
+            TaskStatus status,
+            ReferenceMaterial referenceMaterial,
+            TaskSnapshot snapshot,
+            int configVersion,
+            Instant publishedAt,
+            Instant closedAt,
+            Instant createdAt,
+            Instant updatedAt) {
+        return rehydrate(id, courseId, createdBy, draft, status, referenceMaterial, snapshot,
+                configVersion, publishedAt, closedAt, null, null, createdAt, updatedAt);
+    }
+
+    /**
+     * Applies an edit. Callers must ensure there are no sessions or submissions first.
+     */
+    public boolean updateConfiguration(
+            TaskDraft newDraft, ReferenceMaterial newMaterial, Instant now) {
+        assertEditable();
         Objects.requireNonNull(newDraft, "newDraft");
         Objects.requireNonNull(now, "now");
         boolean modeChanged = draft.mode() != newDraft.mode();
         this.draft = newDraft;
-        if (modeChanged) {
-            this.referenceMaterial = null;
-        }
+        this.referenceMaterial = newMaterial;
         this.updatedAt = now;
         return modeChanged;
     }
 
     public void attachMaterial(ReferenceMaterial material, Instant now) {
-        assertDraft();
+        assertEditable();
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(now, "now");
         this.referenceMaterial = material;
@@ -107,16 +142,37 @@ public final class Task {
     }
 
     public void removeMaterial(Instant now) {
-        assertDraft();
+        assertEditable();
         Objects.requireNonNull(now, "now");
         this.referenceMaterial = null;
         this.updatedAt = now;
     }
 
+    public void publishInitial(
+            TaskSnapshot snapshot, ReferenceMaterial material, Instant now) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(now, "now");
+        this.snapshot = snapshot;
+        this.referenceMaterial = material;
+        this.status = TaskStatus.PUBLISHED;
+        this.configVersion = 1;
+        this.publishedAt = now;
+        this.updatedAt = now;
+    }
+
+    public void republish(TaskSnapshot snapshot, Instant now) {
+        assertEditable();
+        Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(now, "now");
+        this.snapshot = snapshot;
+        this.configVersion += 1;
+        this.updatedAt = now;
+    }
+
     public void close(Instant now) {
         Objects.requireNonNull(now, "now");
-        if (status == TaskStatus.DRAFT) {
-            throw new DomainException(ErrorCode.TASK_NOT_DRAFT, "任务尚未发布");
+        if (status == TaskStatus.DELETED) {
+            throw new DomainException(ErrorCode.TASK_DELETED, "任务已删除");
         }
         if (status == TaskStatus.CLOSED) {
             throw new DomainException(ErrorCode.TASK_CLOSED, "任务已关闭");
@@ -126,21 +182,26 @@ public final class Task {
         this.updatedAt = now;
     }
 
-    public void publish(TaskSnapshot snapshot, Instant now) {
-        assertDraft();
-        Objects.requireNonNull(snapshot, "snapshot");
+    public void softDelete(AccountId deletedBy, Instant now) {
+        Objects.requireNonNull(deletedBy, "deletedBy");
         Objects.requireNonNull(now, "now");
-        this.snapshot = snapshot;
-        this.status = TaskStatus.PUBLISHED;
-        this.configVersion = 1;
-        this.publishedAt = now;
+        if (status == TaskStatus.DELETED) {
+            throw new DomainException(ErrorCode.TASK_DELETED, "任务已删除");
+        }
+        this.status = TaskStatus.DELETED;
+        this.deletedAt = now;
+        this.deletedBy = deletedBy;
         this.updatedAt = now;
     }
 
-    public void assertDraft() {
-        if (status != TaskStatus.DRAFT) {
-            throw new DomainException(ErrorCode.TASK_NOT_DRAFT,
-                    "任务不是草稿", Map.of("status", status.wireValue()));
+    public void assertEditable() {
+        if (status == TaskStatus.DELETED) {
+            throw new DomainException(ErrorCode.TASK_DELETED,
+                    "任务已删除", Map.of("status", status.wireValue()));
+        }
+        if (status == TaskStatus.CLOSED) {
+            throw new DomainException(ErrorCode.TASK_CLOSED,
+                    "任务已关闭", Map.of("status", status.wireValue()));
         }
     }
 
@@ -182,6 +243,14 @@ public final class Task {
 
     public Instant closedAt() {
         return closedAt;
+    }
+
+    public Instant deletedAt() {
+        return deletedAt;
+    }
+
+    public AccountId deletedBy() {
+        return deletedBy;
     }
 
     public Instant createdAt() {

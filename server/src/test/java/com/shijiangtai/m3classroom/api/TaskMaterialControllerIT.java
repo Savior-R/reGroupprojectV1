@@ -97,19 +97,23 @@ class TaskMaterialControllerIT extends PostgresIntegrationTest {
     }
 
     private TaskId createFreeTask() {
-        TaskView view = applicationService.createDraft(
+        TaskView view = applicationService.create(
                 TEACHER, new CreateTaskCommand(
                         new CourseId(COURSE_ID), TaskMode.FREE, "荷塘月色", "部编版",
-                        null, null, null, null, List.of(), null));
+                        null, null, null, null, List.of(com.shijiangtai.m3classroom.TestFixtures.virtualStudentSpec()), null),
+                new com.shijiangtai.m3classroom.application.command.MaterialUpload(
+                        "seed.txt", "text/plain",
+                        "这是一份足够长的参考材料文本内容，用于材料接口测试。"
+                                .getBytes(StandardCharsets.UTF_8)));
         return new TaskId(view.taskId());
     }
 
     private TaskId createInterviewTask() {
-        TaskView view = applicationService.createDraft(
+        TaskView view = applicationService.create(
                 TEACHER, new CreateTaskCommand(
                         new CourseId(COURSE_ID), TaskMode.INTERVIEW, "结构化面试", null,
                         null, null, null, null, List.of(),
-                        new QuestionConfig(List.of(new QuestionId(QUESTION1_ID)), 300)));
+                        new QuestionConfig(List.of(new QuestionId(QUESTION1_ID)), 300)), null);
         return new TaskId(view.taskId());
     }
 

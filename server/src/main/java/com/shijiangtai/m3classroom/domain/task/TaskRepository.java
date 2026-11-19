@@ -13,7 +13,5 @@ public interface TaskRepository {
 
     List<Task> findByCourse(CourseId courseId);
 
-    void delete(TaskId id);
-
     <T> T withLock(TaskId id, Function<Task, T> action);
 }

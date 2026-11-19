@@ -513,7 +513,7 @@ class RecordingLifecycleServiceTest {
 
     private TaskId newOpenTask() {
         TaskId taskId = new TaskId(UUID.randomUUID());
-        tasks.save(Task.createDraft(
+        tasks.save(Task.create(
                 taskId, COURSE, TEACHER, freeDraft(), NOW.minus(Duration.ofDays(3))));
         return taskId;
     }

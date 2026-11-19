@@ -56,11 +56,6 @@ public class TaskRepositoryAdapter implements TaskRepository {
     }
 
     @Override
-    public void delete(TaskId id) {
-        taskRepository.deleteById(id.value());
-    }
-
-    @Override
     public <T> T withLock(TaskId id, Function<Task, T> action) {
         TaskEntity entity = taskRepository.findByIdForUpdate(id.value())
                 .orElseThrow(() -> new DomainException(ErrorCode.RESOURCE_NOT_FOUND,
@@ -91,6 +86,8 @@ public class TaskRepositoryAdapter implements TaskRepository {
         entity.setCreatedBy(task.createdBy().value());
         entity.setPublishedAt(task.publishedAt());
         entity.setClosedAt(task.closedAt());
+        entity.setDeletedAt(task.deletedAt());
+        entity.setDeletedBy(task.deletedBy() == null ? null : task.deletedBy().value());
         entity.setCreatedAt(task.createdAt());
         entity.setUpdatedAt(task.updatedAt());
         return entity;
@@ -145,6 +142,8 @@ public class TaskRepositoryAdapter implements TaskRepository {
                 entity.getConfigVersion(),
                 entity.getPublishedAt(),
                 entity.getClosedAt(),
+                entity.getDeletedAt(),
+                entity.getDeletedBy() == null ? null : new AccountId(entity.getDeletedBy()),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());
     }

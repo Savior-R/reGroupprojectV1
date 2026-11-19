@@ -84,7 +84,7 @@ class ReplayControllerIT extends PostgresIntegrationTest {
 
     @BeforeEach
     void publishTask() {
-        TaskView view = taskApplicationService.createDraft(teacher(), freeCommandWithStudent());
+        TaskView view = taskApplicationService.createPreparedTask(teacher(), freeCommandWithStudent());
         taskId = new TaskId(view.taskId());
         materialService.upload(
                 teacher(), taskId, "a.txt", "text/plain",

@@ -1,10 +1,10 @@
 package com.shijiangtai.m3classroom.application;
 
 import com.shijiangtai.m3classroom.application.command.CreateTaskCommand;
+import com.shijiangtai.m3classroom.application.command.MaterialUpload;
 import com.shijiangtai.m3classroom.application.command.StudentTaskQuery;
 import com.shijiangtai.m3classroom.application.command.TaskQuery;
 import com.shijiangtai.m3classroom.application.command.UpdateTaskCommand;
-import com.shijiangtai.m3classroom.application.view.PublishResult;
 import com.shijiangtai.m3classroom.application.view.StudentTaskDetailView;
 import com.shijiangtai.m3classroom.application.view.StudentTaskView;
 import com.shijiangtai.m3classroom.application.view.TaskAssignmentView;
@@ -16,13 +16,19 @@ import com.shijiangtai.shared.domain.PageResult;
 import com.shijiangtai.shared.domain.TaskId;
 
 public interface TaskApplicationService {
-    TaskView createDraft(CurrentUser teacher, CreateTaskCommand command);
+    TaskView create(CurrentUser teacher, CreateTaskCommand command, MaterialUpload material);
+
+    /** Test/legacy preparation hook; not exposed by TaskController. */
+    TaskView createPreparedTask(CurrentUser teacher, CreateTaskCommand command);
 
     TaskView get(CurrentUser teacher, TaskId taskId);
 
-    TaskView updateDraft(CurrentUser teacher, TaskId taskId, UpdateTaskCommand command);
+    TaskView update(
+            CurrentUser teacher, TaskId taskId, UpdateTaskCommand command, MaterialUpload material);
 
-    void deleteDraft(CurrentUser teacher, TaskId taskId);
+    void softDelete(CurrentUser teacher, TaskId taskId);
+
+    void close(CurrentUser teacher, TaskId taskId);
 
     PageResult<TaskCardView> listCourseTasks(
             CurrentUser teacher, CourseId courseId, TaskQuery query);

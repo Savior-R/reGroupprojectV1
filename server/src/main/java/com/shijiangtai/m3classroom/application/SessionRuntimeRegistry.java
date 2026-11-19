@@ -10,8 +10,11 @@ import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentDynamics;
 import com.shijiangtai.m3classroom.domain.interview.InterviewStateMachine;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionContext;
+import com.shijiangtai.m3classroom.application.port.TrainingSessionConfigPort;
+import com.shijiangtai.m3classroom.application.port.TrainingSessionConfigPort.TrainingSessionConfig;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
+import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.m3classroom.domain.task.Task;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.m3classroom.domain.task.TaskRepository;
@@ -23,6 +26,7 @@ import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -61,6 +65,7 @@ public final class SessionRuntimeRegistry {
     private final SchedulerPort scheduler;
     private final ContentGenerationService contentGeneration;
     private final ContextPersistenceWriter persistence;
+    private final TrainingSessionConfigPort trainingConfigPort;
     private final Supplier<RandomGenerator> randomFactory;
 
     /**
@@ -78,9 +83,11 @@ public final class SessionRuntimeRegistry {
             ClockProvider clockProvider,
             SchedulerPort scheduler,
             ContentClient contentClient,
-            ContextPersistenceWriter persistence) {
+            ContextPersistenceWriter persistence,
+            TrainingSessionConfigPort trainingConfigPort) {
         this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
-                clockProvider, scheduler, contentClient, persistence, Random::new);
+                clockProvider, scheduler, contentClient, persistence, trainingConfigPort,
+                Random::new);
     }
 
     /**
@@ -97,7 +104,8 @@ public final class SessionRuntimeRegistry {
             ContentClient contentClient) {
         this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
                 clockProvider, scheduler, contentClient,
-                new DirectContextPersistenceWriter(eventStore, textStore));
+                new DirectContextPersistenceWriter(eventStore, textStore),
+                TrainingSessionConfigPort.unsupported(), Random::new);
     }
 
     /**
@@ -117,7 +125,8 @@ public final class SessionRuntimeRegistry {
             Supplier<RandomGenerator> randomFactory) {
         this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
                 clockProvider, scheduler, contentClient,
-                new DirectContextPersistenceWriter(eventStore, textStore), randomFactory);
+                new DirectContextPersistenceWriter(eventStore, textStore),
+                TrainingSessionConfigPort.unsupported(), randomFactory);
     }
 
     /** Full test seam: explicit persistence writer and random factory. */
@@ -132,6 +141,23 @@ public final class SessionRuntimeRegistry {
             ContentClient contentClient,
             ContextPersistenceWriter persistence,
             Supplier<RandomGenerator> randomFactory) {
+        this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
+                clockProvider, scheduler, contentClient, persistence,
+                TrainingSessionConfigPort.unsupported(), randomFactory);
+    }
+
+    private SessionRuntimeRegistry(
+            SessionRepository sessionRepository,
+            TaskRepository taskRepository,
+            SessionEventStore eventStore,
+            SessionTextStore textStore,
+            IdGenerator idGenerator,
+            ClockProvider clockProvider,
+            SchedulerPort scheduler,
+            ContentClient contentClient,
+            ContextPersistenceWriter persistence,
+            TrainingSessionConfigPort trainingConfigPort,
+            Supplier<RandomGenerator> randomFactory) {
         this.sessionRepository = Objects.requireNonNull(
                 sessionRepository, "sessionRepository");
         this.taskRepository = Objects.requireNonNull(taskRepository, "taskRepository");
@@ -143,6 +169,8 @@ public final class SessionRuntimeRegistry {
         this.contentGeneration = new ContentGenerationService(
                 Objects.requireNonNull(contentClient, "contentClient"));
         this.persistence = Objects.requireNonNull(persistence, "persistence");
+        this.trainingConfigPort = Objects.requireNonNull(
+                trainingConfigPort, "trainingConfigPort");
         this.randomFactory = Objects.requireNonNull(randomFactory, "randomFactory");
     }
 
@@ -215,6 +243,8 @@ public final class SessionRuntimeRegistry {
         return status == SessionStatus.ENDED
                 || status == SessionStatus.REVIEWING
                 || status == SessionStatus.SUBMITTED
+                || status == SessionStatus.SELECTED
+                || status == SessionStatus.EVALUATED
                 || status == SessionStatus.CANCELLED
                 || status == SessionStatus.FAILED;
     }
@@ -356,13 +386,19 @@ public final class SessionRuntimeRegistry {
         Session session = sessionRepository.findById(id)
                 .orElseThrow(() -> new DomainException(ErrorCode.RESOURCE_NOT_FOUND, "会话不存在",
                         Map.of("session_id", id.value().toString())));
-        Task task = taskRepository.findById(session.taskId())
-                .orElseThrow(() -> new DomainException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在",
-                        Map.of("task_id", session.taskId().value().toString())));
-        TaskSnapshot snapshot = task.snapshot();
-        if (snapshot == null) {
-            throw new DomainException(ErrorCode.SESSION_STATE_INVALID, "任务快照不存在",
-                    Map.of("task_id", task.id().value().toString()));
+        TaskSnapshot snapshot;
+        if (session.type() == SessionType.TRAINING) {
+            snapshot = trainingSnapshot(session);
+        } else {
+            Task task = taskRepository.findById(session.taskId())
+                    .orElseThrow(() -> new DomainException(ErrorCode.RESOURCE_NOT_FOUND,
+                            "任务不存在",
+                            Map.of("task_id", session.taskId().value().toString())));
+            snapshot = task.snapshot();
+            if (snapshot == null) {
+                throw new DomainException(ErrorCode.SESSION_STATE_INVALID, "任务快照不存在",
+                        Map.of("task_id", task.id().value().toString()));
+            }
         }
 
         VirtualStudentDynamics students = new VirtualStudentDynamics(randomFactory.get());
@@ -394,6 +430,50 @@ public final class SessionRuntimeRegistry {
                 randomFactory.get());
         actor.attachStatusListener(status -> onStatusChanged(id, actor, status));
         return actor;
+    }
+
+    /**
+     * Builds a task-snapshot-shaped view of M6's effective training config so the existing
+     * classroom actor can run unchanged. Training rows have no task id; the session id is used
+     * as the snapshot's synthetic task id, and the course id falls back to the session id for
+     * free training that is not bound to a course.
+     */
+    private TaskSnapshot trainingSnapshot(Session session) {
+        TrainingSessionConfig config = trainingConfigPort.find(session.id().value())
+                .orElseThrow(() -> new DomainException(ErrorCode.SESSION_STATE_INVALID,
+                        "训练配置不存在",
+                        Map.of("session_id", session.id().value().toString())));
+        List<TaskSnapshot.VirtualStudentSnapshot> students = config.virtualStudents().stream()
+                .map(student -> new TaskSnapshot.VirtualStudentSnapshot(
+                        student.id(),
+                        student.name(),
+                        student.avatar(),
+                        student.personalityText(),
+                        student.activity(),
+                        student.questionRate(),
+                        student.ability(),
+                        student.attentionBaseline(),
+                        student.disciplineProbability(),
+                        student.seatNo(),
+                        student.sortOrder()))
+                .toList();
+        return new TaskSnapshot(
+                1,
+                session.id().value(),
+                config.courseId() == null ? session.id().value() : config.courseId(),
+                config.schoolId(),
+                "free",
+                config.topic(),
+                "",
+                new TaskSnapshot.DurationSnapshot(
+                        config.recommendedSeconds(), config.maxSeconds()),
+                config.weights(),
+                null,
+                null,
+                students,
+                new TaskSnapshot.InterviewSnapshot(0, 0, List.of()),
+                config.createdAt(),
+                config.studentAccountId());
     }
 
     private static VirtualStudentConfig toConfig(TaskSnapshot.VirtualStudentSnapshot student) {

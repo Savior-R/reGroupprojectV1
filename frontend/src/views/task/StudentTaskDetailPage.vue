@@ -59,9 +59,9 @@ const MODE_LABELS: Record<TaskMode, string> = {
 }
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
-  draft: '草稿',
   published: '已发布',
   closed: '已关闭',
+  deleted: '已删除',
 }
 
 const ASSIGNMENT_LABELS: Record<AssignmentStatus, string> = {

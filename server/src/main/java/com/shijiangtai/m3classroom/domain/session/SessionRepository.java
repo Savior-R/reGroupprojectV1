@@ -38,6 +38,10 @@ public interface SessionRepository {
 
     long countByStudentAndTask(AccountId studentAccountId, TaskId taskId);
 
+    default long countByTask(TaskId taskId) {
+        throw new UnsupportedOperationException("countByTask is not implemented");
+    }
+
     /**
      * Task sessions whose temporary-recording retention has expired at {@code now}.
      *

@@ -166,7 +166,9 @@ public final class ClassroomWebSocketHandler extends TextWebSocketHandler {
                 SessionStatus status = actor.session().status();
                 if (status == SessionStatus.FAILED
                         || status == SessionStatus.CANCELLED
-                        || status == SessionStatus.SUBMITTED) {
+                        || status == SessionStatus.SUBMITTED
+                        || status == SessionStatus.SELECTED
+                        || status == SessionStatus.EVALUATED) {
                     // getOrCreate may have cached an actor for a terminal session. Evict it only
                     // when the persisted row is terminal too: a failed terminal save keeps the
                     // actor as a shield against rebuilding a stale in_progress row.

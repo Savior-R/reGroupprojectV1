@@ -4,6 +4,7 @@ import com.shijiangtai.m3classroom.application.port.CourseQueryPort;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
+import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.m3classroom.domain.task.CourseInfo;
 import com.shijiangtai.m3classroom.domain.task.Task;
 import com.shijiangtai.m3classroom.domain.task.TaskRepository;
@@ -68,11 +69,25 @@ public class SessionStartGuard {
                     "当前状态不允许该操作", details);
         }
 
+        // M6 training sessions have no task row. They may optionally be bound to a
+        // course; the course window is re-checked here when present.
+        if (session.type() == SessionType.TRAINING) {
+            if (session.courseId() == null) {
+                return;
+            }
+            validateCourse(session.courseId());
+            return;
+        }
+
         Task task = taskRepository.findById(session.taskId())
                 .orElseThrow(() -> new DomainException(
                         ErrorCode.RESOURCE_NOT_FOUND, "任务不存在",
                         Map.of("task_id", session.taskId().value().toString())));
         CourseId courseId = session.courseId() == null ? task.courseId() : session.courseId();
+        validateCourse(courseId);
+    }
+
+    private void validateCourse(CourseId courseId) {
         CourseInfo course = courseQueryPort.findCourse(courseId)
                 .orElseThrow(() -> new DomainException(
                         ErrorCode.RESOURCE_NOT_FOUND, "课程不存在",

@@ -81,7 +81,7 @@ class SessionEndPersistenceFailureIT extends PostgresIntegrationTest {
                 ControllableContextPersistenceWriter writer) {
             return new SessionRuntimeRegistry(
                     sessionRepository, taskRepository, eventStore, textStore, idGenerator,
-                    clockProvider, scheduler, contentClient, writer, Random::new);
+                    clockProvider, scheduler, contentClient, writer, () -> new Random());
         }
     }
 
@@ -166,7 +166,7 @@ class SessionEndPersistenceFailureIT extends PostgresIntegrationTest {
     }
 
     private TaskId publishFreeTask() {
-        TaskView view = taskApplicationService.createDraft(
+        TaskView view = taskApplicationService.createPreparedTask(
                 teacher(), freeCommandWithStudent());
         TaskId taskId = new TaskId(view.taskId());
         materialService.upload(

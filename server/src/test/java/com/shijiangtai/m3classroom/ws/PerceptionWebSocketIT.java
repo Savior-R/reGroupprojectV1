@@ -210,7 +210,7 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
         classifier.reset();
         scheduler.reset();
         mutableRandom.set(0.0);
-        TaskView view = taskApplicationService.createDraft(
+        TaskView view = taskApplicationService.createPreparedTask(
                 teacher(), TestFixtures.freeCommandWithStudent());
         taskId = new TaskId(view.taskId());
         materialService.upload(teacher(), taskId, "a.txt", "text/plain",
@@ -858,7 +858,7 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
                 new QuestionConfig(List.of(
                         new QuestionId(DevDataConfig.QUESTION1_ID),
                         new QuestionId(DevDataConfig.QUESTION2_ID)), 300));
-        TaskView view = taskApplicationService.createDraft(teacher(), command);
+        TaskView view = taskApplicationService.createPreparedTask(teacher(), command);
         TaskId id = new TaskId(view.taskId());
         publishService.publish(teacher(), id);
         return id;

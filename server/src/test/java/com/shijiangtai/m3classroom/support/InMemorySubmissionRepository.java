@@ -45,6 +45,13 @@ public final class InMemorySubmissionRepository implements SubmissionRepository 
         return findBySession(sessionId).isPresent();
     }
 
+    @Override
+    public synchronized long countByTask(TaskId taskId) {
+        return submissions.values().stream()
+                .filter(submission -> submission.taskId().equals(taskId))
+                .count();
+    }
+
     /**
      * The fake has no course-end data, so it only reports candidates seeded through
      * {@link #addExpired(Submission)}; without seeding it returns an empty list.

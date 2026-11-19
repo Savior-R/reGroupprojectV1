@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学生管理 · 语文教学论 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .students-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .students-main {
+      display: grid;
+      gap: 16px;
+    }
+
+    .student-toolbar {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: var(--paper-0);
+    }
+
+    .student-toolbar .input-affix {
+      flex: 1;
+      min-width: 220px;
+      max-width: 330px;
+    }
+
+    .student-toolbar .select {
+      width: 150px;
+    }
+
+    .score-mono {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .score-mono--muted {
+      color: var(--text-3);
+    }
+
+    .student-cell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .student-cell__main {
+      min-width: 0;
+    }
+
+    .student-cell__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .student-cell__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .table .actions .action-danger {
+      color: var(--danger);
+    }
+
+    .table .actions .action-danger:hover {
+      color: var(--danger-700);
+    }
+
+    .side-stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .side-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .side-card .card-head,
+    .side-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .class-dist {
+      display: grid;
+      gap: 0;
+    }
+
+    .class-dist__row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 10.5px;
+    }
+
+    .class-dist__row:last-child {
+      border-bottom: 0;
+    }
+
+    .class-dist__row span {
+      color: var(--text-2);
+    }
+
+    .class-dist__row strong {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .request-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .request-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .request-item:last-child {
+      border-bottom: 0;
+    }
+
+    .request-item__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .request-item__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .request-item__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .modal--students {
+      width: min(720px, 94vw);
+    }
+
+    .student-pick-list {
+      display: grid;
+      gap: 6px;
+      max-height: 300px;
+      margin-top: 12px;
+      padding: 4px;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .student-pick {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px;
+      border: 1px solid transparent;
+      border-radius: var(--r-sm);
+      cursor: pointer;
+    }
+
+    .student-pick:hover {
+      background: var(--brand-wash);
+    }
+
+    .student-pick.is-selected {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+    }
+
+    .student-pick__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .student-pick__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .student-pick__main span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .student-pick .badge {
+      flex: none;
+    }
+
+    .student-pick-empty {
+      padding: 18px;
+      color: var(--text-3);
+      font-size: 10px;
+      text-align: center;
+    }
+
+    .student-pick-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .student-profile {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      background: var(--paper-0);
+    }
+
+    .student-profile__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .student-profile__main strong {
+      display: block;
+      color: var(--text);
+      font-family: var(--font-serif);
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .student-profile__main span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .student-facts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .student-fact {
+      padding: 10px 11px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+    }
+
+    .student-fact span {
+      display: block;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .student-fact strong {
+      display: block;
+      margin-top: 3px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .drawer-section {
+      margin-top: 16px;
+    }
+
+    .drawer-section h3 {
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .drawer-section .table {
+      font-size: 11px;
+    }
+
+    @media (max-width: 1180px) {
+      .students-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .side-stack {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 860px) {
+      .side-stack {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .student-facts {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body data-role="teacher" data-nav="courses">
+  <div data-app-header></div>
+
+  <div class="context-bar">
+    <div class="context-bar__inner">
+      <div class="breadcrumb">
+        <a href="courses.html?role=teacher">课程</a>
+        <span class="breadcrumb__sep">/</span>
+        <a href="course-detail.html?role=teacher">语文教学论</a>
+        <span class="breadcrumb__sep">/</span>
+        <span class="breadcrumb__current">学生</span>
+      </div>
+      <div class="context-tabs">
+        <a class="context-tab" href="course-detail.html?role=teacher">课程概览</a>
+        <a class="context-tab" href="teacher-tasks.html">任务</a>
+        <a class="context-tab is-active" href="teacher-course-students.html">学生</a>
+        <a class="context-tab" href="courses.html?role=teacher">老师组</a>
+        <a class="context-tab" href="stats.html">统计</a>
+      </div>
+    </div>
+  </div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">COURSE STUDENTS / 课程学生</p>
+        <h1 class="page-title">学生管理</h1>
+        <p class="page-lead">语文教学论 · 32 名在课学生 · 2 个班级。可查看学生课程概览、添加学生或移出课程。</p>
+      </div>
+      <div class="head-actions">
+        <button class="btn btn--secondary" type="button" data-toast="导出学生名单（原型演示）。"><span data-icon="download"></span>导出名单</button>
+        <button class="btn btn--primary" type="button" data-open="add-student-modal"><span data-icon="plus"></span>添加学生</button>
+      </div>
+    </header>
+
+    <div class="stat-strip" style="margin-bottom:22px">
+      <div class="stat"><div class="stat__label">在课学生</div><div class="stat__value" id="student-count-stat">32</div><div class="stat__meta">2 个班级</div></div>
+      <div class="stat"><div class="stat__label">已绑定班级</div><div class="stat__value">32</div><div class="stat__meta">无待绑定学生</div></div>
+      <div class="stat"><div class="stat__label">本周有提交</div><div class="stat__value stat__value--brand">18</div><div class="stat__meta">最近 7 天</div></div>
+      <div class="stat"><div class="stat__label">课程平均分</div><div class="stat__value">82.4</div><div class="stat__meta">已完成样本</div></div>
+    </div>
+
+    <div class="students-layout">
+      <div class="students-main">
+        <div class="card">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">在课学生</h2><p class="card-sub">按最近提交时间排序 · 只显示本课程学生</p></div>
+            <span class="badge" id="student-count-badge">32 名学生</span>
+          </div>
+          <div class="student-toolbar">
+            <label class="input-affix">
+              <span data-icon="search"></span>
+              <input class="input" type="search" id="student-search" placeholder="搜索姓名 / 学号 / 班级" aria-label="搜索学生">
+            </label>
+            <select class="select" id="student-class-filter" aria-label="班级筛选"><option value="all">全部班级</option><option value="语文2401">语文2401</option><option value="语文2402">语文2402</option></select>
+            <select class="select" id="student-status-filter" aria-label="状态筛选"><option value="all">全部状态</option><option value="active">在课</option><option value="pending">待确认</option></select>
+            <span style="flex:1"></span>
+            <span class="xs faint">按最近提交排序</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>学生</th><th>班级</th><th>学号</th><th>最近提交</th><th class="num">平均分</th><th>状态</th><th class="actions">操作</th></tr></thead>
+              <tbody>
+                <tr data-student-row data-student-status="active" data-keywords="林小雨 2024010128 语文2401">
+                  <td><div class="student-cell"><span class="avatar avatar--sm avatar--cinnabar">林</span><div class="student-cell__main"><strong>林小雨</strong><span>汉语言文学（师范）</span></div></div></td>
+                  <td>语文2401</td><td class="mono">2024010128</td><td class="xs faint">11-16 14:20</td><td class="num score-mono">84.2</td><td><span class="badge badge--success">在课</span></td>
+                  <td class="actions"><button class="btn btn--ghost btn--xs" type="button" data-open="student-detail-drawer" data-student-name="林小雨" data-student-class="语文2401" data-student-id="2024010128" data-student-avg="84.2">详情</button><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="remove-student-modal">移出</button></td>
+                </tr>
+                <tr data-student-row data-student-status="active" data-keywords="张晨 2024010116 语文2401">
+                  <td><div class="student-cell"><span class="avatar avatar--sm avatar--gold">张</span><div class="student-cell__main"><strong>张晨</strong><span>汉语言文学（师范）</span></div></div></td>
+                  <td>语文2401</td><td class="mono">2024010116</td><td class="xs faint">11-15 09:12</td><td class="num score-mono">86.7</td><td><span class="badge badge--success">在课</span></td>
+                  <td class="actions"><button class="btn btn--ghost btn--xs" type="button" data-open="student-detail-drawer" data-student-name="张晨" data-student-class="语文2401" data-student-id="2024010116" data-student-avg="86.7">详情</button><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="remove-student-modal">移出</button></td>
+                </tr>
+                <tr data-student-row data-student-status="active" data-keywords="李思远 2024010107 语文2401">
+                  <td><div class="student-cell"><span class="avatar avatar--sm avatar--blue">李</span><div class="student-cell__main"><strong>李思远</strong><span>汉语言文学（师范）</span></div></div></td>
+                  <td>语文2401</td><td class="mono">2024010107</td><td class="xs faint">11-14 16:45</td><td class="num score-mono">79.8</td><td><span class="badge badge--success">在课</span></td>
+                  <td class="actions"><button class="btn btn--ghost btn--xs" type="button" data-open="student-detail-drawer" data-student-name="李思远" data-student-class="语文2401" data-student-id="2024010107" data-student-avg="79.8">详情</button><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="remove-student-modal">移出</button></td>
+                </tr>
+                <tr data-student-row data-student-status="active" data-keywords="王雨桐 2024010203 语文2402">
+                  <td><div class="student-cell"><span class="avatar avatar--sm avatar--cinnabar">王</span><div class="student-cell__main"><strong>王雨桐</strong><span>汉语言文学（师范）</span></div></div></td>
+                  <td>语文2402</td><td class="mono">2024010203</td><td class="xs faint">11-13 10:30</td><td class="num score-mono">90.2</td><td><span class="badge badge--success">在课</span></td>
+                  <td class="actions"><button class="btn btn--ghost btn--xs" type="button" data-open="student-detail-drawer" data-student-name="王雨桐" data-student-class="语文2402" data-student-id="2024010203" data-student-avg="90.2">详情</button><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="remove-student-modal">移出</button></td>
+                </tr>
+                <tr data-student-row data-student-status="active" data-keywords="陈一诺 2024010119 语文2401">
+                  <td><div class="student-cell"><span class="avatar avatar--sm avatar--gold">陈</span><div class="student-cell__main"><strong>陈一诺</strong><span>汉语言文学（师范）</span></div></div></td>
+                  <td>语文2401</td><td class="mono">2024010119</td><td class="xs faint">11-10 15:08</td><td class="num score-mono">82.1</td><td><span class="badge badge--success">在课</span></td>
+                  <td class="actions"><button class="btn btn--ghost btn--xs" type="button" data-open="student-detail-drawer" data-student-name="陈一诺" data-student-class="语文2401" data-student-id="2024010119" data-student-avg="82.1">详情</button><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="remove-student-modal">移出</button></td>
+                </tr>
+                <tr data-student-row data-student-status="pending" data-keywords="许知远 2024010211 语文2402">
+                  <td><div class="student-cell"><span class="avatar avatar--sm avatar--blue">许</span><div class="student-cell__main"><strong>许知远</strong><span>汉语言文学（师范）</span></div></div></td>
+                  <td>语文2402</td><td class="mono">2024010211</td><td class="xs faint">—</td><td class="num score-mono score-mono--muted">—</td><td><span class="badge badge--accent">待确认</span></td>
+                  <td class="actions"><button class="btn btn--ghost btn--xs" type="button" data-open="student-detail-drawer" data-student-name="许知远" data-student-class="语文2402" data-student-id="2024010211" data-student-avg="—">详情</button><button class="btn btn--ghost btn--xs action-danger" type="button" data-open="remove-student-modal">移出</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="list-foot">
+            <span class="list-foot__info" id="student-list-info">共 32 名学生 · 显示 1—6</span>
+            <div class="pagination" aria-label="课程学生分页">
+              <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+              <button class="pagination__btn is-active" type="button">1</button>
+              <button class="pagination__btn" type="button">2</button>
+              <button class="pagination__btn" type="button">3</button>
+              <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert alert--note">
+          <span data-icon="info"></span>
+          <div><span>学生名单默认来自课程绑定班级。添加学生只对当前课程生效；移出课程不会删除学生账号与历史提交。</span></div>
+        </div>
+      </div>
+
+      <aside class="side-stack">
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">班级分布</h2><p class="card-sub">课程学生来源</p></div>
+            <span class="badge">2 个班级</span>
+          </div>
+          <div class="card-body">
+            <div class="class-dist">
+              <div class="class-dist__row"><span>语文2401</span><strong>28 人</strong></div>
+              <div class="class-dist__row"><span>语文2402</span><strong>4 人</strong></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">待处理</h2><p class="card-sub">选课 / 班级同步</p></div>
+            <span class="badge badge--accent">3</span>
+          </div>
+          <div class="card-body" style="padding-top:6px;padding-bottom:6px">
+            <div class="request-list">
+              <div class="request-item"><span class="avatar avatar--sm avatar--blue">赵</span><div class="request-item__main"><strong>赵子涵 · 申请加入</strong><span>语文2401 · 11-16 16:04</span></div><button class="btn btn--ghost btn--xs" type="button" data-toast="已批准加入（原型演示）。">批准</button></div>
+              <div class="request-item"><span class="avatar avatar--sm avatar--gold">孙</span><div class="request-item__main"><strong>孙雨 · 申请加入</strong><span>语文2402 · 11-16 11:20</span></div><button class="btn btn--ghost btn--xs" type="button" data-toast="已批准加入（原型演示）。">批准</button></div>
+              <div class="request-item"><span class="avatar avatar--sm avatar--cinnabar">周</span><div class="request-item__main"><strong>周予安 · 班级同步待确认</strong><span>语文2402 · 11-15 09:18</span></div><span class="badge badge--warning">待确认</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head"><div class="card-head__main"><h2 class="card-title">操作提示</h2></div></div>
+          <div class="card-body">
+            <div class="xs faint" style="display:grid;gap:7px;line-height:1.6">
+              <span>· 移出课程只解除本课程关系；学生账号与其他课程不受影响。</span>
+              <span>· 已提交的任务、录像与报告按保留规则只读保留。</span>
+              <span>· 添加学生只显示本校、同专业范围内的学生。</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Add student modal -->
+  <div class="overlay" data-overlay-for="add-student-modal"></div>
+  <div class="modal modal--students" id="add-student-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="add-student-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="add-student-title">添加学生</div>
+        <div class="drawer__sub">只显示本校、同专业范围内且未在课程中的学生</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="add-student-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="template-picker__search" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+        <label class="input-affix" style="flex:1;min-width:240px">
+          <span data-icon="search"></span>
+          <input class="input" type="search" id="candidate-search" placeholder="搜索姓名 / 学号 / 班级" aria-label="搜索候选学生">
+        </label>
+        <select class="select" id="candidate-class-filter" style="width:150px" aria-label="候选班级"><option value="all">全部班级</option><option value="语文2401">语文2401</option><option value="语文2402">语文2402</option></select>
+      </div>
+      <div class="student-pick-list" id="candidate-list">
+        <label class="student-pick" data-candidate data-candidate-class="语文2401" data-keywords="赵子涵 2024010133 语文2401">
+          <input type="checkbox" hidden>
+          <span class="check-box"><span data-icon="check"></span></span>
+          <span class="student-pick__main"><strong>赵子涵</strong><span>语文2401 · 2024010133</span></span>
+          <span class="badge">可添加</span>
+        </label>
+        <label class="student-pick" data-candidate data-candidate-class="语文2402" data-keywords="孙雨 2024010220 语文2402">
+          <input type="checkbox" hidden>
+          <span class="check-box"><span data-icon="check"></span></span>
+          <span class="student-pick__main"><strong>孙雨</strong><span>语文2402 · 2024010220</span></span>
+          <span class="badge">可添加</span>
+        </label>
+        <label class="student-pick" data-candidate data-candidate-class="语文2402" data-keywords="周予安 2024010204 语文2402">
+          <input type="checkbox" hidden>
+          <span class="check-box"><span data-icon="check"></span></span>
+          <span class="student-pick__main"><strong>周予安</strong><span>语文2402 · 2024010204</span></span>
+          <span class="badge">可添加</span>
+        </label>
+        <label class="student-pick" data-candidate data-candidate-class="语文2401" data-keywords="林一 2024010136 语文2401">
+          <input type="checkbox" hidden>
+          <span class="check-box"><span data-icon="check"></span></span>
+          <span class="student-pick__main"><strong>林一</strong><span>语文2401 · 2024010136</span></span>
+          <span class="badge">可添加</span>
+        </label>
+      </div>
+      <div class="student-pick-empty" id="candidate-empty" hidden>没有匹配的学生；请调整搜索词或班级筛选。</div>
+      <div class="student-pick-foot">
+        <span class="pagination__info" id="candidate-info">共 4 名候选学生 · 显示 1—4</span>
+        <div class="pagination" aria-label="候选学生分页">
+          <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+          <button class="pagination__btn is-active" type="button">1</button>
+          <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+        </div>
+      </div>
+      <div class="lazy-foot">已加载全部候选学生</div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="add-student-modal">取消</button>
+      <button class="btn btn--primary" type="button" id="add-selected-students" data-close="add-student-modal" data-toast="所选学生已加入课程（原型演示）。" disabled><span data-icon="plus"></span>添加所选学生（0）</button>
+    </div>
+  </div>
+
+  <!-- Remove student modal -->
+  <div class="overlay" data-overlay-for="remove-student-modal"></div>
+  <div class="modal" id="remove-student-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="remove-student-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="remove-student-title">移出课程</div>
+        <div class="drawer__sub">只解除本课程关系，不删除学生账号</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="remove-student-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--danger">
+        <span data-icon="alert-triangle"></span>
+        <div>将「<strong id="remove-student-name">该学生</strong>」移出课程后，该学生不能再进入本课程；历史提交、录像与报告按保留规则只读保留。</div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="remove-student-modal">取消</button>
+      <button class="btn btn--danger-solid" type="button" id="confirm-remove-student" data-close="remove-student-modal" data-toast="学生已移出课程（原型演示）。">移出课程</button>
+    </div>
+  </div>
+
+  <!-- Student detail drawer -->
+  <div class="overlay" data-overlay-for="student-detail-drawer"></div>
+  <aside class="drawer" id="student-detail-drawer" aria-hidden="true" aria-labelledby="student-detail-title">
+    <div class="drawer__head">
+      <div>
+        <div class="drawer__title" id="student-detail-title">学生详情</div>
+        <div class="drawer__sub">课程内表现 · 只读</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="student-detail-drawer" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="drawer__body">
+      <div class="student-profile">
+        <span class="avatar avatar--lg avatar--cinnabar" id="drawer-student-avatar">林</span>
+        <div class="student-profile__main"><strong id="drawer-student-name">林小雨</strong><span id="drawer-student-meta">语文2401 · 2024010128</span></div>
+        <span class="badge badge--success">在课</span>
+      </div>
+      <div class="student-facts">
+        <div class="student-fact"><span>课程平均分</span><strong id="drawer-student-avg">84.2</strong></div>
+        <div class="student-fact"><span>已完成任务</span><strong>4 / 6</strong></div>
+        <div class="student-fact"><span>最近提交</span><strong>11-16</strong></div>
+      </div>
+      <div class="drawer-section">
+        <h3>任务成绩</h3>
+        <div class="table-wrap">
+          <table class="table table--compact">
+            <thead><tr><th>任务</th><th class="num">AI</th><th class="num">教师</th><th class="num">最终</th></tr></thead>
+            <tbody>
+              <tr><td>荷塘月色</td><td class="num">85.0</td><td class="num">84.0</td><td class="num">84.7</td></tr>
+              <tr><td>少年闰土</td><td class="num">82.0</td><td class="num">83.0</td><td class="num">82.3</td></tr>
+              <tr><td>古诗二首</td><td class="num">86.7</td><td class="num">87.0</td><td class="num">86.7</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="alert alert--info" style="margin-top:14px"><span data-icon="info"></span><div><span>教师只能查看本课程内学生的成绩与提交；不展示其他课程数据。</span></div></div>
+    </div>
+    <div class="drawer__foot">
+      <button class="btn btn--secondary" type="button" data-close="student-detail-drawer">关闭</button>
+      <button class="btn btn--primary" type="button" data-toast="提醒已发送（原型演示）。"><span data-icon="message"></span>发送提醒</button>
+    </div>
+  </aside>
+
+  <script src="assets/site.js"></script>
+  <script>
+    const studentRows = Array.from(document.querySelectorAll("[data-student-row]"));
+    const studentSearch = document.getElementById("student-search");
+    const studentClassFilter = document.getElementById("student-class-filter");
+    const studentStatusFilter = document.getElementById("student-status-filter");
+    let studentTotal = 32;
+
+    function filterStudents() {
+      const keyword = studentSearch.value.trim().toLowerCase();
+      const klass = studentClassFilter.value;
+      const status = studentStatusFilter.value;
+      let visible = 0;
+      studentRows.forEach(function (row) {
+        const matchKeyword = !keyword || row.dataset.keywords.toLowerCase().includes(keyword);
+        const matchClass = klass === "all" || row.dataset.keywords.includes(klass);
+        const matchStatus = status === "all" || row.dataset.studentStatus === status;
+        const show = matchKeyword && matchClass && matchStatus && !row.dataset.removed;
+        row.hidden = !show;
+        if (show) visible += 1;
+      });
+      document.getElementById("student-list-info").textContent = "共 " + studentTotal + " 名学生 · 显示 1—" + visible;
+    }
+
+    studentSearch.addEventListener("input", filterStudents);
+    studentClassFilter.addEventListener("change", filterStudents);
+    studentStatusFilter.addEventListener("change", filterStudents);
+
+    let pendingStudentRow = null;
+    document.querySelectorAll('[data-open="remove-student-modal"]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        pendingStudentRow = button.closest("[data-student-row]");
+        document.getElementById("remove-student-name").textContent = pendingStudentRow.querySelector(".student-cell__main strong").textContent;
+      });
+    });
+
+    document.getElementById("confirm-remove-student").addEventListener("click", function () {
+      if (!pendingStudentRow) return;
+      pendingStudentRow.dataset.removed = "1";
+      pendingStudentRow.remove();
+      pendingStudentRow = null;
+      studentTotal = Math.max(0, studentTotal - 1);
+      document.getElementById("student-count-badge").textContent = studentTotal + " 名学生";
+      document.getElementById("student-count-stat").textContent = studentTotal;
+      filterStudents();
+    });
+
+    document.querySelectorAll('[data-open="student-detail-drawer"]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        const name = button.dataset.studentName;
+        document.getElementById("drawer-student-name").textContent = name;
+        document.getElementById("drawer-student-meta").textContent = button.dataset.studentClass + " · " + button.dataset.studentId;
+        document.getElementById("drawer-student-avatar").textContent = name.charAt(0);
+        document.getElementById("drawer-student-avg").textContent = button.dataset.studentAvg;
+      });
+    });
+
+    const candidateSearch = document.getElementById("candidate-search");
+    const candidateClassFilter = document.getElementById("candidate-class-filter");
+    const candidateList = Array.from(document.querySelectorAll("[data-candidate]"));
+    const addSelected = document.getElementById("add-selected-students");
+    let selectedCandidates = 0;
+
+    function filterCandidates() {
+      const keyword = candidateSearch.value.trim().toLowerCase();
+      const klass = candidateClassFilter.value;
+      let visible = 0;
+      candidateList.forEach(function (item) {
+        const matchKeyword = !keyword || item.dataset.keywords.toLowerCase().includes(keyword);
+        const matchClass = klass === "all" || item.dataset.candidateClass === klass;
+        const show = matchKeyword && matchClass;
+        item.hidden = !show;
+        if (show) visible += 1;
+      });
+      document.getElementById("candidate-empty").hidden = visible > 0;
+      document.getElementById("candidate-info").textContent = visible > 0
+        ? "共 " + visible + " 名候选学生 · 显示 1—" + visible
+        : "没有匹配的候选学生";
+    }
+
+    candidateSearch.addEventListener("input", filterCandidates);
+    candidateClassFilter.addEventListener("change", filterCandidates);
+
+    candidateList.forEach(function (item) {
+      item.addEventListener("click", function (event) {
+        event.preventDefault();
+        const input = item.querySelector("input");
+        input.checked = !input.checked;
+        item.classList.toggle("is-selected", input.checked);
+        selectedCandidates = candidateList.filter(function (candidate) { return candidate.querySelector("input").checked; }).length;
+        addSelected.disabled = selectedCandidates === 0;
+        addSelected.innerHTML = '<span data-icon="plus"></span>添加所选学生（' + selectedCandidates + '）';
+        window.PrototypeUI.hydrateIcons(addSelected);
+      });
+    });
+
+    document.querySelectorAll('[data-open="add-student-modal"]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        candidateSearch.value = "";
+        candidateClassFilter.value = "all";
+        candidateList.forEach(function (item) {
+          item.querySelector("input").checked = false;
+          item.classList.remove("is-selected");
+        });
+        selectedCandidates = 0;
+        addSelected.disabled = true;
+        addSelected.innerHTML = '<span data-icon="plus"></span>添加所选学生（0）';
+        window.PrototypeUI.hydrateIcons(addSelected);
+        filterCandidates();
+      });
+    });
+  </script>
+</body>
+</html>

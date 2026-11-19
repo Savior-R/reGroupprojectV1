@@ -49,14 +49,6 @@ class TaskPublishPolicyTest {
     }
 
     @Test
-    void publishedTaskIsRejected() {
-        Task published = published(freeTask());
-        assertCode(() -> policy.validateForPublish(
-                published, course(true, null), List.of(), students(1), NOW),
-                ErrorCode.TASK_ALREADY_PUBLISHED);
-    }
-
-    @Test
     void freeTaskWithoutMaterialIsRejected() {
         assertCode(() -> policy.validateForPublish(
                 freeTaskWithoutMaterial(), course(true, null), List.of(), students(1), NOW),
@@ -159,7 +151,7 @@ class TaskPublishPolicyTest {
     }
 
     private Task freeTask() {
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()), new CourseId(COURSE_ID),
                 new AccountId(TEACHER_ID), freeDraft(true, List.of(virtualStudent())), NOW);
         task.attachMaterial(material(), NOW);
@@ -167,13 +159,13 @@ class TaskPublishPolicyTest {
     }
 
     private Task freeTaskWithoutMaterial() {
-        return Task.createDraft(
+        return Task.create(
                 new TaskId(UUID.randomUUID()), new CourseId(COURSE_ID),
                 new AccountId(TEACHER_ID), freeDraft(true, List.of(virtualStudent())), NOW);
     }
 
     private Task freeTaskWithoutVirtualStudents() {
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()), new CourseId(COURSE_ID),
                 new AccountId(TEACHER_ID), freeDraft(true, List.of()), NOW);
         task.attachMaterial(material(), NOW);
@@ -181,7 +173,7 @@ class TaskPublishPolicyTest {
     }
 
     private Task freeTaskWithoutTextbookAndVirtualStudents() {
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()), new CourseId(COURSE_ID),
                 new AccountId(TEACHER_ID), freeDraft(false, List.of()), NOW);
         task.attachMaterial(material(), NOW);
@@ -189,7 +181,7 @@ class TaskPublishPolicyTest {
     }
 
     private Task freeTaskWithWeights(Map<String, Integer> weights) {
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()), new CourseId(COURSE_ID),
                 new AccountId(TEACHER_ID),
                 new TaskDraft(TaskMode.FREE, "荷塘月色", "部编版", 900, 1200,
@@ -204,7 +196,7 @@ class TaskPublishPolicyTest {
         List<QuestionId> ids = IntStream.range(0, questionCount)
                 .mapToObj(i -> new QuestionId(UUID.randomUUID()))
                 .toList();
-        return Task.createDraft(
+        return Task.create(
                 new TaskId(UUID.randomUUID()), new CourseId(COURSE_ID),
                 new AccountId(TEACHER_ID),
                 new TaskDraft(TaskMode.INTERVIEW, "结构化面试", null, 300, 300,
@@ -217,13 +209,6 @@ class TaskPublishPolicyTest {
         return new TaskDraft(
                 TaskMode.FREE, "荷塘月色", withTextbook ? "部编版" : null, 900, 1200,
                 RubricWeights.defaults(TaskMode.FREE), null, students, null);
-    }
-
-    private Task published(Task task) {
-        return Task.rehydrate(
-                task.id(), task.courseId(), task.createdBy(), task.draft(),
-                TaskStatus.PUBLISHED, task.referenceMaterial(), null, 1,
-                NOW, null, task.createdAt(), task.updatedAt());
     }
 
     private CourseInfo course(boolean active, Instant endAt) {

@@ -163,12 +163,13 @@ class SessionApplicationServiceTest {
     }
 
     @Test
-    void draftTaskIsNotVisibleToStudents() {
-        Task draft = Task.createDraft(
+    void deletedTaskIsNotVisibleToStudents() {
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()), COURSE, TEACHER, freeDraft(), NOW);
-        tasks.save(draft);
+        task.softDelete(TEACHER, NOW);
+        tasks.save(task);
 
-        assertCode(() -> service.createSession(student(), draft.id()),
+        assertCode(() -> service.createSession(student(), task.id()),
                 ErrorCode.RESOURCE_NOT_FOUND);
     }
 
@@ -407,11 +408,11 @@ class SessionApplicationServiceTest {
     }
 
     private TaskId createPublishedTask() {
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()), COURSE, TEACHER, freeDraft(), NOW);
         TaskSnapshot snapshot = new TaskSnapshotFactory().create(
                 task, course(), List.of(), NOW);
-        task.publish(snapshot, NOW);
+        task.publishInitial(snapshot, null, NOW);
         tasks.save(task);
         assignments.saveAll(List.of(new TaskAssignment(
                 UUID.randomUUID(), task.id(), STUDENT, CLASS, NOW, AssignmentStatus.ASSIGNED)));
@@ -425,13 +426,13 @@ class SessionApplicationServiceTest {
         TaskDraft draft = new TaskDraft(
                 TaskMode.INTERVIEW, "结构化面试", null, 300, 300,
                 RubricWeights.defaults(TaskMode.INTERVIEW), null, List.of(), questionConfig);
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()), COURSE, TEACHER, draft, NOW);
         PublishQuestion question = new PublishQuestion(
                 questionId, "请做一下自我介绍。", "姓名、经历、优势", null, null, SCHOOL_ID, true);
         TaskSnapshot snapshot = new TaskSnapshotFactory().create(
                 task, course(), List.of(question), NOW);
-        task.publish(snapshot, NOW);
+        task.publishInitial(snapshot, null, NOW);
         tasks.save(task);
         assignments.saveAll(List.of(new TaskAssignment(
                 UUID.randomUUID(), task.id(), STUDENT, CLASS, NOW, AssignmentStatus.ASSIGNED)));

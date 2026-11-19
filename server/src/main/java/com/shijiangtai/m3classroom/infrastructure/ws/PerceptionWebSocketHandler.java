@@ -250,6 +250,8 @@ public final class PerceptionWebSocketHandler extends AbstractWebSocketHandler {
         return status == SessionStatus.ENDED
                 || status == SessionStatus.REVIEWING
                 || status == SessionStatus.SUBMITTED
+                || status == SessionStatus.SELECTED
+                || status == SessionStatus.EVALUATED
                 || status == SessionStatus.CANCELLED
                 || status == SessionStatus.FAILED;
     }

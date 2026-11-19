@@ -1,6 +1,7 @@
 package com.shijiangtai.m3classroom;
 
 import com.shijiangtai.m3classroom.application.command.CreateTaskCommand;
+import com.shijiangtai.m3classroom.application.command.MaterialUpload;
 import com.shijiangtai.m3classroom.application.command.Patch;
 import com.shijiangtai.m3classroom.application.command.UpdateTaskCommand;
 import com.shijiangtai.m3classroom.application.command.VirtualStudentSpec;
@@ -21,6 +22,7 @@ import com.shijiangtai.shared.domain.CourseId;
 import com.shijiangtai.shared.domain.SchoolId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -105,6 +107,12 @@ public final class TestFixtures {
         return new VirtualStudentSpec(null, "林小雨", "avatar-01", "性格外向",
                 new BigDecimal("0.60"), new BigDecimal("0.50"), new BigDecimal("0.70"),
                 new BigDecimal("0.50"), new BigDecimal("0.40"), 1, 1);
+    }
+
+    public static MaterialUpload materialUpload() {
+        return new MaterialUpload(
+                "荷塘月色.txt", "text/plain",
+                "荷塘月色课文内容，用于任务参考材料解析。".getBytes(StandardCharsets.UTF_8));
     }
 
     public static ReferenceMaterial material(String objectKey) {

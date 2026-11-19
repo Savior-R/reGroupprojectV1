@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>结构化面试题库 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .bank-layout {
+      display: grid;
+      grid-template-columns: 208px minmax(0, 1fr) 300px;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .category-rail {
+      position: sticky;
+      top: 30px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .category-rail__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 14px 14px 11px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .category-rail__head strong {
+      color: var(--text);
+      font-family: var(--font-serif);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .category-list {
+      padding: 6px;
+    }
+
+    .category-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 9px;
+      border: 0;
+      border-radius: var(--r-sm);
+      background: transparent;
+      color: var(--text-2);
+      font-size: 10.5px;
+      text-align: left;
+    }
+
+    .category-item:hover {
+      background: var(--brand-wash);
+      color: var(--text);
+    }
+
+    .category-item.is-active {
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-weight: 600;
+    }
+
+    .category-item span {
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+    }
+
+    .category-item.is-active span {
+      color: var(--brand);
+    }
+
+    .category-foot {
+      padding: 9px 10px 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    /* Main list */
+    .question-panel {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .question-panel__head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .question-panel__head .input {
+      max-width: 250px;
+    }
+
+    .question-panel__head .select {
+      width: 120px;
+    }
+
+    .question-panel__head .spacer {
+      flex: 1;
+    }
+
+    .question-list {
+      display: grid;
+    }
+
+    .question-row {
+      display: grid;
+      grid-template-columns: 3px minmax(0, 1fr) 90px;
+      gap: 12px;
+      width: 100%;
+      padding: 14px 16px 14px 0;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      transition: background var(--dur-1) var(--ease);
+    }
+
+    .question-row:last-child {
+      border-bottom: 0;
+    }
+
+    .question-row:hover {
+      background: var(--brand-wash);
+    }
+
+    .question-row.is-active {
+      background: var(--brand-wash);
+    }
+
+    .question-row__stripe {
+      align-self: stretch;
+      border-radius: 0 2px 2px 0;
+      background: var(--success);
+    }
+
+    .question-row[data-question-status="inactive"] .question-row__stripe {
+      background: var(--ink-300);
+    }
+
+    .question-row__main {
+      min-width: 0;
+    }
+
+    .question-row__top {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+
+    .question-row__top strong {
+      color: var(--text);
+      font-size: 11.5px;
+      font-weight: 600;
+      line-height: 1.45;
+    }
+
+    .question-row__answer {
+      display: -webkit-box;
+      overflow: hidden;
+      margin-top: 4px;
+      color: var(--text-3);
+      font-size: 9.5px;
+      line-height: 1.55;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 1;
+    }
+
+    .question-row__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px 10px;
+      margin-top: 5px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .question-row__side {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      padding-top: 2px;
+    }
+
+    .question-row__side span {
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      text-align: right;
+    }
+
+    /* Preview */
+    .preview-panel {
+      position: sticky;
+      top: 30px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .preview-panel__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .preview-panel__head strong {
+      color: var(--text);
+      font-family: var(--font-serif);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .preview-panel__body {
+      padding: 16px;
+    }
+
+    .preview-stem {
+      color: var(--text);
+      font-family: var(--font-serif);
+      font-size: 17px;
+      font-weight: 600;
+      line-height: 1.55;
+    }
+
+    .preview-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .preview-section {
+      margin-top: 16px;
+      padding-top: 13px;
+      border-top: 1px solid var(--line);
+    }
+
+    .preview-section__label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text-3);
+      font-size: 8.5px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .preview-section__label [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      color: var(--accent);
+    }
+
+    .preview-answer {
+      margin-top: 7px;
+      color: var(--text-2);
+      font-size: 10.5px;
+      line-height: 1.7;
+    }
+
+    .preview-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+      padding-top: 13px;
+      border-top: 1px solid var(--line);
+    }
+
+    .preview-meta dt {
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .preview-meta dd {
+      margin-top: 2px;
+      color: var(--text-2);
+      font-size: 9.5px;
+    }
+
+    .preview-panel__foot {
+      display: flex;
+      gap: 6px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--line);
+      background: var(--paper-0);
+    }
+
+    .preview-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      margin-top: 12px;
+      padding: 8px 9px;
+      border-left: 2px solid var(--accent);
+      background: var(--accent-soft);
+      color: var(--text-3);
+      font-size: 8.5px;
+      line-height: 1.55;
+    }
+
+    .preview-note [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      flex: none;
+      margin-top: 1px;
+      color: var(--accent);
+    }
+
+    .modal--wide {
+      width: min(620px, 94vw);
+    }
+
+    .category-picker__search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .category-picker__search .input-affix {
+      flex: 1;
+    }
+
+    .category-picker__list {
+      display: grid;
+      gap: 4px;
+      max-height: 300px;
+      margin-top: 12px;
+      padding: 4px;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .category-pick {
+      display: grid;
+      grid-template-columns: 16px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      padding: 9px;
+      border: 1px solid transparent;
+      border-radius: var(--r-sm);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .category-pick:hover {
+      background: var(--brand-wash);
+    }
+
+    .category-pick.is-selected {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+    }
+
+    .category-pick .radio-dot {
+      width: 15px;
+      height: 15px;
+    }
+
+    .category-pick.is-selected .radio-dot {
+      border-color: var(--brand);
+    }
+
+    .category-pick.is-selected .radio-dot::after {
+      transform: scale(1);
+    }
+
+    .category-pick__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .category-pick__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .category-pick__count {
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .category-picker__foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding-top: 12px;
+    }
+
+    @media (max-width: 1280px) {
+      .bank-layout {
+        grid-template-columns: 190px minmax(0, 1fr);
+      }
+
+      .preview-panel {
+        position: static;
+        grid-column: 2;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .bank-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .category-rail,
+      .preview-panel {
+        position: static;
+        grid-column: auto;
+      }
+
+      .question-panel__head {
+        flex-wrap: wrap;
+      }
+    }
+  </style>
+</head>
+<body data-role="teacher" data-nav="question-bank">
+  <div data-app-header></div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">QUESTION BANK / 结构化面试题库</p>
+        <h1 class="page-title">结构化面试题库</h1>
+        <p class="page-lead">本校题库，类别与题目由教师维护；停用题目不会进入 M3 选题列表。学生端永不显示答案要点。</p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn--secondary" href="question-categories.html"><span data-icon="layers"></span>类别管理</a>
+        <button class="btn btn--primary" type="button" data-open="question-editor-drawer"><span data-icon="plus"></span>新增题目</button>
+      </div>
+    </header>
+
+    <div class="stat-strip" style="margin-bottom:20px">
+      <div class="stat"><div class="stat__label">题目总数</div><div class="stat__value">128</div><div class="stat__meta">本校题库</div></div>
+      <div class="stat"><div class="stat__label">启用</div><div class="stat__value" style="color:var(--success)">112</div><div class="stat__meta">可被任务选题</div></div>
+      <div class="stat"><div class="stat__label">停用</div><div class="stat__value">16</div><div class="stat__meta">保留历史引用</div></div>
+      <div class="stat"><div class="stat__label">类别</div><div class="stat__value">6</div><div class="stat__meta">按排序展示</div></div>
+    </div>
+
+    <div class="bank-layout">
+      <aside class="category-rail">
+        <div class="category-rail__head"><strong>类别</strong><span class="badge">6</span></div>
+        <div class="category-list">
+          <button class="category-item is-active" type="button">全部题目 <span>128</span></button>
+          <button class="category-item" type="button">教育理念 <span>32</span></button>
+          <button class="category-item" type="button">班级管理 <span>28</span></button>
+          <button class="category-item" type="button">应急应变 <span>24</span></button>
+          <button class="category-item" type="button">职业认知 <span>20</span></button>
+          <button class="category-item" type="button">教学实施 <span>14</span></button>
+          <button class="category-item" type="button">人际沟通 <span>10</span></button>
+        </div>
+        <div class="category-foot">
+          <a class="btn btn--ghost btn--sm btn--block" href="question-categories.html"><span data-icon="settings"></span>类别管理</a>
+        </div>
+      </aside>
+
+      <section class="question-panel">
+        <div class="question-panel__head">
+          <label class="input-affix">
+            <span data-icon="search"></span>
+            <input class="input" type="search" placeholder="搜索题干 / 答案要点" aria-label="搜索题目">
+          </label>
+          <select class="select" aria-label="题目状态"><option>全部状态</option><option>启用</option><option>停用</option></select>
+          <span class="spacer"></span>
+          <span class="xs faint">按最近更新排序</span>
+        </div>
+        <div class="question-list">
+          <button class="question-row is-active" type="button" data-question data-question-status="active" data-question-stem="作为班主任，发现两名学生在课堂上发生争执，你会如何处理？" data-question-category="班级管理 · 应急应变" data-question-answer="1. 先稳定课堂秩序，用眼神、停顿或走近提醒，避免公开扩大冲突。2. 课后分别了解情况，倾听双方诉求，不急于判定对错。3. 依据校规与班级公约处理，必要时联系家长并持续跟进。" data-question-used="3 个任务" data-question-updated="2026-11-12">
+            <span class="question-row__stripe"></span>
+            <div class="question-row__main">
+              <div class="question-row__top"><strong>作为班主任，发现两名学生在课堂上发生争执，你会如何处理？</strong><span class="badge badge--success">启用</span></div>
+              <p class="question-row__answer">答案要点：先稳定课堂秩序，课后分别沟通，依据校规处理并持续跟进。</p>
+              <div class="question-row__meta"><span>班级管理</span><span>应急应变</span><span>答案要点 3 条</span></div>
+            </div>
+            <div class="question-row__side"><span>已用于 3 个任务</span><span>11-12 更新</span></div>
+          </button>
+
+          <button class="question-row" type="button" data-question data-question-status="active" data-question-stem="你如何看待“没有教不好的学生，只有不会教的老师”这句话？" data-question-category="教育理念 · 职业认知" data-question-answer="1. 肯定这句话强调教师责任与教育信心的积极意义。2. 指出学生发展受家庭、社会、个体差异等多因素影响，不能把责任全部归于教师。3. 作为教师，应坚持因材施教、持续反思，同时建立合理的家校社协同。" data-question-used="2 个任务" data-question-updated="2026-11-10">
+            <span class="question-row__stripe"></span>
+            <div class="question-row__main">
+              <div class="question-row__top"><strong>你如何看待“没有教不好的学生，只有不会教的老师”这句话？</strong><span class="badge badge--success">启用</span></div>
+              <p class="question-row__answer">答案要点：肯定教师责任，同时指出学生发展受多因素影响，坚持因材施教与协同育人。</p>
+              <div class="question-row__meta"><span>教育理念</span><span>职业认知</span><span>答案要点 3 条</span></div>
+            </div>
+            <div class="question-row__side"><span>已用于 2 个任务</span><span>11-10 更新</span></div>
+          </button>
+
+          <button class="question-row" type="button" data-question data-question-status="active" data-question-stem="学生上课玩手机，你提醒后他仍然继续，你会怎么做？" data-question-category="班级管理 · 纪律处理" data-question-answer="1. 先用非语言方式提醒，避免当众冲突。2. 若仍继续，简短明确地要求收起手机，不展开长篇说教。3. 课后单独沟通，了解原因并按班级公约处理；必要时联系家长。" data-question-used="1 个任务" data-question-updated="2026-11-08">
+            <span class="question-row__stripe"></span>
+            <div class="question-row__main">
+              <div class="question-row__top"><strong>学生上课玩手机，你提醒后他仍然继续，你会怎么做？</strong><span class="badge badge--success">启用</span></div>
+              <p class="question-row__answer">答案要点：非语言提醒优先，课后单独沟通，按班级公约处理并跟进。</p>
+              <div class="question-row__meta"><span>班级管理</span><span>纪律处理</span><span>答案要点 3 条</span></div>
+            </div>
+            <div class="question-row__side"><span>已用于 1 个任务</span><span>11-08 更新</span></div>
+          </button>
+
+          <button class="question-row" type="button" data-question data-question-status="inactive" data-question-stem="如果公开课上多媒体设备突然故障，你会如何应对？" data-question-category="应急应变 · 课堂管理" data-question-answer="1. 保持镇定，先用板书或口头讲述继续课堂，不让学生察觉慌乱。2. 请助教或学生协助检查设备，尽量在 1 分钟内恢复。3. 若无法恢复，调整教学方案，保证课堂目标达成。" data-question-used="0 个任务" data-question-updated="2026-10-30">
+            <span class="question-row__stripe"></span>
+            <div class="question-row__main">
+              <div class="question-row__top"><strong>如果公开课上多媒体设备突然故障，你会如何应对？</strong><span class="badge">停用</span></div>
+              <p class="question-row__answer">答案要点：保持镇定，用板书继续；快速排查；无法恢复时调整教学方案。</p>
+              <div class="question-row__meta"><span>应急应变</span><span>课堂管理</span><span>答案要点 3 条</span></div>
+            </div>
+            <div class="question-row__side"><span>已用于 0 个任务</span><span>10-30 更新</span></div>
+          </button>
+        </div>
+        <div class="list-foot">
+          <span class="list-foot__info">共 128 题 · 显示 1—4</span>
+          <div class="pagination" aria-label="题库分页">
+            <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+            <button class="pagination__btn is-active" type="button">1</button>
+            <button class="pagination__btn" type="button">2</button>
+            <button class="pagination__btn" type="button">3</button>
+            <span class="pagination__info">…</span>
+            <button class="pagination__btn" type="button">32</button>
+            <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="preview-panel">
+        <div class="preview-panel__head"><strong>题目预览</strong><span class="badge badge--success" id="preview-status">启用</span></div>
+        <div class="preview-panel__body">
+          <p class="preview-stem" id="preview-stem">作为班主任，发现两名学生在课堂上发生争执，你会如何处理？</p>
+          <div class="preview-tags"><span class="chip chip--muted" id="preview-category">班级管理 · 应急应变</span><span class="chip chip--muted">答案要点 3 条</span></div>
+          <div class="preview-section">
+            <div class="preview-section__label"><span data-icon="lock"></span>答案要点 · 仅教师可见</div>
+            <p class="preview-answer" id="preview-answer">1. 先稳定课堂秩序，用眼神、停顿或走近提醒，避免公开扩大冲突。2. 课后分别了解情况，倾听双方诉求，不急于判定对错。3. 依据校规与班级公约处理，必要时联系家长并持续跟进。</p>
+          </div>
+          <dl class="preview-meta">
+            <div><dt>已用于</dt><dd id="preview-used">3 个任务</dd></div>
+            <div><dt>最近更新</dt><dd id="preview-updated">2026-11-12</dd></div>
+          </dl>
+          <div class="preview-note"><span data-icon="info"></span><span>学生端不显示题干之外的答案要点与权重；题目停用不影响历史任务快照。</span></div>
+        </div>
+        <div class="preview-panel__foot">
+          <button class="btn btn--secondary btn--sm" type="button" data-open="question-editor-drawer"><span data-icon="edit"></span>编辑</button>
+          <button class="btn btn--ghost btn--sm" type="button" data-toast="停用题目需要二次确认（原型演示）。">停用</button>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Question editor drawer -->
+  <div class="overlay" data-overlay-for="question-editor-drawer"></div>
+  <aside class="drawer" id="question-editor-drawer" aria-hidden="true" aria-labelledby="question-editor-title">
+    <div class="drawer__head">
+      <div>
+        <div class="drawer__title" id="question-editor-title">编辑题目</div>
+        <div class="drawer__sub">本校题库 · 答案要点必填</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="question-editor-drawer" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="drawer__body">
+      <div class="field">
+        <span class="label">类别 <span class="req">*</span></span>
+        <button class="btn btn--secondary btn--block" type="button" data-open="category-picker-modal" style="justify-content:space-between">
+          <span class="row" style="gap:6px"><span data-icon="layers"></span><span id="question-category-label">班级管理</span></span>
+          <span data-icon="chevron-down"></span>
+        </button>
+        <span class="field-hint">从本校题库类别仓库中选择；停用类别不可选。</span>
+      </div>
+      <label class="field" style="margin-top:16px">
+        <span class="label">题干 <span class="req">*</span></span>
+        <textarea class="textarea" rows="3">作为班主任，发现两名学生在课堂上发生争执，你会如何处理？</textarea>
+        <span class="field-hint">最多 2000 字；学生端只显示题干。</span>
+      </label>
+      <label class="field" style="margin-top:16px">
+        <span class="label">答案要点 <span class="req">*</span></span>
+        <textarea class="textarea" rows="6">1. 先稳定课堂秩序，用眼神、停顿或走近提醒，避免公开扩大冲突。2. 课后分别了解情况，倾听双方诉求，不急于判定对错。3. 依据校规与班级公约处理，必要时联系家长并持续跟进。</textarea>
+        <span class="field-hint">最多 4000 字；教师可见，学生端永不返回。</span>
+      </label>
+      <div class="alert alert--info" style="margin-top:16px">
+        <span data-icon="info"></span>
+        <div><span>停用题目不会进入 M3 选题列表，但已经发布的任务仍保留题目快照。</span></div>
+      </div>
+    </div>
+    <div class="drawer__foot">
+      <button class="btn btn--secondary" type="button" data-close="question-editor-drawer">取消</button>
+      <button class="btn btn--primary" type="button" data-close="question-editor-drawer" data-toast="题目已保存（原型演示）。">保存</button>
+    </div>
+  </aside>
+
+  <!-- Category picker modal (stacks above the question drawer) -->
+  <div class="overlay" data-overlay-for="category-picker-modal"></div>
+  <div class="modal modal--wide" id="category-picker-modal" data-layer-stack role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="category-picker-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="category-picker-title">选择类别</div>
+        <div class="drawer__sub">本校题库 · 停用类别不可选</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="category-picker-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="category-picker__search">
+        <label class="input-affix">
+          <span data-icon="search"></span>
+          <input class="input" type="search" id="category-picker-search" placeholder="搜索类别名称" aria-label="搜索类别">
+        </label>
+        <a class="btn btn--ghost btn--sm" href="question-categories.html">管理类别</a>
+      </div>
+      <div class="category-picker__list" id="category-picker-list" role="listbox" aria-label="类别列表">
+        <button class="category-pick is-selected" type="button" role="option" aria-selected="true" data-category-name="班级管理" data-close="category-picker-modal">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <div class="category-pick__main"><strong>班级管理</strong><span>纪律 · 班风 · 家校沟通</span></div>
+          <span class="category-pick__count">28 题</span>
+        </button>
+        <button class="category-pick" type="button" role="option" aria-selected="false" data-category-name="教育理念" data-close="category-picker-modal">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <div class="category-pick__main"><strong>教育理念</strong><span>教育观 · 学生观 · 教师观</span></div>
+          <span class="category-pick__count">32 题</span>
+        </button>
+        <button class="category-pick" type="button" role="option" aria-selected="false" data-category-name="应急应变" data-close="category-picker-modal">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <div class="category-pick__main"><strong>应急应变</strong><span>课堂突发 · 安全事件</span></div>
+          <span class="category-pick__count">24 题</span>
+        </button>
+        <button class="category-pick" type="button" role="option" aria-selected="false" data-category-name="职业认知" data-close="category-picker-modal">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <div class="category-pick__main"><strong>职业认知</strong><span>教师职业 · 教育法规</span></div>
+          <span class="category-pick__count">20 题</span>
+        </button>
+        <button class="category-pick" type="button" role="option" aria-selected="false" data-category-name="教学实施" data-close="category-picker-modal">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <div class="category-pick__main"><strong>教学实施</strong><span>教学设计 · 课堂组织</span></div>
+          <span class="category-pick__count">14 题</span>
+        </button>
+        <button class="category-pick" type="button" role="option" aria-selected="false" aria-disabled="true" data-category-name="人际沟通" data-close="category-picker-modal" style="opacity:.45">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <div class="category-pick__main"><strong>人际沟通</strong><span>已停用 · 保留历史引用</span></div>
+          <span class="category-pick__count">10 题</span>
+        </button>
+      </div>
+      <div class="category-picker__foot">
+        <span class="pagination__info" id="category-picker-info">共 6 个类别 · 第 1 / 1 页</span>
+        <div class="pagination" aria-label="类别分页">
+          <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+          <button class="pagination__btn is-active" type="button">1</button>
+          <button class="pagination__btn" type="button" data-toast="第 2 页（原型演示）。">2</button>
+          <button class="pagination__btn" type="button" data-toast="下一页（原型演示）。" aria-label="下一页">›</button>
+        </div>
+      </div>
+      <div class="lazy-foot">滚动加载更多 · 已显示 6 / 6 个类别</div>
+    </div>
+    <div class="modal__foot">
+      <a class="btn btn--ghost" href="question-categories.html"><span data-icon="settings"></span>类别管理</a>
+      <button class="btn btn--secondary" type="button" data-close="category-picker-modal">取消</button>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+  <script>
+    const previewStem = document.getElementById("preview-stem");
+    const previewCategory = document.getElementById("preview-category");
+    const previewAnswer = document.getElementById("preview-answer");
+    const previewUsed = document.getElementById("preview-used");
+    const previewUpdated = document.getElementById("preview-updated");
+    const previewStatus = document.getElementById("preview-status");
+
+    const categoryPicks = Array.from(document.querySelectorAll("[data-category-name]"));
+    const categorySearch = document.getElementById("category-picker-search");
+    const categoryInfo = document.getElementById("category-picker-info");
+
+    categoryPicks.forEach(function (item) {
+      item.addEventListener("click", function (event) {
+        if (item.getAttribute("aria-disabled") === "true") {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        categoryPicks.forEach(function (pick) {
+          pick.classList.remove("is-selected");
+          pick.setAttribute("aria-selected", "false");
+        });
+        item.classList.add("is-selected");
+        item.setAttribute("aria-selected", "true");
+        document.getElementById("question-category-label").textContent = item.dataset.categoryName;
+        if (categoryInfo) categoryInfo.textContent = "已选择：" + item.dataset.categoryName;
+      });
+    });
+
+    categorySearch.addEventListener("input", function () {
+      const keyword = categorySearch.value.trim().toLowerCase();
+      let visible = 0;
+      categoryPicks.forEach(function (item) {
+        const match = !keyword || item.dataset.categoryName.toLowerCase().includes(keyword);
+        item.hidden = !match;
+        if (match) visible += 1;
+      });
+      categoryInfo.textContent = "共 " + visible + " 个类别 · 第 1 / 1 页";
+    });
+
+    document.querySelectorAll("[data-question]").forEach(function (row) {
+      row.addEventListener("click", function () {
+        document.querySelectorAll("[data-question]").forEach(function (item) {
+          item.classList.remove("is-active");
+        });
+        row.classList.add("is-active");
+        previewStem.textContent = row.dataset.questionStem;
+        previewCategory.textContent = row.dataset.questionCategory;
+        previewAnswer.textContent = row.dataset.questionAnswer;
+        previewUsed.textContent = row.dataset.questionUsed;
+        previewUpdated.textContent = row.dataset.questionUpdated;
+        previewStatus.textContent = row.dataset.questionStatus === "active" ? "启用" : "停用";
+        previewStatus.className = row.dataset.questionStatus === "active" ? "badge badge--success" : "badge";
+      });
+    });
+  </script>
+</body>
+</html>

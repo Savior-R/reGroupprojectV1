@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>设计系统 · 三尺讲台原型</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .ds-nav {
+      position: sticky;
+      top: var(--shell-h);
+      z-index: 30;
+      border-bottom: 1px solid var(--line);
+      background: rgba(245, 241, 232, 0.92);
+      backdrop-filter: blur(12px);
+    }
+
+    .ds-nav__inner {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      max-width: var(--page-max);
+      margin: 0 auto;
+      padding: 0 var(--gutter);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .ds-nav__inner::-webkit-scrollbar {
+      display: none;
+    }
+
+    .ds-nav a {
+      display: inline-flex;
+      align-items: center;
+      height: 46px;
+      color: var(--text-2);
+      font-size: 11.5px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .ds-nav a:hover {
+      color: var(--accent);
+    }
+
+    .ds-section {
+      padding: 54px 0;
+      border-bottom: 1px solid var(--line);
+      scroll-margin-top: calc(var(--shell-h) + 46px);
+    }
+
+    .ds-section:last-of-type {
+      border-bottom: 0;
+    }
+
+    .ds-section__head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 26px;
+    }
+
+    .ds-section__head h2 {
+      margin-top: 7px;
+      font-size: 28px;
+    }
+
+    .ds-section__head p {
+      max-width: 46em;
+      color: var(--text-2);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    .ds-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .ds-grid--3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .ds-panel {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+    }
+
+    .ds-panel__label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--text-3);
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .ds-panel__label span:last-child {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 400;
+      letter-spacing: 0;
+    }
+
+    /* Brand */
+    .brand-specimen {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background:
+        linear-gradient(90deg, rgba(42, 103, 88, 0.05), transparent 55%),
+        var(--surface);
+    }
+
+    .brand-specimen__name {
+      font-family: var(--font-serif);
+      font-size: 28px;
+      letter-spacing: 0.1em;
+    }
+
+    .brand-specimen__sub {
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 9px;
+      letter-spacing: 0.2em;
+    }
+
+    .brand-notes {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .brand-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      color: var(--text-2);
+      font-size: 11.5px;
+      line-height: 1.65;
+    }
+
+    .brand-note [data-icon] svg {
+      width: 14px;
+      height: 14px;
+      margin-top: 2px;
+      color: var(--success);
+    }
+
+    /* Swatches */
+    .swatch-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .swatch {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      background: var(--surface);
+    }
+
+    .swatch__color {
+      display: block;
+      height: 64px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .swatch__meta {
+      padding: 9px 10px;
+    }
+
+    .swatch__name {
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .swatch__var {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+    }
+
+    .swatch__hex {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+    }
+
+    .stage-swatch {
+      --sw-bg: var(--stage-0);
+      --sw-surface: var(--stage-1);
+      --sw-amber: var(--stage-amber);
+      --sw-red: var(--stage-red);
+    }
+
+    /* Type */
+    .type-row {
+      display: grid;
+      grid-template-columns: 130px minmax(0, 1fr);
+      gap: 22px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--line);
+      align-items: baseline;
+    }
+
+    .type-row:last-child {
+      border-bottom: 0;
+    }
+
+    .type-row__label {
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.04em;
+    }
+
+    .spec-display {
+      font-family: var(--font-serif);
+      font-size: 48px;
+      font-weight: 600;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .spec-h1 {
+      font-family: var(--font-serif);
+      font-size: 34px;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    .spec-h2 {
+      font-family: var(--font-serif);
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .spec-h3 {
+      font-family: var(--font-serif);
+      font-size: 19px;
+      font-weight: 600;
+    }
+
+    .spec-body {
+      max-width: 52ch;
+      color: var(--text-2);
+      font-size: 14.5px;
+      line-height: 1.72;
+    }
+
+    .spec-small {
+      color: var(--text-3);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .spec-mono {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Space / shape */
+    .space-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 7px 0;
+    }
+
+    .space-row__bar {
+      height: 8px;
+      border-radius: 2px;
+      background: var(--brand);
+      opacity: 0.72;
+    }
+
+    .space-row__label {
+      width: 62px;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 9px;
+    }
+
+    .radius-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 6px;
+    }
+
+    .radius-box {
+      display: grid;
+      place-items: center;
+      width: 76px;
+      height: 54px;
+      border: 1px solid var(--line-strong);
+      background: var(--brand-wash);
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+    }
+
+    .shadow-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 10px;
+    }
+
+    .shadow-box {
+      display: grid;
+      place-items: center;
+      height: 76px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      background: var(--surface);
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+    }
+
+    /* Button matrix */
+    .button-matrix {
+      display: grid;
+      gap: 0;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 130px repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      align-items: center;
+      padding: 13px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .button-row:last-child {
+      border-bottom: 0;
+    }
+
+    .button-row__label {
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 9px;
+    }
+
+    /* Forms demo */
+    .form-demo {
+      display: grid;
+      gap: 18px;
+    }
+
+    .segment-demo {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    /* Table demo */
+    .demo-table-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+    }
+
+    /* Feedback */
+    .feedback-stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .skeleton-demo {
+      display: grid;
+      gap: 9px;
+    }
+
+    .skeleton-demo .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* Stage demo */
+    .stage-demo {
+      --bg: var(--stage-0);
+      --surface: var(--stage-1);
+      --surface-2: var(--stage-2);
+      --text: var(--stage-text);
+      --text-2: var(--stage-muted);
+      --text-3: var(--stage-faint);
+      --line: var(--stage-line);
+      --line-strong: var(--stage-line-strong);
+      --brand: var(--stage-amber);
+      --brand-hover: var(--stage-amber-hover);
+      --brand-soft: rgba(224, 164, 74, 0.12);
+      --on-brand: #1b1408;
+      --accent: var(--stage-red);
+      --success: var(--stage-green);
+      --success-soft: rgba(121, 195, 155, 0.12);
+      --warning: var(--stage-amber);
+      --warning-soft: rgba(224, 164, 74, 0.12);
+      --danger: var(--stage-red);
+      --danger-soft: rgba(217, 95, 74, 0.12);
+      overflow: hidden;
+      padding: 22px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-lg);
+      background:
+        radial-gradient(500px 260px at 80% 0%, rgba(224, 164, 74, 0.08), transparent 70%),
+        var(--stage-1);
+      color: var(--stage-text);
+    }
+
+    .stage-demo__bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--stage-line);
+      color: var(--stage-muted);
+      font-size: 10px;
+    }
+
+    .stage-demo__body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 190px;
+      gap: 12px;
+      padding: 16px 0;
+    }
+
+    .stage-demo__screen {
+      display: grid;
+      min-height: 168px;
+      place-items: center;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-md);
+      background:
+        radial-gradient(ellipse at 50% 0%, rgba(224, 164, 74, 0.08), transparent 60%),
+        var(--stage-0);
+      color: var(--stage-faint);
+      font-family: var(--font-serif);
+      font-size: 13px;
+    }
+
+    .stage-demo__aside {
+      padding: 12px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-md);
+      background: var(--stage-2);
+    }
+
+    .stage-demo__dock {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-top: 14px;
+      border-top: 1px solid var(--stage-line);
+    }
+
+    .stage-demo .badge {
+      background: var(--stage-2);
+      color: var(--stage-muted);
+    }
+
+    .stage-demo .badge--warning {
+      background: rgba(224, 164, 74, 0.14);
+      color: var(--stage-amber);
+    }
+
+    .stage-demo .badge--danger {
+      background: rgba(217, 95, 74, 0.14);
+      color: var(--stage-red);
+    }
+
+    /* Do / don't */
+    .do-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .do-col {
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+    }
+
+    .do-col--dont {
+      background: var(--paper-0);
+    }
+
+    .do-col__title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .do-col--do .do-col__title {
+      color: var(--success);
+    }
+
+    .do-col--dont .do-col__title {
+      color: var(--danger);
+    }
+
+    .do-col ul {
+      display: grid;
+      gap: 9px;
+      margin-top: 13px;
+    }
+
+    .do-col li {
+      display: flex;
+      gap: 8px;
+      color: var(--text-2);
+      font-size: 11.5px;
+      line-height: 1.65;
+    }
+
+    .do-col li::before {
+      color: var(--text-3);
+      content: "—";
+    }
+
+    @media (max-width: 1100px) {
+      .swatch-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .ds-grid--3 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .button-row {
+        grid-template-columns: 100px repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 820px) {
+      .ds-grid,
+      .ds-grid--3,
+      .do-grid,
+      .stage-demo__body {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .swatch-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .ds-section__head {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .ds-section__head p {
+        text-align: left;
+      }
+
+      .type-row {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 4px;
+      }
+
+      .button-row {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body data-role="teacher" data-nav="">
+  <div data-app-header></div>
+
+  <nav class="ds-nav" aria-label="设计系统目录">
+    <div class="ds-nav__inner">
+      <a href="#brand">品牌</a>
+      <a href="#color">色彩</a>
+      <a href="#type">字体</a>
+      <a href="#shape">间距与形状</a>
+      <a href="#actions">按钮</a>
+      <a href="#forms">表单</a>
+      <a href="#data">数据展示</a>
+      <a href="#feedback">反馈状态</a>
+      <a href="#overlays">抽屉与弹窗</a>
+      <a href="#stage">舞台组件</a>
+      <a href="#a11y">可访问性</a>
+      <a href="#rules">使用规则</a>
+    </div>
+  </nav>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">FOUNDATION / DESIGN SYSTEM</p>
+        <h1 class="page-title">一套可被反复使用的<br>教学界面语言。</h1>
+        <p class="page-lead">
+          这份设计系统只定义“最小必要规则”：色彩、字体、间距、按钮、表单、状态和舞台。页面可以有个性，
+          但必须共用同一套语义。修改 token，再改页面；不要在每个页面里重新发明按钮。
+        </p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn--secondary" href="index.html"><span data-icon="arrow-left"></span>原型说明</a>
+        <button class="btn btn--primary" type="button" data-toast="设计系统为静态演示；token 见 assets/tokens.css。">
+          <span data-icon="layers"></span>查看 Token
+        </button>
+      </div>
+    </header>
+
+    <!-- Brand -->
+    <section class="ds-section" id="brand">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">01 / BRAND</p>
+          <h2>一枚章，两个字。</h2>
+        </div>
+        <p>“三尺讲台”是品牌名，也是产品气质。印章承担识别，衬线字承担学术感；不要给 Logo 加英文缩写或复杂图形。</p>
+      </div>
+      <div class="ds-grid">
+        <div>
+          <div class="brand-specimen">
+            <span class="seal seal--lg" aria-hidden="true">三</span>
+            <div>
+              <div class="brand-specimen__name">三尺讲台</div>
+              <div class="brand-specimen__sub">TEACHING STUDIO · 师范生教学训练</div>
+            </div>
+          </div>
+          <div class="brand-notes">
+            <div class="brand-note"><span data-icon="check"></span><span>印章使用朱砂色，方形、直角、内描边；不旋转、不加阴影厚度。</span></div>
+            <div class="brand-note"><span data-icon="check"></span><span>品牌名固定为衬线体，字距 0.08—0.1em；英文仅作辅助，不单独出现。</span></div>
+            <div class="brand-note"><span data-icon="check"></span><span>登录封面、空态、报告落款可单独使用印章；导航中印章 + 品牌名成组出现。</span></div>
+          </div>
+        </div>
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Usage / 使用示例</span><span>SEAL + WORDMARK</span></div>
+          <div class="stack" style="margin-top:16px">
+            <div class="row">
+              <span class="seal seal--sm" aria-hidden="true">三</span>
+              <div>
+                <div class="serif" style="font-size:18px;letter-spacing:.08em">三尺讲台</div>
+                <div class="xs faint" style="letter-spacing:.16em">TEACHING STUDIO</div>
+              </div>
+            </div>
+            <hr class="ink-rule">
+            <div class="row">
+              <span class="seal seal--ghost" aria-hidden="true">讲</span>
+              <div class="small muted">反转用法：浅底描边章，用于报告落款 / 空态。</div>
+            </div>
+            <div class="alert alert--note">
+              <span data-icon="info"></span>
+              <div>
+                <div class="alert__title">不要把印章当图标</div>
+                <span>课程、任务、训练等导航项使用线性图标；印章只代表品牌，不承担功能语义。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Color -->
+    <section class="ds-section" id="color">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">02 / COLOR</p>
+          <h2>纸、墨、朱砂、赭石。</h2>
+        </div>
+        <p>颜色只从 token 取。主色负责行动，朱砂负责批注和当前，赭石负责提醒；状态色必须同时有文字。</p>
+      </div>
+
+      <div class="ds-panel">
+        <div class="ds-panel__label"><span>Light / 普通页面</span><span>--paper-* / --ink-* / --green-*</span></div>
+        <div class="swatch-grid" style="margin-top:16px">
+          <div class="swatch">
+            <span class="swatch__color" style="background:var(--paper-1)"></span>
+            <div class="swatch__meta"><div class="swatch__name">纸 · 页面底</div><span class="swatch__var">--paper-1</span><span class="swatch__hex">#F5F1E8</span></div>
+          </div>
+          <div class="swatch">
+            <span class="swatch__color" style="background:var(--surface-0)"></span>
+            <div class="swatch__meta"><div class="swatch__name">纸 · 表面</div><span class="swatch__var">--surface-0</span><span class="swatch__hex">#FFFDF8</span></div>
+          </div>
+          <div class="swatch">
+            <span class="swatch__color" style="background:var(--ink-900)"></span>
+            <div class="swatch__meta"><div class="swatch__name">墨 · 正文</div><span class="swatch__var">--ink-900</span><span class="swatch__hex">#182622</span></div>
+          </div>
+          <div class="swatch">
+            <span class="swatch__color" style="background:var(--ink-500)"></span>
+            <div class="swatch__meta"><div class="swatch__name">墨 · 次文</div><span class="swatch__var">--ink-500</span><span class="swatch__hex">#68766F</span></div>
+          </div>
+          <div class="swatch">
+            <span class="swatch__color" style="background:var(--green-600)"></span>
+            <div class="swatch__meta"><div class="swatch__name">主色 · 墨绿</div><span class="swatch__var">--green-600</span><span class="swatch__hex">#2A6758</span></div>
+          </div>
+          <div class="swatch">
+            <span class="swatch__color" style="background:var(--green-100)"></span>
+            <div class="swatch__meta"><div class="swatch__name">主色 · 淡</div><span class="swatch__var">--green-100</span><span class="swatch__hex">#E2ECE7</span></div>
+          </div>
+          <div class="swatch">
+            <span class="swatch__color" style="background:var(--cinnabar-600)"></span>
+            <div class="swatch__meta"><div class="swatch__name">朱砂 · 批注</div><span class="swatch__var">--cinnabar-600</span><span class="swatch__hex">#A8442F</span></div>
+          </div>
+          <div class="swatch">
+            <span class="swatch__color" style="background:var(--gold-600)"></span>
+            <div class="swatch__meta"><div class="swatch__name">赭石 · 提醒</div><span class="swatch__var">--gold-600</span><span class="swatch__hex">#A9782F</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ds-grid" style="margin-top:18px">
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Semantic / 语义</span><span>STATUS</span></div>
+          <div class="row wrap" style="margin-top:16px">
+            <span class="badge badge--success">已完成</span>
+            <span class="badge badge--warning">进行中</span>
+            <span class="badge badge--danger">失败 / 风险</span>
+            <span class="badge badge--info">信息</span>
+            <span class="badge">未开始 / 归档</span>
+          </div>
+          <p class="xs faint" style="margin-top:14px">状态 badge 始终包含圆点 + 文案；不要用纯色块替代文字。</p>
+        </div>
+        <div class="ds-panel stage-swatch">
+          <div class="ds-panel__label"><span>Stage / 沉浸页</span><span>--stage-*</span></div>
+          <div class="swatch-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));margin-top:16px">
+            <div class="swatch">
+              <span class="swatch__color" style="background:var(--stage-0)"></span>
+              <div class="swatch__meta"><div class="swatch__name">墨夜</div><span class="swatch__var">--stage-0</span></div>
+            </div>
+            <div class="swatch">
+              <span class="swatch__color" style="background:var(--stage-1)"></span>
+              <div class="swatch__meta"><div class="swatch__name">舞台</div><span class="swatch__var">--stage-1</span></div>
+            </div>
+            <div class="swatch">
+              <span class="swatch__color" style="background:var(--stage-amber)"></span>
+              <div class="swatch__meta"><div class="swatch__name">琥珀</div><span class="swatch__var">--stage-amber</span></div>
+            </div>
+            <div class="swatch">
+              <span class="swatch__color" style="background:var(--stage-red)"></span>
+              <div class="swatch__meta"><div class="swatch__name">录制红</div><span class="swatch__var">--stage-red</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Typography -->
+    <section class="ds-section" id="type">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">03 / TYPOGRAPHY</p>
+          <h2>衬线负责气质，无衬线负责效率。</h2>
+        </div>
+        <p>标题、分数、品牌用衬线；正文、表单、表格用无衬线；数字用 tabular numerals。中文正文不小于 12px。</p>
+      </div>
+      <div class="ds-panel">
+        <div class="ds-panel__label"><span>Scale / 字阶</span><span>noto serif sc / inter</span></div>
+        <div class="type-row">
+          <span class="type-row__label">DISPLAY / 48</span>
+          <p class="spec-display">把讲台，重新设计。</p>
+        </div>
+        <div class="type-row">
+          <span class="type-row__label">H1 / 34</span>
+          <p class="spec-h1">荷塘月色 · 评测报告</p>
+        </div>
+        <div class="type-row">
+          <span class="type-row__label">H2 / 24</span>
+          <p class="spec-h2">课堂互动与控场</p>
+        </div>
+        <div class="type-row">
+          <span class="type-row__label">H3 / 19</span>
+          <p class="spec-h3">改进建议</p>
+        </div>
+        <div class="type-row">
+          <span class="type-row__label">BODY / 14.5</span>
+          <p class="spec-body">面向师范生的课堂试讲训练与评测平台。录课、复盘、AI 评分与教师点评，在一处完成。学生只看到自己的成绩与报告，不显示班级排名。</p>
+        </div>
+        <div class="type-row">
+          <span class="type-row__label">SMALL / 12</span>
+          <p class="spec-small">全程录制，开始后不可暂停。建议在安静、网络稳定的环境中完成。</p>
+        </div>
+        <div class="type-row">
+          <span class="type-row__label">NUMERIC / MONO</span>
+          <p class="spec-mono">82.3 / 100 · 04:32 · 2026-11-16 14:20</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Shape -->
+    <section class="ds-section" id="shape">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">04 / SPACE & SHAPE</p>
+          <h2>靠留白，不靠投影。</h2>
+        </div>
+        <p>间距是 4 的倍数；卡片 14px 圆角、控件 6—8px；阴影只做轻微托起，沉浸页才用深舞台阴影。</p>
+      </div>
+      <div class="ds-grid ds-grid--3">
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Spacing</span><span>4 / 8 / 12 / 16 / 24 / 32</span></div>
+          <div style="margin-top:14px">
+            <div class="space-row"><span class="space-row__label">--s1 · 4</span><span class="space-row__bar" style="width:4px"></span></div>
+            <div class="space-row"><span class="space-row__label">--s2 · 8</span><span class="space-row__bar" style="width:8px"></span></div>
+            <div class="space-row"><span class="space-row__label">--s3 · 12</span><span class="space-row__bar" style="width:12px"></span></div>
+            <div class="space-row"><span class="space-row__label">--s4 · 16</span><span class="space-row__bar" style="width:16px"></span></div>
+            <div class="space-row"><span class="space-row__label">--s6 · 24</span><span class="space-row__bar" style="width:24px"></span></div>
+            <div class="space-row"><span class="space-row__label">--s8 · 32</span><span class="space-row__bar" style="width:32px"></span></div>
+          </div>
+        </div>
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Radius</span><span>3 / 6 / 9 / 14 / 20</span></div>
+          <div class="radius-row">
+            <div class="radius-box" style="border-radius:var(--r-xs)">3</div>
+            <div class="radius-box" style="border-radius:var(--r-sm)">6</div>
+            <div class="radius-box" style="border-radius:var(--r-md)">9</div>
+            <div class="radius-box" style="border-radius:var(--r-lg)">14</div>
+            <div class="radius-box" style="border-radius:var(--r-pill)">pill</div>
+          </div>
+          <p class="xs faint" style="margin-top:14px">表单控件用 6—8px；卡片 14px；印章 4px；标签 3px。</p>
+        </div>
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Elevation</span><span>shadow-1 / 2 / pop</span></div>
+          <div class="shadow-row">
+            <div class="shadow-box" style="box-shadow:var(--shadow-1)">shadow-1</div>
+            <div class="shadow-box" style="box-shadow:var(--shadow-2)">shadow-2</div>
+            <div class="shadow-box" style="box-shadow:var(--shadow-pop)">pop</div>
+          </div>
+          <p class="xs faint" style="margin-top:14px">普通卡片优先用 1px 线 + 纸面反差；阴影只做环境光。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Buttons -->
+    <section class="ds-section" id="actions">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">05 / ACTIONS</p>
+          <h2>一个页面，一个主按钮。</h2>
+        </div>
+        <p>主按钮墨绿、次按钮纸白描边、危险按钮红描边。所有按钮都有 hover / active / focus / disabled。</p>
+      </div>
+      <div class="ds-panel">
+        <div class="ds-panel__label"><span>Variants × States</span><span>HOVER / ACTIVE / FOCUS-VISIBLE / DISABLED</span></div>
+        <div class="button-matrix" style="margin-top:8px">
+          <div class="button-row">
+            <span class="button-row__label">PRIMARY</span>
+            <button class="btn btn--primary" type="button">开始试讲</button>
+            <button class="btn btn--primary" type="button" style="background:var(--brand-hover)">开始试讲</button>
+            <button class="btn btn--primary" type="button">开始试讲</button>
+            <button class="btn btn--primary" type="button" disabled>开始试讲</button>
+          </div>
+          <div class="button-row">
+            <span class="button-row__label">SECONDARY</span>
+            <button class="btn btn--secondary" type="button">查看详情</button>
+            <button class="btn btn--secondary" type="button" style="background:var(--paper-0);border-color:var(--ink-300)">查看详情</button>
+            <button class="btn btn--secondary" type="button">查看详情</button>
+            <button class="btn btn--secondary" type="button" disabled>查看详情</button>
+          </div>
+          <div class="button-row">
+            <span class="button-row__label">GHOST / QUIET</span>
+            <button class="btn btn--ghost" type="button">返回</button>
+            <button class="btn btn--ghost" type="button" style="background:var(--brand-soft);color:var(--brand)">返回</button>
+            <button class="btn btn--quiet" type="button">取消</button>
+            <button class="btn btn--quiet" type="button" disabled>取消</button>
+          </div>
+          <div class="button-row">
+            <span class="button-row__label">ACCENT / DANGER</span>
+            <button class="btn btn--accent" type="button">提交本次试讲</button>
+            <button class="btn btn--danger" type="button">结束面试</button>
+            <button class="btn btn--danger" type="button" style="background:var(--danger-soft)">结束面试</button>
+            <button class="btn btn--danger" type="button" disabled>结束面试</button>
+          </div>
+          <div class="button-row">
+            <span class="button-row__label">SIZES / ICONS</span>
+            <button class="btn btn--primary btn--sm" type="button"><span data-icon="plus"></span>新建任务</button>
+            <button class="btn btn--secondary btn--lg" type="button"><span data-icon="upload"></span>上传材料</button>
+            <button class="btn btn--primary" type="button" aria-busy="true">保存中</button>
+            <button class="btn btn--secondary btn--block" type="button"><span data-icon="download"></span>导出 CSV</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Forms -->
+    <section class="ds-section" id="forms">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">06 / FORMS</p>
+          <h2>表单是教案，不是问卷。</h2>
+        </div>
+        <p>字段有标签、帮助文本和错误态；分节有编号；长表单右侧固定摘要与发布检查。</p>
+      </div>
+      <div class="ds-grid">
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Fields / 字段</span><span>DEFAULT / FOCUS / ERROR</span></div>
+          <div class="form-demo" style="margin-top:16px">
+            <label class="field">
+              <span class="label">课题 <span class="req">*</span></span>
+              <input class="input" value="荷塘月色" aria-label="课题">
+              <span class="field-hint">最多 100 字；发布后不可修改。</span>
+            </label>
+            <label class="field">
+              <span class="label">教材版本</span>
+              <input class="input" placeholder="例如：部编版" aria-label="教材版本">
+            </label>
+            <label class="field">
+              <span class="label">任务模式</span>
+              <div class="segment-demo">
+                <div class="segmented" data-tabs="ds-mode" role="tablist" aria-label="任务模式">
+                  <button type="button" role="tab" aria-selected="true" data-tab="free">自由试讲</button>
+                  <button type="button" role="tab" aria-selected="false" data-tab="scenario">情景试讲</button>
+                  <button type="button" role="tab" aria-selected="false" data-tab="interview">结构化面试</button>
+                </div>
+              </div>
+            </label>
+            <label class="field">
+              <span class="label">邮箱</span>
+              <input class="input is-invalid" value="teacher@example" aria-label="邮箱" aria-invalid="true">
+              <span class="field-error">请输入完整的邮箱地址。</span>
+            </label>
+          </div>
+        </div>
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Selection / 选择</span><span>RADIO / CHECK / SEGMENT</span></div>
+          <div class="stack" style="margin-top:16px">
+            <div class="radio-card is-selected">
+              <span class="radio-dot" aria-hidden="true"></span>
+              <div>
+                <div class="radio-card__title">结构化面试</div>
+                <div class="radio-card__desc">从 M5 题库选题，逐题展示，最多 10 题。</div>
+              </div>
+            </div>
+            <div class="radio-card">
+              <span class="radio-dot" aria-hidden="true"></span>
+              <div>
+                <div class="radio-card__title">自由试讲</div>
+                <div class="radio-card__desc">自定义课题、参考材料与虚拟学生，完整试讲。</div>
+              </div>
+            </div>
+            <label class="check-row">
+              <input type="checkbox" checked hidden>
+              <span class="check-box"><span data-icon="check"></span></span>
+              <span>我已阅读并确认：发布后评分权重不可修改。</span>
+            </label>
+            <label class="check-row">
+              <input type="checkbox" hidden>
+              <span class="check-box"><span data-icon="check"></span></span>
+              <span>允许学生在任务关闭前继续提交已有回看。</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Data -->
+    <section class="ds-section" id="data">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">07 / DATA</p>
+          <h2>数字要能扫读，状态要能停留。</h2>
+        </div>
+        <p>摘要用 stat strip，明细用表格；分数用 tabular numerals；状态用 badge；数据用数字与标签，不使用进度条。</p>
+      </div>
+
+      <div class="stat-strip">
+        <div class="stat">
+          <div class="stat__label">分配</div>
+          <div class="stat__value">30</div>
+          <div class="stat__meta">名学生</div>
+        </div>
+        <div class="stat">
+          <div class="stat__label">提交</div>
+          <div class="stat__value">28</div>
+          <div class="stat__meta">93% 提交率</div>
+        </div>
+        <div class="stat">
+          <div class="stat__label">已完成</div>
+          <div class="stat__value">20</div>
+          <div class="stat__meta">含教师评分</div>
+        </div>
+        <div class="stat">
+          <div class="stat__label">待 AI</div>
+          <div class="stat__value" style="color:var(--warning)">5</div>
+          <div class="stat__meta">评测队列中</div>
+        </div>
+        <div class="stat">
+          <div class="stat__label">待教师</div>
+          <div class="stat__value" style="color:var(--accent)">2</div>
+          <div class="stat__meta">需要人工评分</div>
+        </div>
+        <div class="stat">
+          <div class="stat__label">平均分</div>
+          <div class="stat__value" style="color:var(--brand)">82.4</div>
+          <div class="stat__meta">已完成样本</div>
+        </div>
+      </div>
+
+      <div class="ds-grid" style="margin-top:18px">
+        <div class="demo-table-card">
+          <div class="ds-panel__label" style="padding:16px 18px 12px"><span>Table / 表格</span><span>COMPACT · 44—48PX</span></div>
+          <div class="table-wrap">
+            <table class="table table--compact">
+              <thead>
+                <tr><th>学生</th><th>班级</th><th class="num">AI</th><th class="num">教师</th><th class="num">最终</th><th>状态</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><div class="row"><span class="avatar avatar--sm avatar--cinnabar">张</span><span class="strong">张晨</span></div></td>
+                  <td>语文2401</td><td class="num">85.0</td><td class="num">82.0</td><td class="num strong">84.1</td>
+                  <td><span class="badge badge--success">已完成</span></td>
+                </tr>
+                <tr>
+                  <td><div class="row"><span class="avatar avatar--sm avatar--gold">李</span><span class="strong">李思远</span></div></td>
+                  <td>语文2401</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
+                  <td><span class="badge badge--warning">待 AI</span></td>
+                </tr>
+                <tr>
+                  <td><div class="row"><span class="avatar avatar--sm avatar--blue">王</span><span class="strong">王雨桐</span></div></td>
+                  <td>语文2402</td><td class="num">90.2</td><td class="num">86.5</td><td class="num strong">89.1</td>
+                  <td><span class="badge badge--success">已完成</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Values / Avatars</span><span>NUMERIC · STACK</span></div>
+          <div class="stack" style="margin-top:18px">
+            <div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px dotted var(--line)">
+              <span class="small">教学表达</span><span class="mono small">81.2</span>
+            </div>
+            <div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px dotted var(--line)">
+              <span class="small">课堂互动</span><span class="mono small" style="color:var(--accent)">58.0 · 薄弱</span>
+            </div>
+            <div class="row" style="justify-content:space-between;padding:6px 0">
+              <span class="small">时间管理</span><span class="mono small">84.6</span>
+            </div>
+            <hr class="ink-rule" style="margin:6px 0">
+            <div class="row">
+              <div class="avatar-stack">
+                <span class="avatar avatar--cinnabar">周</span>
+                <span class="avatar avatar--gold">陈</span>
+                <span class="avatar avatar--blue">许</span>
+                <span class="avatar avatar--ink">苏</span>
+                <span class="avatar-stack__more">+3</span>
+              </div>
+              <span class="xs faint">虚拟学生 · 7 人</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ds-panel" style="margin-top:18px">
+        <div class="ds-panel__label"><span>Pagination / Lazy</span><span>LIST FOOT</span></div>
+        <div class="list-foot" style="border-top:0;padding:14px 0 4px">
+          <span class="list-foot__info">共 128 条 · 显示 1—20</span>
+          <div class="pagination" aria-label="分页示例">
+            <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+            <button class="pagination__btn is-active" type="button">1</button>
+            <button class="pagination__btn" type="button">2</button>
+            <button class="pagination__btn" type="button">3</button>
+            <span class="pagination__info">…</span>
+            <button class="pagination__btn" type="button">7</button>
+            <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+          </div>
+        </div>
+        <div class="lazy-foot">滚动加载更多 · 已显示 20 / 128</div>
+      </div>
+    </section>
+
+    <!-- Feedback -->
+    <section class="ds-section" id="feedback">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">08 / FEEDBACK</p>
+          <h2>空、错、加载，都要像设计过的。</h2>
+        </div>
+        <p>空态有图标、标题、说明和主操作；加载骨架与真实布局同形；错误提示不泄露内部信息。</p>
+      </div>
+      <div class="ds-grid ds-grid--3">
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Alerts</span><span>INFO / WARN / ERROR</span></div>
+          <div class="feedback-stack" style="margin-top:14px">
+            <div class="alert alert--info"><span data-icon="info"></span><div><div class="alert__title">评测排队中</div><span>通常需要 1—3 分钟，页面会自动刷新。</span></div></div>
+            <div class="alert alert--warning"><span data-icon="alert-triangle"></span><div><div class="alert__title">评测部分完成</div><span>课堂互动维度缺失，本次不计算总分。</span></div></div>
+            <div class="alert alert--danger"><span data-icon="alert-triangle"></span><div><div class="alert__title">录制上传失败</div><span>本次无法提交，请选择重做。</span></div></div>
+            <div class="alert alert--note"><span data-icon="info"></span><div><div class="alert__title">全程录制</div><span>开始后不可暂停，请勿刷新或关闭页面。</span></div></div>
+          </div>
+        </div>
+
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Empty / Skeleton</span><span>STATE</span></div>
+          <div class="empty" style="padding:26px 12px">
+            <div class="empty__icon"><span data-icon="clipboard"></span></div>
+            <div class="empty__title">还没有任务</div>
+            <p class="empty__text">创建第一个试讲任务，发布后学生即可在任务列表看到。</p>
+            <button class="btn btn--primary btn--sm" type="button"><span data-icon="plus"></span>新建任务</button>
+          </div>
+          <hr class="ink-rule">
+          <div class="skeleton-demo" style="margin-top:14px">
+            <div class="row"><span class="skeleton skeleton--avatar"></span><div style="flex:1"><div class="skeleton skeleton--text" style="width:42%"></div><div class="skeleton skeleton--text" style="width:68%;margin-top:6px"></div></div></div>
+            <div class="skeleton skeleton--title" style="width:76%;margin-top:8px"></div>
+            <div class="skeleton skeleton--text" style="width:100%"></div>
+            <div class="skeleton skeleton--text" style="width:88%"></div>
+          </div>
+        </div>
+
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Toast / Inline</span><span>TRANSIENT</span></div>
+          <div class="stack" style="margin-top:14px">
+            <button class="btn btn--secondary" type="button" data-toast="任务已发布 · 14:32">
+              <span data-icon="check-circle"></span>触发成功 Toast
+            </button>
+            <button class="btn btn--secondary" type="button" data-toast="网络连接已断开，正在重试…">
+              <span data-icon="wifi"></span>触发网络提示
+            </button>
+            <div class="alert alert--success"><span data-icon="check-circle"></span><div><div class="alert__title">三路录制已就绪</div><span>摄像头 / 屏幕 / 麦克风均已完成上传。</span></div></div>
+            <p class="xs faint">Toast 只做短暂确认；关键错误必须留在页面内，不依赖 Toast。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Overlays -->
+    <section class="ds-section" id="overlays">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">09 / OVERLAYS</p>
+          <h2>抽屉做任务，弹窗做确认。</h2>
+        </div>
+        <p>评分、选题、配置用右侧抽屉；发布、删除、提交确认用居中弹窗。两者都有遮罩、焦点管理和 Escape 关闭。</p>
+      </div>
+      <div class="ds-grid">
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Drawer / 抽屉</span><span>560 / 880 WIDE</span></div>
+          <div class="stack" style="margin-top:16px">
+            <p class="small muted">适合需要保留页面上下文的操作：教师评分、题库选题、评分配置。</p>
+            <button class="btn btn--primary" type="button" data-open="demo-drawer"><span data-icon="edit"></span>打开评分抽屉</button>
+          </div>
+        </div>
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Modal / 弹窗</span><span>520</span></div>
+          <div class="stack" style="margin-top:16px">
+            <p class="small muted">适合不可逆或需要二次确认的操作：提交试讲、发布任务、删除任务。</p>
+            <button class="btn btn--danger" type="button" data-open="demo-modal"><span data-icon="alert-triangle"></span>打开确认弹窗</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stage -->
+    <section class="ds-section" id="stage">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">10 / STAGE</p>
+          <h2>课堂是舞台，不是另一个后台。</h2>
+        </div>
+        <p>沉浸页使用墨夜背景、琥珀主按钮、录制红状态；信息密度更高，但层级与普通页一致。</p>
+      </div>
+      <div class="stage-demo">
+        <div class="stage-demo__bar">
+          <span class="seal seal--sm" aria-hidden="true">三</span>
+          <span class="serif" style="font-size:14px;color:var(--stage-text)">荷塘月色 · 自由试讲</span>
+          <span class="badge badge--danger">录制中 12:48</span>
+          <span class="badge" style="margin-left:auto">WS 已连接</span>
+        </div>
+        <div class="stage-demo__body">
+          <div class="stage-demo__screen">共享窗口 / 课堂主画面</div>
+          <div class="stage-demo__aside">
+            <div class="row" style="justify-content:space-between;margin-bottom:10px">
+              <span class="xs" style="color:var(--stage-muted)">虚拟学生 · 3</span>
+              <span class="badge badge--warning">1 人举手</span>
+            </div>
+            <div class="row" style="margin-bottom:9px"><span class="avatar avatar--sm avatar--cinnabar">周</span><div><div class="xs" style="color:var(--stage-text)">周予安</div><div style="font-size:9px;color:var(--stage-faint)">专注 · 活跃 82%</div></div></div>
+            <div class="row" style="margin-bottom:9px"><span class="avatar avatar--sm avatar--gold">陈</span><div><div class="xs" style="color:var(--stage-text)">陈一诺</div><div style="font-size:9px;color:var(--stage-faint)">举手 · 提问 64%</div></div></div>
+            <div class="row"><span class="avatar avatar--sm avatar--blue">许</span><div><div class="xs" style="color:var(--stage-text)">许知远</div><div style="font-size:9px;color:var(--stage-faint)">走神 · 注意 48%</div></div></div>
+          </div>
+        </div>
+        <div class="stage-demo__dock">
+          <button class="btn btn--primary btn--sm" type="button"><span data-icon="message"></span>提问全班</button>
+          <button class="btn btn--secondary btn--sm" type="button"><span data-icon="hand"></span>点名回答</button>
+          <button class="btn btn--ghost btn--sm" type="button"><span data-icon="alert-triangle"></span>提醒纪律</button>
+          <span class="xs" style="margin-left:auto;color:var(--stage-faint)">麦克风 · 摄像头 · 屏幕</span>
+          <button class="btn btn--danger btn--sm" type="button">结束试讲</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Accessibility -->
+    <section class="ds-section" id="a11y">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">11 / ACCESSIBILITY</p>
+          <h2>可读、可达、可恢复。</h2>
+        </div>
+        <p>对比度、焦点环、键盘、状态文字和减少动效是基线，不是加分项。</p>
+      </div>
+      <div class="ds-grid ds-grid--3">
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Contrast</span><span>≥ 4.5:1</span></div>
+          <p class="small muted" style="margin-top:14px">正文用墨 900 / 纸 1；次文最低墨 500。朱砂只用于重点，不承载长段正文。</p>
+        </div>
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Focus</span><span>2PX CINNABAR</span></div>
+          <p class="small muted" style="margin-top:14px">所有按钮、链接、输入均可键盘到达；焦点环使用朱砂 2px，偏移 2px，不移除。</p>
+        </div>
+        <div class="ds-panel">
+          <div class="ds-panel__label"><span>Motion</span><span>PREFERS-REDUCED-MOTION</span></div>
+          <p class="small muted" style="margin-top:14px">页面入场 380ms，控件 140—220ms；录制红点 1.6s 呼吸；减少动效时全部关闭。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Rules -->
+    <section class="ds-section" id="rules">
+      <div class="ds-section__head">
+        <div>
+          <p class="eyebrow">12 / RULES</p>
+          <h2>保持克制。</h2>
+        </div>
+        <p>这套系统靠“少”而不是“多”成立。新增组件前，先确认现有组件真的不够用。</p>
+      </div>
+      <div class="do-grid">
+        <div class="do-col do-col--do">
+          <div class="do-col__title"><span data-icon="check-circle"></span>Do</div>
+          <ul>
+            <li>每个页面只保留一个主按钮；其余操作降级为次按钮或文字链接。</li>
+            <li>先排版，再考虑装饰；留白和 1px 线优先于阴影、渐变和图标。</li>
+            <li>状态用 badge + 文案；分数用 tabular numerals；时间用 mono。</li>
+            <li>空态必须有图标、标题、解释和下一步；加载骨架与真实布局同形。</li>
+            <li>沉浸页才用深色；普通页面保持浅色纸感。</li>
+          </ul>
+        </div>
+        <div class="do-col do-col--dont">
+          <div class="do-col__title"><span data-icon="x"></span>Don't</div>
+          <ul>
+            <li>不要在每个页面里写新的按钮 / 卡片样式；先改共享类。</li>
+            <li>不要用朱砂做大面积背景或长段文字。</li>
+            <li>不要把卡片做成不同圆角、不同阴影的“拼贴”。</li>
+            <li>不要用纯色块代替状态文字；不要让 Toast 承载关键错误。</li>
+            <li>不要在沉浸页引入第三种主题色；深色只换语义别名，不换组件结构。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Demo drawer -->
+  <div class="overlay" data-overlay-for="demo-drawer"></div>
+  <aside class="drawer" id="demo-drawer" aria-hidden="true" aria-labelledby="demo-drawer-title">
+    <div class="drawer__head">
+      <div>
+        <div class="drawer__title" id="demo-drawer-title">评分 · 张晨</div>
+        <div class="drawer__sub">语文2401 · 荷塘月色 · AI 85.0</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="demo-drawer" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="drawer__body">
+      <div class="alert alert--info" style="margin-bottom:18px">
+        <span data-icon="sparkles"></span>
+        <div><div class="alert__title">AI 已完成评测</div><span>总分 85.0，课堂互动维度偏低，建议重点点评提问设计。</span></div>
+      </div>
+      <div class="stack">
+        <div class="row" style="justify-content:space-between"><span class="small">教学内容</span><span class="mono small">85.4</span></div>
+        <div class="row" style="justify-content:space-between"><span class="small">教学表达</span><span class="mono small">81.2</span></div>
+        <div class="row" style="justify-content:space-between"><span class="small">课堂互动</span><span class="mono small" style="color:var(--danger)">78.6</span></div>
+        <div class="row" style="justify-content:space-between"><span class="small">板书 / PPT</span><span class="mono small">84.0</span></div>
+        <div class="row" style="justify-content:space-between"><span class="small">时间管理</span><span class="mono small">82.1</span></div>
+      </div>
+      <hr class="ink-rule" style="margin:18px 0">
+      <div class="stat-strip" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+        <div class="stat"><div class="stat__label">教师总分</div><div class="stat__value" style="font-size:26px">82.0</div></div>
+        <div class="stat" style="border-right:0"><div class="stat__label">最终预览</div><div class="stat__value" style="font-size:26px;color:var(--brand)">84.1</div></div>
+      </div>
+      <label class="field" style="margin-top:18px">
+        <span class="label">教师评语</span>
+        <textarea class="textarea" placeholder="写下具体、可执行的建议…" aria-label="教师评语"></textarea>
+        <span class="field-hint">0 / 1000 · 学生可见</span>
+      </label>
+    </div>
+    <div class="drawer__foot">
+      <button class="btn btn--secondary" type="button" data-close="demo-drawer">取消</button>
+      <button class="btn btn--primary" type="button" data-toast="评分已保存（原型演示）。">保存评分</button>
+    </div>
+  </aside>
+
+  <!-- Demo modal -->
+  <div class="overlay" data-overlay-for="demo-modal"></div>
+  <div class="modal" id="demo-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="demo-modal-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="demo-modal-title">提交本次试讲？</div>
+        <div class="drawer__sub">提交后回放只读，不能重做。</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="demo-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--note">
+        <span data-icon="info"></span>
+        <div><div class="alert__title">三路录制已就绪</div><span>摄像头、屏幕、麦克风均已完成上传。提交后教师可在课程结束前查看回放与报告。</span></div>
+      </div>
+      <div class="check-row" style="margin-top:16px">
+        <input type="checkbox" checked hidden>
+        <span class="check-box"><span data-icon="check"></span></span>
+        <span>我已确认本次录制完整，并同意提交。</span>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="demo-modal">继续检查</button>
+      <button class="btn btn--primary" type="button" data-toast="已提交（原型演示）。">确认提交</button>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+</body>
+</html>

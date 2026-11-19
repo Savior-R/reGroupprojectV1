@@ -78,7 +78,9 @@ public final class WsTicketService {
             throw new DomainException(ErrorCode.SESSION_FAILED, "会话已失败", details);
         }
         if (session.status() == SessionStatus.CANCELLED
-                || session.status() == SessionStatus.SUBMITTED) {
+                || session.status() == SessionStatus.SUBMITTED
+                || session.status() == SessionStatus.SELECTED
+                || session.status() == SessionStatus.EVALUATED) {
             throw new DomainException(ErrorCode.SESSION_STATE_INVALID, "当前状态不允许连接", details);
         }
     }

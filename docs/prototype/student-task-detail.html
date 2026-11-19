@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>课前检查 · 荷塘月色 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .precheck-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 7fr) minmax(340px, 5fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .precheck-main {
+      display: grid;
+      gap: 16px;
+    }
+
+    .back-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      color: var(--text-3);
+      font-size: 11px;
+    }
+
+    .back-row a {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text-2);
+    }
+
+    .back-row a:hover {
+      color: var(--accent);
+    }
+
+    .back-row [data-icon] svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .camera-card {
+      overflow: hidden;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--stage-1);
+      box-shadow: var(--shadow-1);
+    }
+
+    .camera-card__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--stage-line);
+    }
+
+    .camera-card__head strong {
+      color: var(--stage-text);
+      font-family: var(--font-serif);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .camera-card__head span {
+      color: var(--stage-muted);
+      font-size: 10px;
+    }
+
+    .camera-frame {
+      position: relative;
+      display: flex;
+      aspect-ratio: 16 / 9;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background:
+        radial-gradient(ellipse at 50% 22%, rgba(224, 164, 74, 0.1), transparent 50%),
+        radial-gradient(ellipse at 50% 100%, rgba(42, 103, 88, 0.22), transparent 65%),
+        var(--stage-0);
+    }
+
+    .camera-frame::before,
+    .camera-frame::after {
+      position: absolute;
+      width: 26px;
+      height: 26px;
+      border-color: rgba(233, 238, 233, 0.34);
+      border-style: solid;
+      content: "";
+    }
+
+    .camera-frame::before {
+      top: 16px;
+      left: 16px;
+      border-width: 1px 0 0 1px;
+    }
+
+    .camera-frame::after {
+      right: 16px;
+      bottom: 16px;
+      border-width: 0 1px 1px 0;
+    }
+
+    .camera-figure {
+      position: relative;
+      width: 118px;
+      height: 150px;
+      margin-top: 18px;
+      opacity: 0.88;
+    }
+
+    .camera-figure::before {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: 58px;
+      height: 58px;
+      border: 1px solid rgba(233, 238, 233, 0.34);
+      border-radius: 50%;
+      background: rgba(233, 238, 233, 0.08);
+      content: "";
+      transform: translateX(-50%);
+    }
+
+    .camera-figure::after {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      height: 78px;
+      border: 1px solid rgba(233, 238, 233, 0.28);
+      border-radius: 60px 60px 8px 8px;
+      background:
+        linear-gradient(180deg, rgba(233, 238, 233, 0.13), rgba(233, 238, 233, 0.04));
+      content: "";
+    }
+
+    .camera-frame__hint {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      padding: 5px 11px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-pill);
+      background: rgba(7, 16, 14, 0.72);
+      color: var(--stage-muted);
+      font-size: 9.5px;
+      white-space: nowrap;
+      transform: translateX(-50%);
+    }
+
+    .camera-frame__live {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 8px;
+      border: 1px solid rgba(224, 164, 74, 0.3);
+      border-radius: var(--r-pill);
+      background: rgba(224, 164, 74, 0.1);
+      color: var(--stage-amber);
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .camera-frame__live::before {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+    }
+
+    .device-list {
+      display: grid;
+      gap: 0;
+      padding: 0 18px 6px;
+      background: var(--surface);
+    }
+
+    .device-row {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 13px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .device-row:last-child {
+      border-bottom: 0;
+    }
+
+    .device-row__icon {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      flex: none;
+      border-radius: var(--r-sm);
+      background: var(--paper-2);
+      color: var(--text-2);
+    }
+
+    .device-row__icon svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .device-row__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .device-row__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .device-row__main span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .device-row__action {
+      flex: none;
+    }
+
+    .mic-bars {
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 12px;
+      margin-left: 5px;
+      vertical-align: -1px;
+    }
+
+    .mic-bars i {
+      width: 3px;
+      border-radius: 1px;
+      background: var(--success);
+    }
+
+    .mic-bars i:nth-child(1) { height: 4px; }
+    .mic-bars i:nth-child(2) { height: 7px; }
+    .mic-bars i:nth-child(3) { height: 10px; }
+    .mic-bars i:nth-child(4) { height: 12px; }
+    .mic-bars i:nth-child(5) { height: 7px; opacity: 0.4; }
+
+    .setup-card {
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .setup-card h2 {
+      font-size: 19px;
+    }
+
+    .setup-card > p {
+      margin-top: 5px;
+      color: var(--text-3);
+      font-size: 10.5px;
+      line-height: 1.65;
+    }
+
+    .setup-list {
+      display: grid;
+      gap: 9px;
+      margin-top: 15px;
+    }
+
+    .setup-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 10px 11px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+      color: var(--text-2);
+      font-size: 10.5px;
+      line-height: 1.55;
+    }
+
+    .setup-item [data-icon] svg {
+      width: 14px;
+      height: 14px;
+      margin-top: 1px;
+      color: var(--brand);
+    }
+
+    .setup-item strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .setup-item span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    /* Brief */
+    .brief {
+      position: sticky;
+      top: 30px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-2);
+    }
+
+    .brief::before {
+      display: block;
+      height: 4px;
+      background: linear-gradient(90deg, var(--accent), var(--gold));
+      content: "";
+    }
+
+    .brief__head {
+      padding: 20px 22px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brief__head .eyebrow {
+      color: var(--accent);
+    }
+
+    .brief h1 {
+      margin-top: 8px;
+      font-size: 32px;
+      line-height: 1.2;
+    }
+
+    .brief__course {
+      margin-top: 5px;
+      color: var(--text-3);
+      font-size: 11px;
+    }
+
+    .brief__meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 18px;
+      padding: 16px 22px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brief__meta dt {
+      color: var(--text-3);
+      font-size: 9px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .brief__meta dd {
+      margin-top: 2px;
+      color: var(--text);
+      font-size: 11.5px;
+      font-weight: 500;
+    }
+
+    .brief__body {
+      padding: 16px 22px;
+    }
+
+    .brief__body h2 {
+      font-size: 14px;
+    }
+
+    .check-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .check-list .check-row {
+      font-size: 10.5px;
+    }
+
+    .brief__note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-top: 14px;
+      padding: 10px 12px;
+      border-left: 3px solid var(--accent);
+      border-radius: 2px;
+      background: var(--accent-soft);
+      color: var(--text-2);
+      font-size: 10px;
+      line-height: 1.6;
+    }
+
+    .brief__note [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      margin-top: 1px;
+      color: var(--accent);
+    }
+
+    .brief__foot {
+      padding: 16px 22px 20px;
+      border-top: 1px solid var(--line);
+      background: var(--paper-0);
+    }
+
+    .flow {
+      margin-top: 14px;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+    }
+
+    .flow h2 {
+      font-size: 15px;
+    }
+
+    .flow-list {
+      display: grid;
+      gap: 0;
+      margin-top: 12px;
+    }
+
+    .flow-step {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr);
+      gap: 10px;
+      padding: 8px 0;
+    }
+
+    .flow-step__mark {
+      position: relative;
+      display: grid;
+      place-items: center;
+      width: 16px;
+      height: 16px;
+      margin-top: 1px;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: var(--surface);
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+    }
+
+    .flow-step.is-done .flow-step__mark {
+      border-color: var(--success);
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .flow-step.is-current .flow-step__mark {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .flow-step strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .flow-step span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    @media (max-width: 1100px) {
+      .precheck-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .brief {
+        position: static;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .brief__meta {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .device-row {
+        flex-wrap: wrap;
+      }
+
+      .device-row__action {
+        margin-left: 45px;
+      }
+    }
+  </style>
+</head>
+<body data-role="student" data-nav="tasks">
+  <div data-app-header></div>
+
+  <main class="page">
+    <div class="back-row">
+      <a href="student-tasks.html"><span data-icon="arrow-left"></span>我的任务</a>
+      <span class="breadcrumb__sep">/</span>
+      <span>荷塘月色</span>
+    </div>
+
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">PRE-CHECK / 课前检查</p>
+        <h1 class="page-title">荷塘月色</h1>
+        <p class="page-lead">先确认设备与录制环境，再进入课堂。本次试讲全程录制，开始后不可暂停。</p>
+      </div>
+      <div class="head-actions">
+        <span class="badge badge--accent">待开始</span>
+        <span class="badge badge--warning">11-18 截止</span>
+      </div>
+    </header>
+
+    <div class="precheck-grid">
+      <div class="precheck-main">
+        <section class="camera-card">
+          <div class="camera-card__head">
+            <strong>摄像头预览</strong>
+            <span>16:9 · 建议正对光源</span>
+          </div>
+          <div class="camera-frame">
+            <div class="camera-figure" aria-hidden="true"></div>
+            <span class="camera-frame__live">预览中</span>
+            <span class="camera-frame__hint">请将面部置于画面中央，保持上半身可见</span>
+          </div>
+          <div class="device-list">
+            <div class="device-row">
+              <span class="device-row__icon"><span data-icon="camera"></span></span>
+              <div class="device-row__main">
+                <strong>摄像头</strong>
+                <span>HD Webcam · 1280 × 720</span>
+              </div>
+              <span class="badge badge--success">正常</span>
+            </div>
+            <div class="device-row">
+              <span class="device-row__icon"><span data-icon="mic"></span></span>
+              <div class="device-row__main">
+                <strong>麦克风 <span class="mic-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></strong>
+                <span>默认麦克风 · 输入音量正常</span>
+              </div>
+              <span class="badge badge--success">正常</span>
+            </div>
+            <div class="device-row">
+              <span class="device-row__icon"><span data-icon="wifi"></span></span>
+              <div class="device-row__main">
+                <strong>网络</strong>
+                <span>上行 8.4 Mbps · 丢包 0.1%</span>
+              </div>
+              <span class="badge badge--success">稳定</span>
+            </div>
+            <div class="device-row">
+              <span class="device-row__icon"><span data-icon="monitor"></span></span>
+              <div class="device-row__main">
+                <strong>屏幕共享</strong>
+                <span>开始录制时选择要共享的窗口或屏幕</span>
+              </div>
+              <button class="btn btn--secondary btn--xs" type="button" data-toast="请在浏览器弹窗中选择共享窗口（原型演示）。">选择窗口</button>
+            </div>
+            <div class="device-row">
+              <span class="device-row__icon"><span data-icon="check-circle"></span></span>
+              <div class="device-row__main">
+                <strong>浏览器</strong>
+                <span>Chrome 130 · 支持 MediaRecorder 与 WebM</span>
+              </div>
+              <span class="badge badge--success">支持</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="setup-card">
+          <h2>开始前请确认</h2>
+          <p>点击开始后将请求摄像头、麦克风和共享窗口权限；请允许全部权限。</p>
+          <div class="setup-list">
+            <div class="setup-item"><span data-icon="camera"></span><div><strong>摄像头 + 麦克风</strong><span>两路权限必须允许，否则无法开始。</span></div></div>
+            <div class="setup-item"><span data-icon="monitor"></span><div><strong>共享窗口</strong><span>只共享选定窗口；共享停止会结束本次试讲。</span></div></div>
+            <div class="setup-item"><span data-icon="wifi"></span><div><strong>网络稳定</strong><span>录制分片会上传到云端；网络中断可能导致失败。</span></div></div>
+          </div>
+          <div class="alert alert--note" style="margin-top:14px">
+            <span data-icon="shield"></span>
+            <div><span>录像仅用于本人回看与课程老师组评分；管理员不可查看。提交前可删除并重做。</span></div>
+          </div>
+        </section>
+      </div>
+
+      <aside>
+        <section class="brief">
+          <div class="brief__head">
+            <p class="eyebrow">TASK BRIEF / 任务说明</p>
+            <h1>荷塘月色</h1>
+            <p class="brief__course">语文教学论 · 王宁 / 李静</p>
+          </div>
+          <dl class="brief__meta">
+            <div><dt>模式</dt><dd>自由试讲</dd></div>
+            <div><dt>时长</dt><dd>20 分钟</dd></div>
+            <div><dt>虚拟学生</dt><dd>3 名</dd></div>
+            <div><dt>录制</dt><dd>摄像头 / 屏幕 / 麦克风</dd></div>
+            <div><dt>教材</dt><dd>部编版 · 八年级上册</dd></div>
+            <div><dt>参考材料</dt><dd>《荷塘月色》教学设计.pdf</dd></div>
+          </dl>
+          <div class="brief__body">
+            <h2>开始前确认</h2>
+            <div class="check-list">
+              <label class="check-row">
+                <input type="checkbox" checked hidden>
+                <span class="check-box"><span data-icon="check"></span></span>
+                <span>我已阅读任务说明，知道本次为 20 分钟自由试讲。</span>
+              </label>
+              <label class="check-row">
+                <input type="checkbox" checked hidden>
+                <span class="check-box"><span data-icon="check"></span></span>
+                <span>摄像头、麦克风与共享窗口均已准备好。</span>
+              </label>
+              <label class="check-row">
+                <input type="checkbox" hidden>
+                <span class="check-box"><span data-icon="check"></span></span>
+                <span>我理解开始后不可暂停，刷新或关闭页面会丢失录制。</span>
+              </label>
+            </div>
+            <div class="brief__note">
+              <span data-icon="alert-triangle"></span>
+              <span>提交后本次回放只读，不能重做；请在课堂内完成完整教学环节。</span>
+            </div>
+          </div>
+          <div class="brief__foot">
+            <a class="btn btn--primary btn--lg btn--block" href="classroom.html"><span data-icon="play"></span>开始试讲</a>
+            <p class="xs faint" style="margin-top:9px;text-align:center">点击后会请求设备权限，并开始三路录制</p>
+          </div>
+        </section>
+
+        <section class="flow">
+          <h2>本次流程</h2>
+          <div class="flow-list">
+            <div class="flow-step is-current"><span class="flow-step__mark">1</span><div><strong>课前检查</strong><span>设备、任务说明与录制确认</span></div></div>
+            <div class="flow-step"><span class="flow-step__mark">2</span><div><strong>课堂试讲</strong><span>20 分钟 · 虚拟学生互动 · 三路录制</span></div></div>
+            <div class="flow-step"><span class="flow-step__mark">3</span><div><strong>回看与提交</strong><span>检查上传 → 提交 → 等待 AI 评测</span></div></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <script src="assets/site.js"></script>
+</body>
+</html>

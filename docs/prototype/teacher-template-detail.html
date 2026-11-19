@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>训练模板 · 荷塘月色（我的副本） · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .template-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .template-main,
+    .template-aside {
+      display: grid;
+      gap: 16px;
+    }
+
+    .template-hero {
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      overflow: hidden;
+      margin-bottom: 22px;
+      padding: 26px 28px;
+      border-radius: var(--r-lg);
+      background:
+        radial-gradient(420px 220px at 85% -10%, rgba(224, 164, 74, 0.1), transparent 65%),
+        linear-gradient(140deg, #173f36, #0d2d26);
+      color: #eef3ee;
+      box-shadow: var(--shadow-2);
+    }
+
+    .template-hero::after {
+      position: absolute;
+      right: 60px;
+      bottom: -80px;
+      width: 220px;
+      height: 220px;
+      border: 1px solid rgba(238, 243, 238, 0.1);
+      border-radius: 50%;
+      box-shadow: 0 0 0 20px rgba(238, 243, 238, 0.025);
+      content: "";
+      pointer-events: none;
+    }
+
+    .template-hero__main {
+      position: relative;
+      z-index: 1;
+      min-width: 0;
+    }
+
+    .template-hero .eyebrow {
+      color: rgba(238, 243, 238, 0.55);
+    }
+
+    .template-hero .eyebrow::before {
+      background: #e6b45d;
+    }
+
+    .template-hero h1 {
+      margin-top: 10px;
+      color: #f5f7f2;
+      font-size: clamp(30px, 3.2vw, 42px);
+      line-height: 1.2;
+    }
+
+    .template-hero__lead {
+      margin-top: 7px;
+      color: rgba(238, 243, 238, 0.6);
+      font-size: 11px;
+    }
+
+    .template-hero__actions {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 7px;
+      flex: none;
+    }
+
+    .template-hero .btn--primary {
+      border-color: #e0a44a;
+      background: #e0a44a;
+      color: #1b1408;
+    }
+
+    .template-hero .btn--primary:hover {
+      border-color: #ecb65f;
+      background: #ecb65f;
+      color: #1b1408;
+    }
+
+    .template-hero .btn--secondary {
+      border-color: rgba(238, 243, 238, 0.2);
+      background: rgba(238, 243, 238, 0.08);
+      color: rgba(238, 243, 238, 0.82);
+    }
+
+    .template-hero .btn--secondary:hover {
+      background: rgba(238, 243, 238, 0.14);
+      color: #f5f7f2;
+    }
+
+    .template-hero .btn--danger {
+      border-color: rgba(232, 116, 95, 0.55);
+      background: transparent;
+      color: #f09a88;
+    }
+
+    .template-hero .btn--danger:hover {
+      border-color: rgba(232, 116, 95, 0.8);
+      background: rgba(232, 116, 95, 0.12);
+      color: #ffb3a3;
+    }
+
+    .config-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .config-card__head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .config-card__head h2 {
+      font-size: 20px;
+    }
+
+    .config-card__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .config-body {
+      padding: 20px 22px;
+    }
+
+    .config-section + .config-section {
+      margin-top: 20px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+
+    .config-section h3 {
+      font-size: 14px;
+    }
+
+    .config-section__sub {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 11px 22px;
+      margin-top: 12px;
+    }
+
+    .config-grid dt {
+      color: var(--text-3);
+      font-size: 9px;
+      letter-spacing: 0.04em;
+    }
+
+    .config-grid dd {
+      margin-top: 2px;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .weight-stack {
+      display: flex;
+      height: 12px;
+      overflow: hidden;
+      margin-top: 12px;
+      border-radius: var(--r-pill);
+      background: var(--paper-3);
+    }
+
+    .weight-stack span {
+      display: block;
+      height: 100%;
+    }
+
+    .weight-stack span:nth-child(1) { background: var(--brand); }
+    .weight-stack span:nth-child(2) { background: var(--green-500); }
+    .weight-stack span:nth-child(3) { background: var(--gold); }
+    .weight-stack span:nth-child(4) { background: var(--blue-600); }
+    .weight-stack span:nth-child(5) { background: var(--ink-300); }
+
+    .weight-list {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .weight-item {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .weight-item span {
+      display: block;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .weight-item strong {
+      display: block;
+      margin-top: 2px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .student-config-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .student-config {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr) repeat(4, 54px);
+      gap: 10px;
+      align-items: center;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .student-config__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .student-config__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .student-config__metric span {
+      display: block;
+      color: var(--text-3);
+      font-size: 8px;
+    }
+
+    .student-config__metric strong {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-2);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .material-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .material-row [data-icon] svg {
+      width: 16px;
+      height: 16px;
+      color: var(--accent);
+    }
+
+    .material-row__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .material-row__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .material-row__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .publish-table td {
+      font-size: 10px;
+    }
+
+    .related-task {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .related-task:last-child {
+      border-bottom: 0;
+    }
+
+    .related-task__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .related-task__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .related-task__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    /* Aside */
+    .aside-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .aside-card .card-head,
+    .aside-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .template-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .template-status__mark {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      flex: none;
+      place-items: center;
+      border-radius: var(--r-sm);
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 17px;
+      font-weight: 600;
+    }
+
+    .template-status__main strong {
+      display: block;
+      color: var(--text);
+      font-family: var(--font-serif);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .template-status__main span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .info-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .info-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 9.5px;
+    }
+
+    .info-row:last-child {
+      border-bottom: 0;
+    }
+
+    .info-row dt {
+      color: var(--text-3);
+    }
+
+    .info-row dd {
+      margin: 0;
+      color: var(--text);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .quota-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .quota-row strong {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .note-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .note-list span {
+      color: var(--text-3);
+      font-size: 9px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1180px) {
+      .template-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .template-aside {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 840px) {
+      .template-hero {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .template-hero__actions {
+        justify-content: flex-start;
+      }
+
+      .template-aside {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .weight-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .student-config {
+        grid-template-columns: 32px minmax(0, 1fr) repeat(2, 54px);
+      }
+
+      .student-config__metric:nth-of-type(n + 4) {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body data-role="teacher" data-nav="training-templates">
+  <div data-app-header></div>
+
+  <div class="context-bar">
+    <div class="context-bar__inner">
+      <div class="breadcrumb">
+        <a href="teacher-training.html">训练模板</a>
+        <span class="breadcrumb__sep">/</span>
+        <span class="breadcrumb__current">荷塘月色（我的副本）</span>
+      </div>
+      <div class="context-tabs">
+        <a class="context-tab is-active" href="#config">模板配置</a>
+        <a class="context-tab" href="#publish">发布记录</a>
+        <a class="context-tab" href="#related">关联任务</a>
+      </div>
+    </div>
+  </div>
+
+  <main class="page">
+    <section class="template-hero">
+      <div class="template-hero__main">
+        <p class="eyebrow">TEMPLATE / 训练模板</p>
+        <h1>荷塘月色（我的副本）</h1>
+        <p class="template-hero__lead">进阶 · 20 分钟 · 3 名虚拟学生 · 更新于 2026-11-15 16:20</p>
+      </div>
+      <div class="template-hero__actions">
+        <a class="btn btn--secondary" href="teacher-template-editor.html"><span data-icon="edit"></span>编辑模板</a>
+        <button class="btn btn--primary" type="button" data-open="publish-template-modal"><span data-icon="book"></span>发布到课程</button>
+        <button class="btn btn--danger" type="button" data-open="delete-template-modal"><span data-icon="trash"></span>删除模板</button>
+      </div>
+    </section>
+
+    <div class="stat-strip" style="margin-bottom:22px">
+      <div class="stat"><div class="stat__label">档位</div><div class="stat__value" style="font-size:24px">进阶</div><div class="stat__meta">15—20 分钟</div></div>
+      <div class="stat"><div class="stat__label">建议时长</div><div class="stat__value">20<small> 分钟</small></div><div class="stat__meta">最长 25 分钟</div></div>
+      <div class="stat"><div class="stat__label">虚拟学生</div><div class="stat__value">3</div><div class="stat__meta">可调整参数</div></div>
+      <div class="stat"><div class="stat__label">已发布课程</div><div class="stat__value stat__value--brand">3</div><div class="stat__meta">2 门生效中</div></div>
+    </div>
+
+    <div class="template-layout">
+      <div class="template-main">
+        <section class="config-card" id="config">
+          <div class="config-card__head">
+            <div>
+              <h2>模板配置</h2>
+              <p>模板配置只影响后续训练与任务预填；已发布任务使用发布时快照。</p>
+            </div>
+            <span class="badge badge--success">active</span>
+          </div>
+          <div class="config-body">
+            <div class="config-section">
+              <h3>基本信息</h3>
+              <dl class="config-grid">
+                <div><dt>课题</dt><dd>荷塘月色</dd></div>
+                <div><dt>教材版本</dt><dd>部编版 · 八年级上册</dd></div>
+                <div><dt>建议时长</dt><dd>20 分钟</dd></div>
+                <div><dt>最长时长</dt><dd>25 分钟</dd></div>
+                <div><dt>模板 owner</dt><dd>王宁</dd></div>
+                <div><dt>最近更新</dt><dd>2026-11-15 16:20</dd></div>
+              </dl>
+            </div>
+
+            <div class="config-section">
+              <h3>评分权重</h3>
+              <p class="config-section__sub">合计 100；发布到课程后配置只读，先下架再编辑。</p>
+              <div class="weight-stack" aria-hidden="true">
+                <span style="width:30%"></span><span style="width:20%"></span><span style="width:20%"></span><span style="width:15%"></span><span style="width:15%"></span>
+              </div>
+              <div class="weight-list">
+                <div class="weight-item"><span>教学内容</span><strong>30</strong></div>
+                <div class="weight-item"><span>教学表达</span><strong>20</strong></div>
+                <div class="weight-item"><span>课堂互动</span><strong>20</strong></div>
+                <div class="weight-item"><span>板书 / PPT</span><strong>15</strong></div>
+                <div class="weight-item"><span>时间管理</span><strong>15</strong></div>
+              </div>
+            </div>
+
+            <div class="config-section">
+              <h3>虚拟学生</h3>
+              <p class="config-section__sub">训练时学生可调整；参数以百分比显示。</p>
+              <div class="student-config-list">
+                <div class="student-config">
+                  <span class="avatar avatar--sm avatar--cinnabar">周</span>
+                  <div class="student-config__main"><strong>周予安</strong><span>活跃型 · 提问率 64%</span></div>
+                  <div class="student-config__metric"><span>活跃</span><strong>82%</strong></div>
+                  <div class="student-config__metric"><span>提问</span><strong>64%</strong></div>
+                  <div class="student-config__metric"><span>注意</span><strong>86%</strong></div>
+                  <div class="student-config__metric"><span>纪律</span><strong>74%</strong></div>
+                </div>
+                <div class="student-config">
+                  <span class="avatar avatar--sm avatar--gold">陈</span>
+                  <div class="student-config__main"><strong>陈一诺</strong><span>沉稳型 · 正确率 82%</span></div>
+                  <div class="student-config__metric"><span>活跃</span><strong>52%</strong></div>
+                  <div class="student-config__metric"><span>提问</span><strong>38%</strong></div>
+                  <div class="student-config__metric"><span>注意</span><strong>92%</strong></div>
+                  <div class="student-config__metric"><span>纪律</span><strong>88%</strong></div>
+                </div>
+                <div class="student-config">
+                  <span class="avatar avatar--sm avatar--blue">许</span>
+                  <div class="student-config__main"><strong>许知远</strong><span>内向型 · 注意 48%</span></div>
+                  <div class="student-config__metric"><span>活跃</span><strong>34%</strong></div>
+                  <div class="student-config__metric"><span>提问</span><strong>22%</strong></div>
+                  <div class="student-config__metric"><span>注意</span><strong>48%</strong></div>
+                  <div class="student-config__metric"><span>纪律</span><strong>66%</strong></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="config-section">
+              <h3>参考材料</h3>
+              <div class="material-row">
+                <span data-icon="file"></span>
+                <div class="material-row__main"><strong>荷塘月色_教学设计.pdf</strong><span>12,400 字 · application/pdf · 已解析</span></div>
+                <button class="btn btn--ghost btn--xs" type="button" data-toast="预览参考材料（原型演示）。">预览</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="config-card" id="publish">
+          <div class="config-card__head">
+            <div><h2>发布记录</h2><p>学生仅在目标课程中看到；下架后不可开始新训练。</p></div>
+            <button class="btn btn--secondary btn--sm" type="button" data-open="publish-template-modal"><span data-icon="plus"></span>发布到课程</button>
+          </div>
+          <div class="table-wrap">
+            <table class="table table--compact publish-table">
+              <thead><tr><th>课程</th><th>状态</th><th>发布时间</th><th>学生可见</th><th class="actions">操作</th></tr></thead>
+              <tbody>
+                <tr><td class="strong">语文教学论</td><td><span class="badge badge--success">published</span></td><td>2026-11-15 16:24</td><td>32 名在课学生</td><td class="actions"><button class="btn btn--ghost btn--xs" type="button" data-toast="下架发布（原型演示）。">下架</button></td></tr>
+                <tr><td class="strong">微格教学实训</td><td><span class="badge badge--success">published</span></td><td>2026-11-15 16:24</td><td>28 名在课学生</td><td class="actions"><button class="btn btn--ghost btn--xs" type="button" data-toast="下架发布（原型演示）。">下架</button></td></tr>
+                <tr><td class="strong">教师口语</td><td><span class="badge">已下架</span></td><td>2026-11-10 09:02</td><td>—</td><td class="actions"><button class="btn btn--ghost btn--xs" type="button" data-open="publish-template-modal">重新发布</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="list-foot">
+            <span class="list-foot__info">共 3 条发布记录 · 显示 1—3</span>
+            <div class="pagination" aria-label="发布记录分页">
+              <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+              <button class="pagination__btn is-active" type="button">1</button>
+              <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="config-card" id="related">
+          <div class="config-card__head">
+            <div><h2>关联任务</h2><p>使用该模板预填的任务；任务创建后模板修改不会影响任务。</p></div>
+          </div>
+          <div class="config-body" style="padding-top:8px;padding-bottom:8px">
+            <div class="related-task">
+              <span class="avatar avatar--sm avatar--cinnabar">荷</span>
+              <div class="related-task__main"><strong>荷塘月色 · 自由试讲</strong><span>语文教学论 · 已发布 · 18 / 28 已提交</span></div>
+              <a class="btn btn--secondary btn--xs" href="teacher-tasks.html">查看任务</a>
+            </div>
+            <div class="related-task">
+              <span class="avatar avatar--sm avatar--gold">少</span>
+              <div class="related-task__main"><strong>少年闰土 · 情景试讲</strong><span>微格教学实训 · 已发布 · 从模板填充</span></div>
+              <a class="btn btn--ghost btn--xs" href="teacher-tasks.html">查看任务</a>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="template-aside">
+        <section class="aside-card">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">模板状态</h2><p class="card-sub">个人模板库</p></div>
+          </div>
+          <div class="card-body">
+            <div class="template-status">
+              <span class="template-status__mark">荷</span>
+              <div class="template-status__main"><strong>active</strong><span>可发布 / 可被任务预填</span></div>
+            </div>
+            <dl class="info-list">
+              <div class="info-row"><dt>额度</dt><dd>8 / 30</dd></div>
+              <div class="info-row"><dt>发布课程</dt><dd>3 门</dd></div>
+              <div class="info-row"><dt>最近更新</dt><dd>11-15 16:20</dd></div>
+            </dl>
+            <div class="quota-row" style="margin-top:12px"><span>active 模板额度</span><strong>8 / 30</strong></div>
+            
+          </div>
+        </section>
+
+        <section class="aside-card">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">快捷操作</h2></div>
+          </div>
+          <div class="card-body" style="display:grid;gap:7px">
+            <a class="btn btn--primary btn--sm btn--block" href="task-editor.html"><span data-icon="plus"></span>用模板新建任务</a>
+            <a class="btn btn--secondary btn--sm btn--block" href="teacher-template-editor.html"><span data-icon="edit"></span>编辑模板配置</a>
+            <a class="btn btn--ghost btn--sm btn--block" href="teacher-training.html">返回模板列表</a>
+          </div>
+        </section>
+
+        <section class="aside-card">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">使用提示</h2></div>
+          </div>
+          <div class="card-body">
+            <div class="note-list">
+              <span>· 已发布模板的配置只读；先下架再编辑。</span>
+              <span>· 目标课程归档或教师被移出课程时，发布自动下架。</span>
+              <span>· 关联任务使用发布时快照，不受后续模板修改影响。</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Publish modal -->
+  <div class="overlay" data-overlay-for="publish-template-modal"></div>
+  <div class="modal" id="publish-template-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="publish-template-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="publish-template-title">发布到课程</div>
+        <div class="drawer__sub">荷塘月色（我的副本） · 进阶 · 20 分钟</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="publish-template-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="stack" style="gap:8px">
+        <label class="check-row"><input type="checkbox" checked hidden><span class="check-box"><span data-icon="check"></span></span><span>语文教学论 · 32 名在课学生</span></label>
+        <label class="check-row"><input type="checkbox" checked hidden><span class="check-box"><span data-icon="check"></span></span><span>微格教学实训 · 28 名在课学生</span></label>
+        <label class="check-row"><input type="checkbox" hidden><span class="check-box"><span data-icon="check"></span></span><span>教师口语 · 36 名在课学生</span></label>
+      </div>
+      <div class="alert alert--info" style="margin-top:14px">
+        <span data-icon="info"></span>
+        <div><span>学生只能在目标课程中看到模板；不显示参考材料、权重与教师备注。</span></div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="publish-template-modal">取消</button>
+      <button class="btn btn--primary" type="button" data-close="publish-template-modal" data-toast="发布状态已更新（原型演示）。">保存发布</button>
+    </div>
+  </div>
+
+  <!-- Delete template modal -->
+  <div class="overlay" data-overlay-for="delete-template-modal"></div>
+  <div class="modal" id="delete-template-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="delete-template-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="delete-template-title">删除训练模板</div>
+        <div class="drawer__sub">荷塘月色（我的副本） · 已发布到 2 门生效课程</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="delete-template-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--danger">
+        <span data-icon="alert-triangle"></span>
+        <div>删除后会先下架该模板的 2 门生效课程，学生端不再显示；模板将从个人模板库移除。该模板关联的训练记录、录像 / 报告与参考材料会一并清理；学生副本与关联任务快照不受影响。此操作不可撤销。</div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="delete-template-modal">取消</button>
+      <a class="btn btn--danger-solid" href="teacher-training.html" data-close="delete-template-modal" data-toast="训练模板已删除（原型演示）。">删除模板</a>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+</body>
+</html>

@@ -320,9 +320,12 @@ class SessionTest {
 
     @Test
     void unknownWireValuesAreRejected() {
-        assertThatThrownBy(() -> SessionType.fromWire("training"))
+        assertThat(SessionType.fromWire("training")).isEqualTo(SessionType.TRAINING);
+        assertThatThrownBy(() -> SessionType.fromWire("webinar"))
                 .isInstanceOf(DomainException.class);
-        assertThatThrownBy(() -> SessionStatus.fromWire("selected"))
+        assertThat(SessionStatus.fromWire("selected")).isEqualTo(SessionStatus.SELECTED);
+        assertThat(SessionStatus.fromWire("evaluated")).isEqualTo(SessionStatus.EVALUATED);
+        assertThatThrownBy(() -> SessionStatus.fromWire("expired"))
                 .isInstanceOf(DomainException.class);
         assertThatThrownBy(() -> StreamType.fromWire("desktop"))
                 .isInstanceOf(DomainException.class);

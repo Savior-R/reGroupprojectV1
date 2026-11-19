@@ -99,7 +99,7 @@ class TaskSnapshotFactoryTest {
     }
 
     private Task freeTask() {
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()),
                 new CourseId(COURSE_ID),
                 new AccountId(TEACHER_ID),
@@ -112,7 +112,7 @@ class TaskSnapshotFactoryTest {
     }
 
     private Task scenarioTask() {
-        return Task.createDraft(
+        return Task.create(
                 new TaskId(UUID.randomUUID()),
                 new CourseId(COURSE_ID),
                 new AccountId(TEACHER_ID),
@@ -125,7 +125,7 @@ class TaskSnapshotFactoryTest {
     private Task interviewTask() {
         QuestionId q1 = new QuestionId(UUID.randomUUID());
         QuestionId q2 = new QuestionId(UUID.randomUUID());
-        return Task.createDraft(
+        return Task.create(
                 new TaskId(UUID.randomUUID()),
                 new CourseId(COURSE_ID),
                 new AccountId(TEACHER_ID),

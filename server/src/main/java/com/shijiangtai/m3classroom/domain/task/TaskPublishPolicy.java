@@ -27,14 +27,6 @@ public final class TaskPublishPolicy {
         TaskDraft draft = task.draft();
         TaskMode mode = draft.mode();
 
-        if (task.status() == TaskStatus.PUBLISHED) {
-            throw new DomainException(ErrorCode.TASK_ALREADY_PUBLISHED,
-                    "任务已发布", Map.of("task_id", task.id().value()));
-        }
-        if (task.status() == TaskStatus.CLOSED) {
-            throw new DomainException(ErrorCode.TASK_NOT_DRAFT,
-                    "任务已关闭", Map.of("task_id", task.id().value()));
-        }
         if (!course.active()) {
             throw new DomainException(ErrorCode.COURSE_ARCHIVED,
                     "课程已归档", Map.of("course_id", course.id()));
