@@ -160,7 +160,8 @@ public class AuthApplicationService {
         }
 
         audit(new AuthLoginEvent(UUID.randomUUID(), account.id(),
-                AuthLoginEvent.LoginMethod.PASSWORD, null, true, ip, userAgent, clock.instant()));
+                AuthLoginEvent.EventType.LOGIN, AuthLoginEvent.LoginMethod.PASSWORD, null,
+                true, ip, userAgent, clock.instant()));
         return issue(account);
     }
 

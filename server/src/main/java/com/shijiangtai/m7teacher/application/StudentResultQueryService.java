@@ -124,6 +124,7 @@ public class StudentResultQueryService {
         return new StudentResultDetailView(
                 submission.id(),
                 context.task().id(),
+                submission.sessionId(),
                 context.task().topic(),
                 context.course().name(),
                 submission.submittedAt(),

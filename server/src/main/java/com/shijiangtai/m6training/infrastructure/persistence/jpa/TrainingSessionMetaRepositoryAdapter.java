@@ -4,6 +4,7 @@ import com.shijiangtai.m6training.domain.TrainingEffectiveConfig;
 import com.shijiangtai.m6training.domain.TrainingLevel;
 import com.shijiangtai.m6training.domain.TrainingSessionMeta;
 import com.shijiangtai.m6training.domain.TrainingSessionMetaRepository;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -93,7 +94,7 @@ public class TrainingSessionMetaRepositoryAdapter implements TrainingSessionMeta
                         rs.getObject("session_id", UUID.class),
                         rs.getTimestamp("started_at").toInstant(),
                         rs.getInt("max_seconds")),
-                now,
+                Timestamp.from(now),
                 Math.max(1, limit));
     }
 

@@ -137,7 +137,7 @@ onMounted(loadTemplates)
 
 .training-home__header p {
   margin: 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .level-switch {
@@ -145,7 +145,7 @@ onMounted(loadTemplates)
 }
 
 .state {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .template-grid {
@@ -172,7 +172,7 @@ onMounted(loadTemplates)
 
 .template-card__meta {
   margin: 0 0 8px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .free-card {
@@ -193,6 +193,6 @@ onMounted(loadTemplates)
 
 .free-card__body p {
   margin: 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 </style>

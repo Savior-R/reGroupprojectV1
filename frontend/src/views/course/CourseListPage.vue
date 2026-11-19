@@ -159,6 +159,10 @@ function openMembers(course: CourseCardView): void {
   void router.push(`/courses/${course.id}/students`)
 }
 
+function openTasks(course: CourseCardView): void {
+  void router.push(`/teacher/courses/${course.id}/tasks`)
+}
+
 function onSearch(): void {
   page.value = 1
   void load()
@@ -182,7 +186,12 @@ onMounted(load)
     <ElCard class="course-page__card">
       <template #header>
         <div class="course-page__header">
-          <h1>课程</h1>
+          <div>
+            <h1>课程</h1>
+            <p v-if="isTeacher" class="course-page__hint">
+              进入「任务 / 评分」可创建任务、查看学生提交并打分。
+            </p>
+          </div>
           <ElButton v-if="isTeacher" type="primary" @click="createVisible = true">创建课程</ElButton>
         </div>
       </template>
@@ -258,9 +267,17 @@ onMounted(load)
               <ElTag :type="statusTagType(row as CourseCardView)" size="small">{{ statusLabel(row as CourseCardView) }}</ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="操作" width="240">
+          <ElTableColumn label="操作" width="320">
             <template #default="{ row }">
               <ElButton link type="primary" @click="openCourse(row as CourseCardView)">详情</ElButton>
+              <ElButton
+                v-if="row.can_manage && !isAdmin"
+                link
+                type="primary"
+                @click="openTasks(row as CourseCardView)"
+              >
+                任务 / 评分
+              </ElButton>
               <ElButton v-if="row.can_manage" link type="primary" @click="openMembers(row as CourseCardView)">学生</ElButton>
               <ElButton v-if="isAdmin" link type="warning" @click="toggleArchive(row as CourseCardView)">
                 {{ row.status === 'archived' ? '恢复' : '归档' }}
@@ -296,6 +313,12 @@ onMounted(load)
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.course-page__hint {
+  margin: 4px 0 0;
+  color: var(--m1-text-secondary);
+  font-size: 12px;
 }
 
 .course-page__header h1 {

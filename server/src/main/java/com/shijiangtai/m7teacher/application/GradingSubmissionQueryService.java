@@ -216,6 +216,9 @@ public class GradingSubmissionQueryService {
                             ? "未分班" : classNames.getOrDefault(classSnapshot, "未分班"),
                     classSnapshot,
                     courseStatuses.getOrDefault(studentId, "active"),
+                    submission != null
+                            ? submission.sessionId()
+                            : (session == null ? null : session.id()),
                     submission != null ? "submitted" : sessionStatus(session),
                     submission == null ? null : submission.submittedAt(),
                     ai,

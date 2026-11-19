@@ -4,23 +4,28 @@ import static com.shijiangtai.m3classroom.TestFixtures.COURSE;
 import static com.shijiangtai.m3classroom.TestFixtures.NOW;
 import static com.shijiangtai.m3classroom.TestFixtures.SCHOOL_ID;
 import static com.shijiangtai.m3classroom.TestFixtures.freeCommandWithStudent;
-import static com.shijiangtai.m3classroom.TestFixtures.material;
 import static com.shijiangtai.m3classroom.TestFixtures.teacher;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.shijiangtai.m3classroom.application.command.CreateTaskCommand;
-import com.shijiangtai.m3classroom.application.view.PublishResult;
+import com.shijiangtai.m3classroom.application.command.MaterialUpload;
+import com.shijiangtai.m3classroom.application.port.MaterialTextExtractor;
 import com.shijiangtai.m3classroom.application.view.TaskView;
+import com.shijiangtai.m3classroom.domain.session.SessionRepository;
+import com.shijiangtai.m3classroom.domain.submission.SubmissionRepository;
 import com.shijiangtai.m3classroom.domain.task.PublishQuestion;
 import com.shijiangtai.m3classroom.domain.task.QuestionConfig;
-import com.shijiangtai.m3classroom.domain.task.Task;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
+import com.shijiangtai.m3classroom.domain.task.TaskPublishPolicy;
 import com.shijiangtai.m3classroom.domain.task.TaskPublishedEvent;
+import com.shijiangtai.m3classroom.domain.task.TaskSnapshotFactory;
 import com.shijiangtai.m3classroom.domain.task.TaskStatus;
 import com.shijiangtai.m3classroom.support.FakeCourseQueryPort;
 import com.shijiangtai.m3classroom.support.FakeMaterialObjectStorage;
 import com.shijiangtai.m3classroom.support.FakeQuestionBankQueryPort;
+import com.shijiangtai.m3classroom.support.InMemorySessionRepository;
+import com.shijiangtai.m3classroom.support.InMemorySubmissionRepository;
 import com.shijiangtai.m3classroom.support.InMemoryTaskAssignmentRepository;
 import com.shijiangtai.m3classroom.support.InMemoryTaskRepository;
 import com.shijiangtai.m3classroom.support.RecordingEventPublisher;
@@ -28,15 +33,9 @@ import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.QuestionId;
 import com.shijiangtai.shared.domain.TaskId;
-import java.util.ArrayList;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -57,159 +56,115 @@ class TaskPublishServiceTest {
         courses = com.shijiangtai.m3classroom.TestFixtures.coursePort();
         questionBank = new FakeQuestionBankQueryPort();
         events = new RecordingEventPublisher();
-
-        TaskAccessPolicy access = new TaskAccessPolicy(courses);
+        publishService = publishService(courses);
         applicationService = new TaskApplicationServiceImpl(
-                tasks, assignments, courses, access, UUID::randomUUID, () -> NOW,
-                new FakeMaterialObjectStorage(), action -> action.run());
-        publishService = publishService(courses, access);
+                tasks, assignments, courses, new TaskAccessPolicy(courses),
+                publishService, new InMemorySessionRepository(), () -> NOW);
     }
 
     @Test
-    void publishCreatesAssignmentsSnapshotAndEvent() {
-        TaskId taskId = createFreeTask();
+    void createFreeTaskPublishesAssignmentsSnapshotAndEvent() {
+        TaskView view = applicationService.create(
+                teacher(), freeCommandWithStudent(), upload());
 
-        PublishResult result = publishService.publish(teacher(), taskId);
-
-        assertThat(result.status()).isEqualTo("published");
-        assertThat(result.assignedCount()).isEqualTo(2);
+        TaskId taskId = new TaskId(view.taskId());
+        assertThat(view.status()).isEqualTo("published");
+        assertThat(view.configVersion()).isEqualTo(1);
         assertThat(assignments.findByTask(taskId)).hasSize(2);
-        Task task = tasks.findById(taskId).orElseThrow();
-        assertThat(task.status()).isEqualTo(TaskStatus.PUBLISHED);
-        assertThat(task.configVersion()).isEqualTo(1);
-        assertThat(task.snapshot()).isNotNull();
+        assertThat(tasks.findById(taskId).orElseThrow().snapshot()).isNotNull();
         assertThat(events.events()).hasSize(1);
         assertThat(events.events().get(0)).isInstanceOf(TaskPublishedEvent.class);
     }
 
     @Test
-    void zeroStudentsLeavesDraftAndNoAssignments() {
-        TaskId taskId = createFreeTask();
+    void zeroStudentsFailsAndLeavesNoTask() {
         FakeCourseQueryPort empty = new FakeCourseQueryPort();
         empty.addCourse(com.shijiangtai.m3classroom.TestFixtures.course());
-        TaskPublishService emptyService = publishService(empty, new TaskAccessPolicy(empty));
+        TaskPublishService emptyService = publishService(empty);
+        TaskApplicationService emptyApplication = new TaskApplicationServiceImpl(
+                tasks, assignments, empty, new TaskAccessPolicy(empty),
+                emptyService, new InMemorySessionRepository(), () -> NOW);
 
-        assertCode(() -> emptyService.publish(teacher(), taskId), ErrorCode.TASK_NO_STUDENTS);
+        assertCode(() -> emptyApplication.create(
+                teacher(), freeCommandWithStudent(), upload()), ErrorCode.TASK_NO_STUDENTS);
 
-        Task task = tasks.findById(taskId).orElseThrow();
-        assertThat(task.status()).isEqualTo(TaskStatus.DRAFT);
-        assertThat(assignments.findByTask(taskId)).isEmpty();
+        assertThat(tasks.findByCourse(COURSE)).isEmpty();
+        assertThat(assignments.findByTask(new TaskId(UUID.randomUUID()))).isEmpty();
         assertThat(events.events()).isEmpty();
     }
 
     @Test
-    void questionBankFailureLeavesDraftAndNoAssignments() {
-        TaskId taskId = createInterviewTask();
+    void questionBankFailureLeavesNoTask() {
         questionBank.setAvailable(false);
+        QuestionId questionId = new QuestionId(UUID.randomUUID());
+        CreateTaskCommand command = interviewCommand(questionId);
 
-        assertCode(() -> publishService.publish(teacher(), taskId), ErrorCode.SERVICE_UNAVAILABLE);
+        assertCode(() -> applicationService.create(teacher(), command, null),
+                ErrorCode.SERVICE_UNAVAILABLE);
 
-        assertThat(tasks.findById(taskId).orElseThrow().status()).isEqualTo(TaskStatus.DRAFT);
-        assertThat(assignments.findByTask(taskId)).isEmpty();
+        assertThat(tasks.findByCourse(COURSE)).isEmpty();
+        assertThat(events.events()).isEmpty();
     }
 
     @Test
-    void disabledQuestionLeavesDraft() {
-        TaskId taskId = createInterviewTask();
-        QuestionId questionId = tasks.findById(taskId).orElseThrow()
-                .draft().questionConfig().questionIds().get(0);
+    void disabledQuestionLeavesNoTask() {
+        QuestionId questionId = new QuestionId(UUID.randomUUID());
         questionBank.addQuestion(new PublishQuestion(
                 questionId.value(), "题干", "答案要点", UUID.randomUUID(),
                 "教育理念", SCHOOL_ID, false));
 
-        assertCode(() -> publishService.publish(teacher(), taskId), ErrorCode.QUESTION_DISABLED);
+        assertCode(() -> applicationService.create(
+                teacher(), interviewCommand(questionId), null),
+                ErrorCode.QUESTION_DISABLED);
 
-        assertThat(tasks.findById(taskId).orElseThrow().status()).isEqualTo(TaskStatus.DRAFT);
-        assertThat(assignments.findByTask(taskId)).isEmpty();
+        assertThat(tasks.findByCourse(COURSE)).isEmpty();
     }
 
     @Test
-    void concurrentPublishHasOneWinner() throws Exception {
-        TaskId taskId = createFreeTask();
-        ExecutorService executor = Executors.newFixedThreadPool(2);
-        CountDownLatch start = new CountDownLatch(1);
-        try {
-            Future<PublishResult> first = executor.submit(() -> {
-                start.await();
-                return publishService.publish(teacher(), taskId);
-            });
-            Future<PublishResult> second = executor.submit(() -> {
-                start.await();
-                return publishService.publish(teacher(), taskId);
-            });
-            start.countDown();
+    void closePublishedTaskAndRejectSecondClose() {
+        TaskView view = applicationService.create(
+                teacher(), freeCommandWithStudent(), upload());
+        TaskId taskId = new TaskId(view.taskId());
 
-            List<PublishResult> successes = new ArrayList<>();
-            List<Throwable> failures = new ArrayList<>();
-            for (Future<PublishResult> future : List.of(first, second)) {
-                try {
-                    successes.add(future.get(10, TimeUnit.SECONDS));
-                } catch (ExecutionException exception) {
-                    failures.add(exception.getCause());
-                }
+        applicationService.close(teacher(), taskId);
+        assertThat(tasks.findById(taskId).orElseThrow().status())
+                .isEqualTo(TaskStatus.CLOSED);
+        assertCode(() -> applicationService.close(teacher(), taskId), ErrorCode.TASK_CLOSED);
+    }
+
+    private TaskPublishService publishService(FakeCourseQueryPort coursePort) {
+        MaterialTextExtractor extractor = new MaterialTextExtractor() {
+            @Override
+            public boolean supports(String filename) {
+                return true;
             }
-            assertThat(successes).hasSize(1);
-            assertThat(successes.get(0).status()).isEqualTo("published");
-            assertThat(failures).hasSize(1);
-            assertThat(failures.get(0)).isInstanceOfSatisfying(DomainException.class,
-                    exception -> assertThat(exception.code())
-                            .isEqualTo(ErrorCode.TASK_ALREADY_PUBLISHED));
-            assertThat(assignments.findByTask(taskId)).hasSize(2);
-            assertThat(events.events()).hasSize(1);
-        } finally {
-            executor.shutdownNow();
-        }
-    }
 
-    @Test
-    void closePublishedTask() {
-        TaskId taskId = createFreeTask();
-        publishService.publish(teacher(), taskId);
-        publishService.close(teacher(), taskId);
-
-        Task task = tasks.findById(taskId).orElseThrow();
-        assertThat(task.status()).isEqualTo(TaskStatus.CLOSED);
-        assertThat(task.closedAt()).isEqualTo(NOW);
-    }
-
-    @Test
-    void closeDraftRejected() {
-        TaskId taskId = createFreeTask();
-        assertCode(() -> publishService.close(teacher(), taskId), ErrorCode.TASK_NOT_DRAFT);
-    }
-
-    @Test
-    void closeTwiceReturnsTaskClosed() {
-        TaskId taskId = createFreeTask();
-        publishService.publish(teacher(), taskId);
-        publishService.close(teacher(), taskId);
-        assertCode(() -> publishService.close(teacher(), taskId), ErrorCode.TASK_CLOSED);
-    }
-
-    private TaskPublishService publishService(FakeCourseQueryPort coursePort, TaskAccessPolicy access) {
+            @Override
+            public String extract(byte[] content, String filename, String mime) {
+                return new String(content, StandardCharsets.UTF_8);
+            }
+        };
+        TaskAccessPolicy access = new TaskAccessPolicy(coursePort);
         return new TaskPublishServiceImpl(
                 tasks, assignments, coursePort, questionBank, access,
-                new com.shijiangtai.m3classroom.domain.task.TaskPublishPolicy(),
-                new com.shijiangtai.m3classroom.domain.task.TaskSnapshotFactory(),
-                UUID::randomUUID, () -> NOW, events);
+                new TaskPublishPolicy(), new TaskSnapshotFactory(),
+                new TaskDraftFactory(UUID::randomUUID),
+                new ReferenceMaterialFactory(extractor, new FakeMaterialObjectStorage(),
+                        UUID::randomUUID),
+                new InMemorySessionRepository(), new InMemorySubmissionRepository(),
+                UUID::randomUUID, () -> NOW, events, Runnable::run);
     }
 
-    private TaskId createFreeTask() {
-        TaskView view = applicationService.createDraft(teacher(), freeCommandWithStudent());
-        TaskId taskId = new TaskId(view.taskId());
-        Task task = tasks.findById(taskId).orElseThrow();
-        task.attachMaterial(material("key-" + taskId.value()), NOW);
-        tasks.save(task);
-        return taskId;
+    private CreateTaskCommand interviewCommand(QuestionId questionId) {
+        return new CreateTaskCommand(
+                COURSE, TaskMode.INTERVIEW, "结构化面试", null, null, null,
+                null, null, List.of(), new QuestionConfig(List.of(questionId), 300));
     }
 
-    private TaskId createInterviewTask() {
-        QuestionId questionId = new QuestionId(UUID.randomUUID());
-        CreateTaskCommand command = new CreateTaskCommand(
-                COURSE, TaskMode.INTERVIEW, "结构化面试", null, null, null, null, null,
-                List.of(), new QuestionConfig(List.of(questionId), 300));
-        TaskView view = applicationService.createDraft(teacher(), command);
-        return new TaskId(view.taskId());
+    private MaterialUpload upload() {
+        return new MaterialUpload(
+                "荷塘月色.txt", "text/plain",
+                "荷塘月色课文内容，用于任务参考材料解析。".getBytes(StandardCharsets.UTF_8));
     }
 
     private void assertCode(Runnable action, ErrorCode expected) {

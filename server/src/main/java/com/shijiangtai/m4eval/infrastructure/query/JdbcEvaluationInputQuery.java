@@ -62,6 +62,7 @@ public class JdbcEvaluationInputQuery implements EvaluationInputQuery {
     public Optional<TrainingContext> findTrainingRecord(UUID trainingRecordId) {
         return jdbc.query("""
                 SELECT r.id, r.training_session_id, r.student_account_id, r.template_id,
+                       r.status, r.expires_at,
                        s.course_id, s.mode, m.effective_config_snapshot
                 FROM m6_training.training_records r
                 JOIN m3_classroom.sessions s ON s.id = r.training_session_id
@@ -80,7 +81,9 @@ public class JdbcEvaluationInputQuery implements EvaluationInputQuery {
                             rs.getString("mode"),
                             weightsFromConfig(config),
                             0,
-                            config);
+                            config,
+                            rs.getString("status"),
+                            M4JdbcAccess.instant(rs, "expires_at"));
                 }).stream().findFirst();
     }
 

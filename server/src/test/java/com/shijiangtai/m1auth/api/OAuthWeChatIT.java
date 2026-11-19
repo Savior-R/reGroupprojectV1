@@ -9,11 +9,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.shijiangtai.m3classroom.persistence.PostgresIntegrationTest;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -32,6 +34,9 @@ class OAuthWeChatIT extends PostgresIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private NamedParameterJdbcTemplate jdbc;
 
     private static String uniqueOpenId() {
         return "mock-openid-" + UUID.randomUUID().toString().substring(0, 8);
@@ -226,22 +231,38 @@ class OAuthWeChatIT extends PostgresIntegrationTest {
         String ticket = ticketOf(state);
 
         // 密码错误 → 401
+        String wrongMarker = "junit-wechat-bind-fail-" + UUID.randomUUID();
         mockMvc.perform(post("/api/v1/auth/oauth/wechat/bind")
                         .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", wrongMarker)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"ticket": "%s", "current_password": "wrong-pass-1"}
                                 """.formatted(ticket)))
                 .andExpect(status().isUnauthorized());
 
+        Map<String, Object> failed = latestEventByUserAgent(wrongMarker);
+        assertThat(failed.get("event_type")).isEqualTo("bind");
+        assertThat(failed.get("method")).isEqualTo("wechat");
+        assertThat(failed.get("provider")).isEqualTo("wechat");
+        assertThat(failed.get("success")).isEqualTo(false);
+
         // 正确密码 → 绑定成功
+        String bindMarker = "junit-wechat-bind-ok-" + UUID.randomUUID();
         mockMvc.perform(post("/api/v1/auth/oauth/wechat/bind")
                         .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", bindMarker)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"ticket": "%s", "current_password": "%s"}
                                 """.formatted(ticket, PASSWORD)))
                 .andExpect(status().isNoContent());
+
+        Map<String, Object> bound = latestEventByUserAgent(bindMarker);
+        assertThat(bound.get("event_type")).isEqualTo("bind");
+        assertThat(bound.get("method")).isEqualTo("wechat");
+        assertThat(bound.get("provider")).isEqualTo("wechat");
+        assertThat(bound.get("success")).isEqualTo(true);
 
         // 绑定后扫码直接 authorized
         String secondState = scan(openId);
@@ -268,30 +289,52 @@ class OAuthWeChatIT extends PostgresIntegrationTest {
 
         String openId = uniqueOpenId();
         String ticket = ticketOf(scan(openId));
+        String bindMarker = "junit-wechat-unbind-bind-" + UUID.randomUUID();
         mockMvc.perform(post("/api/v1/auth/oauth/wechat/bind")
                         .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", bindMarker)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"ticket": "%s", "current_password": "%s"}
                                 """.formatted(ticket, PASSWORD)))
                 .andExpect(status().isNoContent());
 
-        // 未绑定时解绑 → 400
+        Map<String, Object> bound = latestEventByUserAgent(bindMarker);
+        assertThat(bound.get("event_type")).isEqualTo("bind");
+        assertThat(bound.get("success")).isEqualTo(true);
+
+        // 已绑定 → 解绑成功；再次解绑 → 400
+        String unbindMarker = "junit-wechat-unbind-ok-" + UUID.randomUUID();
         mockMvc.perform(delete("/api/v1/auth/oauth/wechat")
                         .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", unbindMarker)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"current_password": "%s"}
                                 """.formatted(PASSWORD)))
                 .andExpect(status().isNoContent());
 
+        Map<String, Object> unbound = latestEventByUserAgent(unbindMarker);
+        assertThat(unbound.get("event_type")).isEqualTo("unbind");
+        assertThat(unbound.get("method")).isEqualTo("wechat");
+        assertThat(unbound.get("provider")).isEqualTo("wechat");
+        assertThat(unbound.get("success")).isEqualTo(true);
+
+        String secondUnbindMarker = "junit-wechat-unbind-fail-" + UUID.randomUUID();
         mockMvc.perform(delete("/api/v1/auth/oauth/wechat")
                         .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", secondUnbindMarker)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"current_password": "%s"}
                                 """.formatted(PASSWORD)))
                 .andExpect(status().isBadRequest());
+
+        Map<String, Object> failed = latestEventByUserAgent(secondUnbindMarker);
+        assertThat(failed.get("event_type")).isEqualTo("unbind");
+        assertThat(failed.get("method")).isEqualTo("wechat");
+        assertThat(failed.get("provider")).isEqualTo("wechat");
+        assertThat(failed.get("success")).isEqualTo(false);
     }
 
     @Test
@@ -348,5 +391,15 @@ class OAuthWeChatIT extends PostgresIntegrationTest {
                 .andExpect(status().isBadRequest());
 
         assertThat(token).isNotBlank();
+    }
+
+    private Map<String, Object> latestEventByUserAgent(String userAgent) {
+        return jdbc.queryForMap("""
+                select event_type, method, provider, success, account_id
+                from m1_auth.auth_login_events
+                where user_agent = :ua
+                order by created_at desc, id desc
+                limit 1
+                """, Map.of("ua", userAgent));
     }
 }

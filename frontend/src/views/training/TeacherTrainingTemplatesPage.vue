@@ -254,7 +254,7 @@ onMounted(load)
 
 .teacher-page__header p {
   margin: 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .teacher-page__actions {
@@ -264,12 +264,12 @@ onMounted(load)
 }
 
 .state {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .cell-sub {
   margin: 2px 0 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
   word-break: break-all;
 }
@@ -280,7 +280,7 @@ onMounted(load)
 
 .dialog-hint {
   margin: 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 </style>

@@ -1,3 +1,4 @@
+import { clientId } from '../../utils/id'
 import type { EditableStudent, VirtualStudentConfig } from './types'
 
 const RANDOM_NAMES = [
@@ -15,7 +16,7 @@ const RANDOM_NAMES = [
 
 export function newStudent(seatNo: number): EditableStudent {
   return {
-    key: crypto.randomUUID(),
+    key: clientId(),
     name: RANDOM_NAMES[(seatNo - 1) % RANDOM_NAMES.length] ?? `学生${seatNo}`,
     avatar: `avatar-${String(((seatNo - 1) % 6) + 1).padStart(2, '0')}`,
     personality_text: '',
@@ -39,7 +40,7 @@ export function fromWireStudents(
   const source = students.length ? students : defaultStudents()
   return source.map((student) => ({
     ...student,
-    key: crypto.randomUUID(),
+    key: clientId(),
   }))
 }
 

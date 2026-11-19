@@ -13,6 +13,7 @@ import {
 } from '../../api/auth'
 import type { AuthResult, QrView } from '../../api/auth'
 import { useAuthStore } from '../../stores/auth'
+import { decodeJwt, homeFor } from '../../api/jwt'
 
 /** 登录页（03 §3.9 /login）：密码、邮箱验证码、微信扫码三 tab，登录后按角色进入首页。 */
 
@@ -56,12 +57,13 @@ function finish(result: AuthResult): void {
     void router.push(redirect)
     return
   }
-  if (result.me.account_type === 'admin') {
-    void router.push(result.me.school_id ? '/admin/org' : '/admin/setup')
-  } else {
-    // M2 已上线：学生 / 教师的首页就是课程列表（设计 03 §4.7）。
-    void router.push('/courses')
+  const claims = decodeJwt(result.token)
+  if (claims) {
+    // 与根路径重定向、路由守卫共用同一套角色落地规则。
+    void router.push(homeFor(claims))
+    return
   }
+  void router.push(result.me.account_type === 'admin' ? '/admin/org' : '/courses')
 }
 
 async function submitPassword(): Promise<void> {

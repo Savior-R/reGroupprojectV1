@@ -4,16 +4,39 @@ This directory contains the M3A Spring Boot application, the complete Flyway sch
 
 ## Application
 
-Build and start the full stack:
+One-command local acceptance stack (Docker + demo DB + eval-worker + Vite):
+
+```bash
+./scripts/dev.sh up --build     # first run / after source changes
+./scripts/dev.sh up             # next runs
+./scripts/dev.sh status
+./scripts/dev.sh down
+```
+
+See `scripts/README.md` for reset-demo, logs and troubleshooting. The script generates
+`server/.env` on first run with random JWT / internal-token secrets and starts Vite at
+`http://localhost:5173`.
+
+Manual Compose build:
 
 ```bash
 docker compose up -d --build
-curl -fsS http://localhost:8080/actuator/health   # {"status":"UP"}
+curl -fsS http://localhost:8090/actuator/health   # {"status":"UP"}
 ```
 
 The `docker` profile runs Flyway on startup with `classpath:db/migration` plus
 `classpath:db/dev` (dev-only upstream rows for the fixed `DevDataConfig` IDs),
 against the `shijiangtai` database.
+
+The Compose stack also runs `eval-worker` (`python -m app.worker.main`). It consumes the
+M4 `evaluation:jobs` Redis Stream and calls the Java internal input/callback APIs; the
+FastAPI `ai` service alone does not process evaluations. Without the worker, evaluations
+stay `pending`.
+
+Under `docker`, M3 reads the real M2 course roster and M5 question bank via JDBC adapters;
+the in-memory `DevDataConfig` adapters are only used by `dev` / `test`. M6 training
+sessions reuse the M3 session / WebSocket / recording APIs with `session_type=training`
+and a `null` task id.
 
 Run the full test suite (Compose PostgreSQL, not Testcontainers):
 
@@ -24,8 +47,9 @@ docker compose --profile test run --rm test \
   gradle test --tests '*TaskControllerIT' --no-daemon --console=plain
 ```
 
-Dev headers are `X-Account-Id`, `X-School-Id`, `X-Account-Type` (for example
-`...0010` / `...0001` / `TEACHER`); they are placeholders until M1 JWT lands.
+`X-Account-Id` / `X-School-Id` / `X-Account-Type` are only accepted under the
+`test` / `dev` profiles. The `docker` profile requires a Bearer JWT issued by M1;
+M2–M7 resolve the current user from that token.
 
 ## Frontend dev server
 

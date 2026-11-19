@@ -13,6 +13,7 @@ import com.shijiangtai.m3classroom.domain.task.TaskDraft;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.m3classroom.domain.task.TaskRepository;
 import com.shijiangtai.m3classroom.domain.task.TaskSnapshot;
+import com.shijiangtai.m3classroom.domain.task.TaskStatus;
 import com.shijiangtai.m3classroom.domain.task.TaskSnapshotFactory;
 import com.shijiangtai.m3classroom.domain.task.VirtualStudentConfig;
 import com.shijiangtai.m3classroom.infrastructure.config.DevDataConfig;
@@ -82,7 +83,7 @@ class TaskRepositoryIT extends PostgresIntegrationTest {
                 TaskMode.FREE, "荷塘月色", "部编版", 900, 1200,
                 RubricWeights.defaults(TaskMode.FREE), null,
                 List.of(virtualStudent(), virtualStudent()), null);
-        loaded.updateDraft(replacement, NOW.plusSeconds(10));
+        loaded.updateConfiguration(replacement, loaded.referenceMaterial(), NOW.plusSeconds(10));
         taskRepository.save(loaded);
         entityManager.flush();
 
@@ -93,29 +94,32 @@ class TaskRepositoryIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void deleteCascadesAssignmentsAndVirtualStudents() {
+    void softDeleteKeepsAssignmentsAndVirtualStudents() {
         Task task = freeTask();
         taskRepository.save(task);
         assignmentRepository.saveAll(List.of(new TaskAssignment(
                 UUID.randomUUID(), task.id(), new AccountId(DevDataConfig.STUDENT_ID),
                 new ClassId(DevDataConfig.CLASS_ID), NOW, AssignmentStatus.ASSIGNED)));
 
-        taskRepository.delete(task.id());
+        task.softDelete(new AccountId(DevDataConfig.TEACHER_ID), NOW.plusSeconds(10));
+        taskRepository.save(task);
 
-        assertThat(count("select count(*) from m3_classroom.tasks")).isZero();
-        assertThat(count("select count(*) from m3_classroom.task_assignments")).isZero();
-        assertThat(count("select count(*) from m3_classroom.virtual_students")).isZero();
+        Task stored = taskRepository.findById(task.id()).orElseThrow();
+        assertThat(stored.status()).isEqualTo(TaskStatus.DELETED);
+        assertThat(count("select count(*) from m3_classroom.tasks")).isEqualTo(1);
+        assertThat(count("select count(*) from m3_classroom.task_assignments")).isEqualTo(1);
+        assertThat(count("select count(*) from m3_classroom.virtual_students")).isGreaterThan(0);
     }
 
     private Task freeTask() {
         Task task = draftFreeTask();
         TaskSnapshot snapshot = snapshotFactory.create(task, course(), List.of(), NOW);
-        task.publish(snapshot, NOW);
+        task.publishInitial(snapshot, task.referenceMaterial(), NOW);
         return task;
     }
 
     private Task draftFreeTask() {
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()),
                 new CourseId(DevDataConfig.COURSE_ID),
                 new AccountId(DevDataConfig.TEACHER_ID),

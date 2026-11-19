@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
 @Configuration
-@Profile({"dev", "test", "docker"})
+@Profile({"dev", "test"})
 public class DevDataConfig {
     public static final UUID SCHOOL_ID =
             UUID.fromString("00000000-0000-0000-0000-000000000001");

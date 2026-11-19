@@ -73,7 +73,9 @@ public interface EvaluationInputQuery {
             String mode,
             Map<String, Integer> weights,
             int trainingConfigVersion,
-            Map<String, Object> configSnapshot) {
+            Map<String, Object> configSnapshot,
+            String status,
+            Instant expiresAt) {
     }
 
     record SessionInfo(

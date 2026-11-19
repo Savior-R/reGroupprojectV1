@@ -1,9 +1,7 @@
 package com.shijiangtai.m6training.infrastructure.crossmodule;
 
-import com.shijiangtai.m6training.domain.event.TrainingRecordSelectedEvent;
+import com.shijiangtai.m4eval.domain.TrainingRecordSelectedEvent;
 import com.shijiangtai.m6training.domain.port.TrainingEvaluationPort;
-import com.shijiangtai.m6training.infrastructure.persistence.jpa.TrainingJsonCodec;
-import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -16,33 +14,27 @@ import org.springframework.stereotype.Component;
 /**
  * M4 evaluation seam.
  *
- * <p>Triggering is an after-commit event; reading and cleanup use {@code m4_eval.*} directly
- * because M4 has no module API yet. The event payload is the contract M4 will consume.
+ * <p>Triggering is an after-commit event; status reads and cleanup use {@code m4_eval.*}
+ * directly. Report reads are served by M4's public API (06 §9.2) and are not duplicated here.
  */
 @Component
 public class TrainingEvaluationJdbcAdapter implements TrainingEvaluationPort {
     private final JdbcTemplate jdbcTemplate;
     private final ApplicationEventPublisher eventPublisher;
-    private final TrainingJsonCodec codec;
 
     public TrainingEvaluationJdbcAdapter(
             JdbcTemplate jdbcTemplate,
-            ApplicationEventPublisher eventPublisher,
-            TrainingJsonCodec codec) {
+            ApplicationEventPublisher eventPublisher) {
         this.jdbcTemplate = jdbcTemplate;
         this.eventPublisher = eventPublisher;
-        this.codec = codec;
     }
 
     @Override
     public void requestEvaluation(EvaluationRequest request) {
+        // M4 owns the integration event contract (record/session/student only); it reads the
+        // effective training config from the training tables when it assembles the input.
         eventPublisher.publishEvent(new TrainingRecordSelectedEvent(
-                request.recordId(),
-                request.sessionId(),
-                request.studentAccountId(),
-                request.courseId(),
-                request.trainingLevel(),
-                request.config()));
+                request.recordId(), request.sessionId(), request.studentAccountId()));
     }
 
     @Override
@@ -61,61 +53,6 @@ public class TrainingEvaluationJdbcAdapter implements TrainingEvaluationPort {
                         instant(rs.getTimestamp("completed_at"))),
                 recordId);
         return rows.stream().findFirst();
-    }
-
-    @Override
-    public Optional<EvaluationReport> findReport(UUID recordId) {
-        List<ReportRow> rows = jdbcTemplate.query("""
-                SELECT id, status, total_score, warnings::text AS warnings, completed_at
-                FROM m4_eval.evaluations
-                WHERE training_record_id = ?
-                """,
-                (rs, rowNum) -> new ReportRow(
-                        rs.getObject("id", UUID.class),
-                        rs.getString("status"),
-                        rs.getBigDecimal("total_score"),
-                        rs.getString("warnings"),
-                        instant(rs.getTimestamp("completed_at"))),
-                recordId);
-        if (rows.isEmpty()) {
-            return Optional.empty();
-        }
-        ReportRow row = rows.getFirst();
-        List<DimensionScore> dimensions = jdbcTemplate.query("""
-                SELECT dimension, score, confidence, sub_scores::text AS sub_scores
-                FROM m4_eval.dimension_scores
-                WHERE evaluation_id = ?
-                ORDER BY dimension
-                """,
-                (rs, rowNum) -> new DimensionScore(
-                        rs.getString("dimension"),
-                        rs.getBigDecimal("score"),
-                        rs.getBigDecimal("confidence"),
-                        rs.getString("sub_scores")),
-                row.evaluationId());
-        List<Issue> issues = jdbcTemplate.query("""
-                SELECT dimension, start_ms, end_ms, severity, evidence, suggestion, is_suggestion
-                FROM m4_eval.issues
-                WHERE evaluation_id = ?
-                ORDER BY sort_order
-                """,
-                (rs, rowNum) -> new Issue(
-                        rs.getString("dimension"),
-                        rs.getObject("start_ms", Long.class),
-                        rs.getObject("end_ms", Long.class),
-                        rs.getString("severity"),
-                        rs.getString("evidence"),
-                        rs.getString("suggestion"),
-                        rs.getBoolean("is_suggestion")),
-                row.evaluationId());
-        return Optional.of(new EvaluationReport(
-                row.evaluationId(),
-                row.status(),
-                row.totalScore(),
-                dimensions,
-                issues,
-                codec.readStringList(row.warnings()),
-                row.completedAt()));
     }
 
     @Override
@@ -146,13 +83,5 @@ public class TrainingEvaluationJdbcAdapter implements TrainingEvaluationPort {
 
     private static Instant instant(Timestamp timestamp) {
         return timestamp == null ? null : timestamp.toInstant();
-    }
-
-    private record ReportRow(
-            UUID evaluationId,
-            String status,
-            BigDecimal totalScore,
-            String warnings,
-            Instant completedAt) {
     }
 }

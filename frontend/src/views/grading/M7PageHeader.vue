@@ -2,11 +2,14 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElButton, ElTag } from 'element-plus'
+import { getToken } from '../../api/auth'
 import { useAuthStore } from '../../stores/auth'
 
 /**
- * Small M7 page header. The repo does not yet have the shared AppShell from
- * 09 §7, so M7 pages carry their own compact header and dev role switch.
+ * M7 页面内的上下文头部：标题 + 任务 / 课程子导航。
+ *
+ * 全站导航已由 AppShell 提供；这里只保留评分 / 统计之间的切换。
+ * 未登录的 dev 调试场景仍可使用角色切换，JWT 登录后隐藏。
  */
 
 const props = defineProps<{
@@ -19,6 +22,7 @@ const props = defineProps<{
 const auth = useAuthStore()
 const router = useRouter()
 
+const hasToken = computed(() => Boolean(getToken()))
 const roleLabel = computed(() => (auth.isTeacher ? '教师视角' : '学生视角'))
 
 function switchRole(role: 'student' | 'teacher'): void {
@@ -45,7 +49,7 @@ function switchRole(role: 'student' | 'teacher'): void {
         <h1 class="m7-header__title">{{ title }}</h1>
         <p v-if="subtitle" class="m7-header__subtitle">{{ subtitle }}</p>
       </div>
-      <div class="m7-header__role">
+      <div v-if="!hasToken" class="m7-header__role">
         <ElTag size="small" type="info">{{ roleLabel }}</ElTag>
         <ElButton
           size="small"
@@ -82,9 +86,9 @@ function switchRole(role: 'student' | 'teacher'): void {
 .m7-header {
   margin-bottom: 16px;
   padding: 16px 20px;
-  border: 1px solid #1f2b44;
+  border: 1px solid var(--m1-border);
   border-radius: 12px;
-  background: #111c33;
+  background: var(--m1-bg-subtle);
 }
 
 .m7-header__main {
@@ -96,13 +100,13 @@ function switchRole(role: 'student' | 'teacher'): void {
 
 .m7-header__title {
   margin: 0;
-  color: #e8eef9;
+  color: var(--m1-text-primary);
   font-size: 22px;
 }
 
 .m7-header__subtitle {
   margin: 6px 0 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 13px;
 }
 
@@ -118,17 +122,17 @@ function switchRole(role: 'student' | 'teacher'): void {
   gap: 16px;
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid #1f2b44;
+  border-top: 1px solid var(--m1-border);
   font-size: 13px;
 }
 
 .m7-header__nav a {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   text-decoration: none;
 }
 
 .m7-header__nav a.router-link-active {
-  color: #f5a524;
+  color: var(--m1-accent);
   font-weight: 600;
 }
 </style>

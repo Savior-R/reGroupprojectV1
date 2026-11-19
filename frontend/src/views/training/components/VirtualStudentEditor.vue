@@ -156,12 +156,12 @@ function setRatio(student: EditableStudent, key: RatioKey, value: number): void 
 }
 
 .student-card {
-  border: 1px solid rgba(143, 163, 192, 0.22);
+  border: 1px solid var(--m1-border);
   border-radius: 10px;
   padding: 12px;
   display: grid;
   gap: 10px;
-  background: rgba(17, 28, 51, 0.72);
+  background: var(--m1-bg-surface);
 }
 
 .student-card__basics {
@@ -173,7 +173,7 @@ function setRatio(student: EditableStudent, key: RatioKey, value: number): void 
   gap: 4px;
   flex: 1;
   min-width: 160px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
@@ -192,17 +192,17 @@ function setRatio(student: EditableStudent, key: RatioKey, value: number): void 
   grid-template-columns: 54px 1fr 42px;
   align-items: center;
   gap: 6px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
 .ratio__slider {
   width: 100%;
-  accent-color: #f5a524;
+  accent-color: var(--m1-accent);
 }
 
 .ratio__value {
   text-align: right;
-  color: #e8eef9;
+  color: var(--m1-text-primary);
 }
 </style>

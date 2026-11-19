@@ -99,13 +99,13 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
 
     @BeforeEach
     void publishTask() {
-        TaskView view = taskApplicationService.createDraft(
-                TestFixtures.teacher(), TestFixtures.freeCommandWithStudent());
+        TaskView view = taskApplicationService.create(
+                TestFixtures.teacher(), TestFixtures.freeCommandWithStudent(),
+                new com.shijiangtai.m3classroom.application.command.MaterialUpload(
+                        "a.txt", "text/plain",
+                        "这是一份足够长的参考材料文本内容，用于课堂 WebSocket 测试。"
+                                .getBytes(StandardCharsets.UTF_8)));
         taskId = new TaskId(view.taskId());
-        materialService.upload(TestFixtures.teacher(), taskId, "a.txt", "text/plain",
-                "这是一份足够长的参考材料文本内容，用于课堂 WebSocket 测试。"
-                        .getBytes(StandardCharsets.UTF_8));
-        publishService.publish(TestFixtures.teacher(), taskId);
     }
 
     @AfterEach
@@ -563,7 +563,7 @@ class ClassroomWebSocketIT extends PostgresIntegrationTest {
                 new QuestionConfig(List.of(
                         new QuestionId(DevDataConfig.QUESTION1_ID),
                         new QuestionId(DevDataConfig.QUESTION2_ID)), 300));
-        TaskView view = taskApplicationService.createDraft(
+        TaskView view = taskApplicationService.createPreparedTask(
                 TestFixtures.teacher(), command);
         TaskId id = new TaskId(view.taskId());
         publishService.publish(TestFixtures.teacher(), id);

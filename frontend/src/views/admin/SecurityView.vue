@@ -12,7 +12,6 @@ import {
   wechatStatus,
 } from '../../api/auth'
 import type { AccountView } from '../../api/auth'
-import AdminShell from './AdminShell.vue'
 
 /**
  * 账号安全（FR-M1-09 / FR-M1-11 / 03 §3.9 /settings/security）：
@@ -150,8 +149,7 @@ onMounted(reload)
 </script>
 
 <template>
-  <AdminShell>
-    <div class="security-page">
+  <div class="security-page">
       <div class="page-head">
         <h2>账号安全</h2>
       </div>
@@ -216,8 +214,7 @@ onMounted(reload)
         </div>
       </el-form>
     </el-card>
-    </div>
-  </AdminShell>
+  </div>
 </template>
 
 <style scoped>

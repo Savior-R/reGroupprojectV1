@@ -9,6 +9,7 @@ import java.util.UUID;
 public record StudentResultDetailView(
         UUID submissionId,
         UUID taskId,
+        UUID sessionId,
         String taskTitle,
         String courseName,
         Instant submittedAt,

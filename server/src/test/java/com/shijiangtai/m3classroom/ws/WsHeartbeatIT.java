@@ -81,7 +81,7 @@ class WsHeartbeatIT extends PostgresIntegrationTest {
 
     @BeforeEach
     void publishTask() {
-        TaskView view = taskApplicationService.createDraft(
+        TaskView view = taskApplicationService.createPreparedTask(
                 TestFixtures.teacher(), TestFixtures.freeCommandWithStudent());
         taskId = new TaskId(view.taskId());
         materialService.upload(TestFixtures.teacher(), taskId, "a.txt", "text/plain",

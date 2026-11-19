@@ -125,12 +125,17 @@ void load()
         </template>
 
         <div class="m7-links">
-          <a v-if="detail.ai_report_url" :href="detail.ai_report_url" target="_blank" rel="noreferrer">
-            查看 AI 报告
-          </a>
-          <a v-if="detail.replay_url" :href="detail.replay_url" target="_blank" rel="noreferrer">
+          <router-link
+            :to="{ path: `/submissions/${submissionId}/report`, query: { from: route.fullPath } }"
+          >
+            查看 AI 评测报告
+          </router-link>
+          <router-link
+            v-if="detail.session_id"
+            :to="`/student/sessions/${detail.session_id}/review`"
+          >
             查看回放
-          </a>
+          </router-link>
         </div>
         <p class="m7-muted">只显示本人成绩；不提供班级排名或他人成绩。</p>
       </ElCard>
@@ -143,12 +148,12 @@ void load()
   max-width: 900px;
   margin: 0 auto;
   padding: 24px;
-  color: #e8eef9;
+  color: var(--m1-text-primary);
 }
 
 .m7-card {
-  border: 1px solid #1f2b44;
-  background: #0f1a2e;
+  border: 1px solid var(--m1-border);
+  background: var(--m1-bg-surface);
 }
 
 .m7-detail-head {
@@ -168,30 +173,30 @@ void load()
 
 .m7-score-card {
   padding: 14px 16px;
-  border: 1px solid #1f2b44;
+  border: 1px solid var(--m1-border);
   border-radius: 10px;
-  background: #111c33;
+  background: var(--m1-bg-subtle);
 }
 
 .m7-score-card span {
   display: block;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
 .m7-score-card strong {
   font-size: 26px;
-  color: #e8eef9;
+  color: var(--m1-text-primary);
 }
 
 .m7-score-card--final strong {
-  color: #f5a524;
+  color: var(--m1-accent);
 }
 
 .m7-subtitle {
   margin: 20px 0 10px;
   font-size: 15px;
-  color: #e8eef9;
+  color: var(--m1-text-primary);
 }
 
 .m7-dimensions {
@@ -205,21 +210,21 @@ void load()
   justify-content: space-between;
   padding: 8px 10px;
   border-radius: 8px;
-  background: #111c33;
-  color: #8fa3c0;
+  background: var(--m1-bg-subtle);
+  color: var(--m1-text-secondary);
   font-size: 13px;
 }
 
 .m7-dimension strong {
-  color: #e8eef9;
+  color: var(--m1-text-primary);
 }
 
 .m7-comment {
   margin: 0;
   padding: 12px;
   border-radius: 8px;
-  background: #111c33;
-  color: #cbd5e1;
+  background: var(--m1-bg-subtle);
+  color: var(--m1-text-regular);
   white-space: pre-wrap;
 }
 
@@ -230,17 +235,17 @@ void load()
 }
 
 .m7-links a {
-  color: #f5a524;
+  color: var(--m1-accent);
 }
 
 .m7-muted {
   margin-top: 16px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
 .m7-state {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .m7-alert {
@@ -249,7 +254,7 @@ void load()
 
 .m7-error-code {
   margin: 4px 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 </style>

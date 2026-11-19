@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学生工作台 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .home-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 342px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .home-main,
+    .home-aside {
+      display: grid;
+      gap: 18px;
+    }
+
+    /* Next task */
+    .next-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 252px;
+      gap: 24px;
+      overflow: hidden;
+      padding: 28px;
+      border-radius: var(--r-lg);
+      background:
+        radial-gradient(560px 260px at 80% -10%, rgba(224, 164, 74, 0.12), transparent 65%),
+        radial-gradient(400px 240px at 0% 100%, rgba(42, 103, 88, 0.55), transparent 70%),
+        linear-gradient(140deg, #173f36, #0d2d26);
+      color: #eef3ee;
+      box-shadow: var(--shadow-2);
+    }
+
+    .next-card::after {
+      position: absolute;
+      right: -50px;
+      bottom: -90px;
+      width: 240px;
+      height: 240px;
+      border: 1px solid rgba(238, 243, 238, 0.1);
+      border-radius: 50%;
+      box-shadow: 0 0 0 22px rgba(238, 243, 238, 0.028);
+      content: "";
+      pointer-events: none;
+    }
+
+    .next-card__copy {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .next-card .eyebrow {
+      color: rgba(238, 243, 238, 0.55);
+    }
+
+    .next-card .eyebrow::before {
+      background: #e6b45d;
+    }
+
+    .next-card h2 {
+      margin-top: 12px;
+      color: #f5f7f2;
+      font-size: 34px;
+      line-height: 1.2;
+      letter-spacing: 0.01em;
+    }
+
+    .next-card__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .next-card__meta .chip {
+      min-height: 24px;
+      padding: 2px 9px;
+      border-color: rgba(238, 243, 238, 0.16);
+      background: rgba(238, 243, 238, 0.07);
+      color: rgba(238, 243, 238, 0.72);
+      font-size: 10px;
+    }
+
+    .next-card__note {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 18px;
+      color: rgba(238, 243, 238, 0.58);
+      font-size: 10.5px;
+    }
+
+    .next-card__note [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      color: #e6b45d;
+    }
+
+    .next-card__actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .next-card .btn--primary {
+      border-color: #e0a44a;
+      background: #e0a44a;
+      color: #1b1408;
+    }
+
+    .next-card .btn--primary:hover {
+      border-color: #ecb65f;
+      background: #ecb65f;
+      color: #1b1408;
+    }
+
+    .next-card .btn--ghost {
+      color: rgba(238, 243, 238, 0.68);
+    }
+
+    .next-card .btn--ghost:hover {
+      background: rgba(238, 243, 238, 0.08);
+      color: #f5f7f2;
+    }
+
+    .ticket {
+      position: relative;
+      z-index: 1;
+      align-self: center;
+      padding: 18px 18px 16px;
+      border: 1px solid rgba(24, 38, 34, 0.1);
+      border-radius: 3px;
+      background:
+        repeating-linear-gradient(0deg, transparent 0 23px, rgba(24, 38, 34, 0.05) 23px 24px),
+        #fbf8f0;
+      color: var(--ink-900);
+      box-shadow: 0 14px 36px -18px rgba(0, 0, 0, 0.46);
+      transform: rotate(1.4deg);
+    }
+
+    .ticket::before {
+      position: absolute;
+      top: -7px;
+      left: 50%;
+      width: 64px;
+      height: 16px;
+      background: rgba(226, 236, 231, 0.9);
+      content: "";
+      transform: translateX(-50%) rotate(-1.6deg);
+    }
+
+    .ticket__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 9px;
+      border-bottom: 1px solid var(--line);
+      color: var(--ink-400);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      letter-spacing: 0.08em;
+    }
+
+    .ticket__title {
+      margin-top: 14px;
+      font-family: var(--font-serif);
+      font-size: 24px;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    .ticket__sub {
+      margin-top: 3px;
+      color: var(--ink-500);
+      font-size: 9.5px;
+    }
+
+    .ticket__grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px 12px;
+      margin-top: 16px;
+      padding-top: 12px;
+      padding-bottom: 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .ticket__grid dt {
+      color: var(--ink-400);
+      font-size: 8px;
+      letter-spacing: 0.08em;
+    }
+
+    .ticket__grid dd {
+      margin-top: 1px;
+      color: var(--ink-800);
+      font-size: 9.5px;
+    }
+
+    .ticket__stamp {
+      position: absolute;
+      right: 16px;
+      bottom: 14px;
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border: 1.5px solid var(--accent);
+      border-radius: 3px;
+      color: var(--accent);
+      font-family: var(--font-serif);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      line-height: 1.2;
+      text-align: center;
+      transform: rotate(7deg);
+      opacity: 0.72;
+    }
+
+    /* Week rhythm */
+    .week-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .week-day {
+      display: flex;
+      min-height: 74px;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 2px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .week-day.is-today {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+    }
+
+    .week-day__name {
+      color: var(--text-3);
+      font-size: 8px;
+    }
+
+    .week-day__num {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .week-day.is-today .week-day__num {
+      color: var(--brand);
+    }
+
+    .week-day__dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .week-day__dot--gold {
+      background: var(--gold);
+    }
+
+    .week-day__dot--green {
+      background: var(--success);
+    }
+
+    .week-day__dot--empty {
+      background: transparent;
+    }
+
+    .week-list {
+      display: grid;
+      gap: 0;
+      margin-top: 12px;
+    }
+
+    .week-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .week-item:last-child {
+      border-bottom: 0;
+    }
+
+    .week-item__date {
+      width: 34px;
+      flex: none;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 9px;
+    }
+
+    .week-item strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .week-item span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    /* Course progress */
+    .course-row {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) 120px 70px;
+      gap: 12px;
+      align-items: center;
+      padding: 13px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .course-row:last-child {
+      border-bottom: 0;
+    }
+
+    .course-mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: var(--r-sm);
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .course-mark--gold {
+      background: var(--gold-soft);
+      color: var(--gold);
+    }
+
+    .course-mark--blue {
+      background: var(--info-soft);
+      color: var(--info);
+    }
+
+    .course-row__main {
+      min-width: 0;
+    }
+
+    .course-row__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+
+    .course-row__main strong a {
+      color: var(--text);
+    }
+
+    .course-row__main strong a:hover {
+      color: var(--brand);
+    }
+
+    .course-row__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .course-row__progress {
+      min-width: 0;
+    }
+
+    .course-row__progress-head {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+    }
+
+    .course-row__next {
+      color: var(--text-2);
+      font-size: 10px;
+      text-align: right;
+    }
+
+    /* Feedback */
+    .feedback-item {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 13px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .feedback-item:last-child {
+      border-bottom: 0;
+    }
+
+    .feedback-score {
+      display: grid;
+      width: 52px;
+      height: 52px;
+      flex: none;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: var(--paper-0);
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 17px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+
+    .feedback-score--gold {
+      color: var(--gold);
+    }
+
+    .feedback-item__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .feedback-item__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+
+    .feedback-item__main span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .feedback-item__tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 6px;
+    }
+
+    /* Aside */
+    .aside-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .aside-card .card-head {
+      padding: 16px 18px;
+    }
+
+    .aside-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .radar-mini {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .radar-mini svg {
+      width: 150px;
+      height: 150px;
+      flex: none;
+    }
+
+    .radar-mini__list {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .radar-mini__item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 10px;
+    }
+
+    .radar-mini__item span {
+      color: var(--text-3);
+    }
+
+    .radar-mini__item strong {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .suggestion {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      background: var(--paper-0);
+    }
+
+    .suggestion + .suggestion {
+      margin-top: 8px;
+    }
+
+    .suggestion__head {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--accent);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    .suggestion p {
+      margin-top: 5px;
+      color: var(--text-2);
+      font-size: 10.5px;
+      line-height: 1.6;
+    }
+
+    .suggestion a {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 7px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .suggestion a svg {
+      width: 11px;
+      height: 11px;
+    }
+
+    .quick-links {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .quick-link {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--surface);
+      color: var(--text-2);
+      font-size: 10.5px;
+      font-weight: 500;
+    }
+
+    .quick-link:hover {
+      border-color: var(--brand);
+      background: var(--brand-wash);
+      color: var(--brand);
+    }
+
+    .quick-link [data-icon] svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    @media (max-width: 1180px) {
+      .home-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .home-aside {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 900px) {
+      .next-card {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .ticket {
+        width: min(320px, 100%);
+      }
+
+      .home-aside {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    @media (max-width: 680px) {
+      .course-row {
+        grid-template-columns: 34px minmax(0, 1fr);
+      }
+
+      .course-row__progress,
+      .course-row__next {
+        grid-column: 2;
+        text-align: left;
+      }
+
+      .week-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body data-role="student" data-nav="">
+  <div data-app-header></div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">MONDAY · 2026.11.16 · 语文教学论</p>
+        <h1 class="page-title">下午好，林小雨。</h1>
+        <p class="page-lead">今天有 1 个任务待开始，2 条训练建议。先把「荷塘月色」的课前检查做完，再决定要不要加练。</p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn--secondary" href="student-training.html"><span data-icon="sparkles"></span>去训练</a>
+        <a class="btn btn--secondary" href="student-tasks.html"><span data-icon="clipboard"></span>全部任务</a>
+      </div>
+    </header>
+
+    <div class="home-grid">
+      <div class="home-main">
+        <article class="next-card">
+          <div class="next-card__copy">
+            <p class="eyebrow">NEXT UP / 下一件事</p>
+            <h2>荷塘月色 · 自由试讲</h2>
+            <div class="next-card__meta">
+              <span class="chip"><span data-icon="clock"></span>20 分钟</span>
+              <span class="chip"><span data-icon="users"></span>3 名虚拟学生</span>
+              <span class="chip"><span data-icon="camera"></span>三路录制</span>
+              <span class="chip"><span data-icon="book"></span>语文教学论</span>
+            </div>
+            <p class="next-card__note"><span data-icon="alert-triangle"></span>11 月 18 日 23:59 截止 · 提交后不可重做</p>
+            <div class="next-card__actions">
+              <a class="btn btn--primary" href="student-task-detail.html"><span data-icon="play"></span>进入课前检查</a>
+              <a class="btn btn--ghost" href="student-tasks.html">查看任务说明</a>
+            </div>
+          </div>
+          <div class="ticket" aria-hidden="true">
+            <div class="ticket__head"><span>TEACHING TASK</span><span>NO. 014</span></div>
+            <div class="ticket__title">荷塘月色</div>
+            <div class="ticket__sub">自由试讲 · 朱自清 · 部编版</div>
+            <dl class="ticket__grid">
+              <div><dt>MODE</dt><dd>自由试讲</dd></div>
+              <div><dt>DURATION</dt><dd>20:00</dd></div>
+              <div><dt>STUDENTS</dt><dd>周予安 / 陈一诺</dd></div>
+              <div><dt>RECORDING</dt><dd>三路录制</dd></div>
+            </dl>
+            <span class="ticket__stamp">待<br>开始</span>
+          </div>
+        </article>
+
+        <div class="stat-strip">
+          <div class="stat"><div class="stat__label">待开始</div><div class="stat__value stat__value--accent">2</div><div class="stat__meta">本周截止 1</div></div>
+          <div class="stat"><div class="stat__label">已提交</div><div class="stat__value">8</div><div class="stat__meta">本学期</div></div>
+          <div class="stat"><div class="stat__label">训练次数</div><div class="stat__value">5</div><div class="stat__meta">本周</div></div>
+          <div class="stat"><div class="stat__label">平均分</div><div class="stat__value stat__value--brand">84.2</div><div class="stat__meta">已完成任务</div></div>
+        </div>
+
+        <section class="card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">课程进度</h2>
+              <p class="card-sub">本学期在学课程 · 按最近任务排序</p>
+            </div>
+            <a class="btn btn--ghost btn--sm" href="courses.html?role=student">全部课程 <span data-icon="arrow-right"></span></a>
+          </div>
+          <div class="card-body" style="padding-top:6px;padding-bottom:6px">
+            <div class="course-row">
+              <span class="course-mark">语</span>
+              <div class="course-row__main"><strong><a href="course-detail.html?role=student">语文教学论</a></strong><span>王宁 · 32 名学生 · 6 个任务</span></div>
+              <div class="course-row__progress"><div class="course-row__progress-head"><span>完成 4 / 6</span><span>68%</span></div></div>
+              <span class="course-row__next">荷塘月色<br><span class="faint">11-18</span></span>
+            </div>
+            <div class="course-row">
+              <span class="course-mark course-mark--gold">微</span>
+              <div class="course-row__main"><strong><a href="course-detail.html?role=student">微格教学实训</a></strong><span>李静 · 28 名学生 · 4 个任务</span></div>
+              <div class="course-row__progress"><div class="course-row__progress-head"><span>完成 2 / 4</span><span>42%</span></div></div>
+              <span class="course-row__next">结构化面试<br><span class="faint">11-22</span></span>
+            </div>
+            <div class="course-row">
+              <span class="course-mark course-mark--blue">口</span>
+              <div class="course-row__main"><strong><a href="course-detail.html?role=student">教师口语</a></strong><span>陈岚 · 40 名学生 · 3 个任务</span></div>
+              <div class="course-row__progress"><div class="course-row__progress-head"><span>完成 3 / 3</span><span>85%</span></div></div>
+              <span class="course-row__next">已完成<br><span class="faint">待评分</span></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">最近反馈</h2>
+              <p class="card-sub">AI 报告与教师评分 · 只显示本人</p>
+            </div>
+            <a class="btn btn--ghost btn--sm" href="student-results.html">我的成绩 <span data-icon="arrow-right"></span></a>
+          </div>
+          <div class="card-body" style="padding-top:6px;padding-bottom:6px">
+            <div class="feedback-item">
+              <span class="feedback-score">82.3</span>
+              <div class="feedback-item__main">
+                <strong>荷塘月色 · AI 评测报告</strong>
+                <span>11-14 完成 · 自由试讲 · 3 条改进建议</span>
+                <div class="feedback-item__tags"><span class="chip chip--muted">课堂互动 78.6</span><span class="chip chip--muted">教学表达 81.2</span></div>
+              </div>
+              <a class="btn btn--secondary btn--sm" href="report.html">查看报告</a>
+            </div>
+            <div class="feedback-item">
+              <span class="feedback-score feedback-score--gold">88.5</span>
+              <div class="feedback-item__main">
+                <strong>教师口语 · 教师评分</strong>
+                <span>11-12 完成 · 王宁 · 最终分 88.5</span>
+                <div class="feedback-item__tags"><span class="chip chip--muted">教师 88.5</span><span class="chip chip--muted">AI 86.0</span></div>
+              </div>
+              <a class="btn btn--secondary btn--sm" href="student-results.html">查看成绩</a>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="home-aside">
+        <section class="aside-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">本周节奏</h2>
+              <p class="card-sub">11.16 — 11.22</p>
+            </div>
+            <span class="badge badge--warning">1 个截止</span>
+          </div>
+          <div class="card-body">
+            <div class="week-grid">
+              <div class="week-day is-today"><span class="week-day__name">一</span><span class="week-day__num">16</span><span class="week-day__dot"></span></div>
+              <div class="week-day"><span class="week-day__name">二</span><span class="week-day__num">17</span><span class="week-day__dot week-day__dot--empty"></span></div>
+              <div class="week-day"><span class="week-day__name">三</span><span class="week-day__num">18</span><span class="week-day__dot week-day__dot--gold"></span></div>
+              <div class="week-day"><span class="week-day__name">四</span><span class="week-day__num">19</span><span class="week-day__dot week-day__dot--empty"></span></div>
+              <div class="week-day"><span class="week-day__name">五</span><span class="week-day__num">20</span><span class="week-day__dot week-day__dot--green"></span></div>
+              <div class="week-day"><span class="week-day__name">六</span><span class="week-day__num">21</span><span class="week-day__dot week-day__dot--empty"></span></div>
+              <div class="week-day"><span class="week-day__name">日</span><span class="week-day__num">22</span><span class="week-day__dot week-day__dot--gold"></span></div>
+            </div>
+            <div class="week-list">
+              <div class="week-item"><span class="week-item__date">11-16</span><div><strong>荷塘月色 · 自由试讲</strong><span>待开始 · 建议今天完成课前检查</span></div></div>
+              <div class="week-item"><span class="week-item__date">11-18</span><div><strong>截止：荷塘月色</strong><span>23:59 前提交，逾期不可补交</span></div></div>
+              <div class="week-item"><span class="week-item__date">11-20</span><div><strong>自由训练 · 15 分钟</strong><span>针对课堂互动加练</span></div></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="aside-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">能力画像</h2>
+              <p class="card-sub">最近 3 次评测 · 五维</p>
+            </div>
+            <a class="chip" href="report.html">详情</a>
+          </div>
+          <div class="card-body">
+            <div class="radar-mini">
+              <svg viewBox="0 0 160 160" role="img" aria-label="五维能力雷达图">
+                <polygon points="80,20 137,62 115,129 45,129 23,62" fill="none" stroke="var(--line)" stroke-width="1"/>
+                <polygon points="80,40 118,68 103,112 57,112 42,68" fill="none" stroke="var(--line)" stroke-width="1"/>
+                <polygon points="80,60 99,74 92,96 68,96 61,74" fill="none" stroke="var(--line)" stroke-width="1"/>
+                <line x1="80" y1="80" x2="80" y2="20" stroke="var(--line)" stroke-width="1"/>
+                <line x1="80" y1="80" x2="137" y2="62" stroke="var(--line)" stroke-width="1"/>
+                <line x1="80" y1="80" x2="115" y2="129" stroke="var(--line)" stroke-width="1"/>
+                <line x1="80" y1="80" x2="45" y2="129" stroke="var(--line)" stroke-width="1"/>
+                <line x1="80" y1="80" x2="23" y2="62" stroke="var(--line)" stroke-width="1"/>
+                <polygon points="80,29 126,65 108,118 50,121 33,65" fill="rgba(42,103,88,.16)" stroke="var(--brand)" stroke-width="1.6"/>
+                <circle cx="80" cy="29" r="2.4" fill="var(--brand)"/>
+                <circle cx="126" cy="65" r="2.4" fill="var(--brand)"/>
+                <circle cx="108" cy="118" r="2.4" fill="var(--accent)"/>
+                <circle cx="50" cy="121" r="2.4" fill="var(--brand)"/>
+                <circle cx="33" cy="65" r="2.4" fill="var(--brand)"/>
+                <text x="80" y="12" text-anchor="middle" font-size="8" fill="var(--ink-500)">内容</text>
+                <text x="148" y="59" text-anchor="middle" font-size="8" fill="var(--ink-500)">表达</text>
+                <text x="126" y="146" text-anchor="middle" font-size="8" fill="var(--ink-500)">互动</text>
+                <text x="34" y="146" text-anchor="middle" font-size="8" fill="var(--ink-500)">板书</text>
+                <text x="10" y="59" text-anchor="middle" font-size="8" fill="var(--ink-500)">时间</text>
+              </svg>
+              <div class="radar-mini__list">
+                <div class="radar-mini__item"><span>教学内容</span><strong>85.4</strong></div>
+                <div class="radar-mini__item"><span>教学表达</span><strong>81.2</strong></div>
+                <div class="radar-mini__item"><span>课堂互动</span><strong style="color:var(--accent)">78.6</strong></div>
+                <div class="radar-mini__item"><span>板书 / PPT</span><strong>84.0</strong></div>
+                <div class="radar-mini__item"><span>时间管理</span><strong>82.1</strong></div>
+              </div>
+            </div>
+            <div class="alert alert--note" style="margin-top:14px;padding:10px 12px">
+              <span data-icon="target"></span>
+              <div><span>薄弱项：<strong>课堂互动</strong>。建议优先练习提问设计与追问。</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="aside-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">训练建议</h2>
+              <p class="card-sub">来自最近一次 AI 报告</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="suggestion">
+              <div class="suggestion__head"><span data-icon="sparkles"></span>课堂互动 · 高优先级</div>
+              <p>提问后等待 3—5 秒再点名，给虚拟学生“思考”的时间；增加一次面向全班的追问。</p>
+              <a href="student-training.html">开始 15 分钟自由训练 <span data-icon="arrow-right"></span></a>
+            </div>
+            <div class="suggestion">
+              <div class="suggestion__head" style="color:var(--gold)"><span data-icon="clock"></span>时间管理 · 中优先级</div>
+              <p>导入环节控制在 3 分钟内，把更多时间留给新授与练习。</p>
+              <a href="report.html">查看报告中的时间线 <span data-icon="arrow-right"></span></a>
+            </div>
+          </div>
+        </section>
+
+        <section class="aside-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">快捷入口</h2>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="quick-links">
+              <a class="quick-link" href="student-tasks.html"><span data-icon="clipboard"></span>我的任务</a>
+              <a class="quick-link" href="student-training.html"><span data-icon="sparkles"></span>训练</a>
+              <a class="quick-link" href="student-results.html"><span data-icon="chart"></span>我的成绩</a>
+              <a class="quick-link" href="courses.html?role=student"><span data-icon="book"></span>课程</a>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <script src="assets/site.js"></script>
+</body>
+</html>

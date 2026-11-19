@@ -1,4 +1,5 @@
 import { apiClient } from '../../api/client'
+import type { IssueView, ReportView } from '../report/types'
 import type {
   PageResult,
   StudentTemplateCard,
@@ -108,10 +109,42 @@ export async function deleteTrainingRecord(recordId: string): Promise<void> {
   await apiClient.delete(`/training/records/${encodeURIComponent(recordId)}`)
 }
 
-export function getTrainingReport(recordId: string): Promise<TrainingReport> {
-  return apiClient
-    .get<TrainingReport>(`/training/records/${encodeURIComponent(recordId)}/evaluation`)
+/**
+ * M6 复用 M4 的训练报告接口（06 §9.2 / 08 §10.6），在 M6 边界把 M4 的 ReportView
+ * 适配成页面现有的 TrainingReport 视图，避免两套后端 DTO 并存。
+ */
+export async function getTrainingReport(recordId: string): Promise<TrainingReport> {
+  const report = await apiClient
+    .get<ReportView>(`/training/records/${encodeURIComponent(recordId)}/evaluation`)
     .then((response) => response.data)
+
+  const issues = await apiClient
+    .get<IssueView[]>(`/evaluations/${encodeURIComponent(report.evaluation_id)}/issues`)
+    .then((response) => response.data)
+
+  return {
+    record_id: report.training_record_id ?? recordId,
+    evaluation_id: report.evaluation_id,
+    status: report.status,
+    total_score: report.total_score,
+    dimensions: report.dimensions.map((dimension) => ({
+      dimension: dimension.dimension,
+      score: dimension.score,
+      confidence: dimension.confidence,
+      sub_scores_json: JSON.stringify(dimension.sub_scores),
+    })),
+    issues: issues.map((issue) => ({
+      dimension: issue.dimension,
+      start_ms: issue.start_ms,
+      end_ms: issue.end_ms,
+      severity: issue.severity,
+      evidence: issue.evidence,
+      suggestion: issue.suggestion,
+      is_suggestion: issue.is_suggestion,
+    })),
+    warnings: report.warnings,
+    completed_at: report.meta?.completed_at ?? null,
+  }
 }
 
 export function listTeacherTemplates(

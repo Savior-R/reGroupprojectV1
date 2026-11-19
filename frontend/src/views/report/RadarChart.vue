@@ -129,7 +129,7 @@ const summary = computed(() =>
       <polygon
         :points="dataPolygon"
         fill="rgba(57, 135, 229, 0.22)"
-        stroke="#3987e5"
+        stroke="var(--m1-info)"
         stroke-width="2"
         stroke-linejoin="round"
       >
@@ -141,8 +141,8 @@ const summary = computed(() =>
           :cx="point.x"
           :cy="point.y"
           r="4"
-          fill="#3987e5"
-          stroke="#0b1220"
+          fill="var(--m1-info)"
+          stroke="var(--m1-bg-page)"
           stroke-width="2"
         >
           <title>{{ point.axis }}：{{ point.value === null ? '未提供' : `${point.value.toFixed(1)} 分` }}</title>
@@ -186,17 +186,17 @@ const summary = computed(() =>
 }
 
 .radar__label {
-  fill: #94a3b8;
+  fill: var(--m1-text-secondary);
   font-size: 12px;
 }
 
 .radar__missing {
-  fill: #64748b;
+  fill: var(--m1-text-secondary);
   font-size: 10px;
 }
 
 .radar__value {
-  fill: #cbd5e1;
+  fill: var(--m1-text-regular);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -204,13 +204,13 @@ const summary = computed(() =>
 .radar__empty {
   margin: 0;
   padding: 48px 0;
-  color: #94a3b8;
+  color: var(--m1-text-secondary);
   text-align: center;
 }
 
 .radar__caption {
   margin-top: 4px;
-  color: #64748b;
+  color: var(--m1-text-secondary);
   font-size: 12px;
   text-align: center;
 }

@@ -159,7 +159,7 @@ class TaskAccessPolicyTest {
     }
 
     private Task task() {
-        return Task.createDraft(
+        return Task.create(
                 new TaskId(UUID.randomUUID()), courseId(), new AccountId(TEACHER_ID),
                 new TaskDraft(TaskMode.FREE, "荷塘月色", "部编版", 900, 1200,
                         RubricWeights.defaults(TaskMode.FREE), null, List.of(), null),

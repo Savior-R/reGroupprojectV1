@@ -68,15 +68,18 @@ public class EmailCodeController {
     @PostMapping("/email/bind")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void bind(
-            @Valid @RequestBody BindEmailRequest request) {
+            @Valid @RequestBody BindEmailRequest request, HttpServletRequest http) {
         emailCodes.bindEmail(
-                principals.require(), request.email(), request.code(), request.currentPassword());
+                principals.require(), request.email(), request.code(), request.currentPassword(),
+                AuthController.clientIp(http), http.getHeader("User-Agent"));
     }
 
     /** 解绑邮箱；需当前密码。 */
     @DeleteMapping("/email")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void unbind(@Valid @RequestBody UnbindRequest request) {
-        emailCodes.unbindEmail(principals.require(), request.currentPassword());
+    public void unbind(@Valid @RequestBody UnbindRequest request, HttpServletRequest http) {
+        emailCodes.unbindEmail(
+                principals.require(), request.currentPassword(),
+                AuthController.clientIp(http), http.getHeader("User-Agent"));
     }
 }

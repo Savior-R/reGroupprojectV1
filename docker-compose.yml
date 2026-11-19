@@ -88,6 +88,22 @@ services:
       timeout: 5s
       retries: 10
 
+  # M4 评测 worker：消费 Redis Streams，读取 app 的内部输入接口并回调结果。
+  # web 服务不消费队列，缺了它评测会一直停在 pending。
+  eval-worker:
+    build: ./ai
+    command: ["python", "-m", "app.worker.main"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      JAVA_BASE_URL: http://app:8080
+      SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-dev-service-token}
+      AI_MOCK: ${AI_MOCK:-true}
+      LOG_LEVEL: INFO
+    depends_on:
+      redis: { condition: service_healthy }
+      app: { condition: service_started }
+    restart: unless-stopped
+
   app:
     build: ./server
     # 容器内也要拿到 M1_JWT_SECRET / M1_EMAIL_CODE_SECRET / M1_INTERNAL_TOKEN / M1_MAIL_*；
@@ -110,7 +126,7 @@ services:
       M3_AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:-dev-service-token}
     # 宿主机 8090 → 容器 8080：8080 已被本机其他项目（file-transfer-nginx-1）占用
     # 仅本地调试需要；生产请删除此行，只经 nginx 网关暴露。
-    # 直连本端口会绕过限流，且 dev profile 接受 X-Account-* 请求头身份。
+    # 直连本端口会绕过限流；docker profile 只接受 Bearer JWT，X-Account-* 仅在 dev/test 生效。
     ports: ["8090:8080"]
     depends_on:
       postgres: { condition: service_healthy }

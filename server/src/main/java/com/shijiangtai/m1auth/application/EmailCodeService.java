@@ -170,8 +170,8 @@ public class EmailCodeService {
         authMethods.updateCode(stored.consume(now));
         Account account = found.get();
         auditWriter.write(new AuthLoginEvent(
-                UUID.randomUUID(), account.id(), AuthLoginEvent.LoginMethod.EMAIL, null,
-                true, requestIp, userAgent, now));
+                UUID.randomUUID(), account.id(), AuthLoginEvent.EventType.LOGIN,
+                AuthLoginEvent.LoginMethod.EMAIL, null, true, requestIp, userAgent, now));
         return authService.issue(account);
     }
 
@@ -180,24 +180,31 @@ public class EmailCodeService {
     /** 绑定 / 换绑邮箱：需当前密码 + 验证码；邮箱平台唯一（FR-M1-09）。 */
     @Transactional
     public void bindEmail(
-            M1Principal principal, String rawEmail, String code, String currentPassword) {
+            M1Principal principal, String rawEmail, String code, String currentPassword,
+            String requestIp, String userAgent) {
         Account account = requireAccount(principal);
+        Instant now = clock.instant();
         if (!passwordHasher.matches(currentPassword, account.passwordHash())) {
+            auditBind(account, false, requestIp, userAgent, now);
             throw unauthorized();
         }
 
         EmailAddress email = EmailAddress.of(rawEmail);
-        Instant now = clock.instant();
 
         EmailLoginCode stored = authMethods
                 .findLatestCode(email.value(), EmailLoginCode.Purpose.BIND)
-                .orElseThrow(() -> new DomainException(ErrorCode.UNAUTHORIZED, "验证码无效或已过期"));
+                .orElseThrow(() -> {
+                    auditBind(account, false, requestIp, userAgent, now);
+                    return new DomainException(ErrorCode.UNAUTHORIZED, "验证码无效或已过期");
+                });
 
         if (!stored.isUsable(now, properties.emailCode().maxAttempts())) {
+            auditBind(account, false, requestIp, userAgent, now);
             throw new DomainException(ErrorCode.UNAUTHORIZED, "验证码无效或已过期");
         }
         if (!stored.matchesHash(hasher.hash(email.value(), code))) {
             authMethods.updateCode(stored.withFailedAttempt());
+            auditBind(account, false, requestIp, userAgent, now);
             throw new DomainException(ErrorCode.UNAUTHORIZED, "验证码无效或已过期");
         }
 
@@ -205,26 +212,33 @@ public class EmailCodeService {
         accounts.findByEmail(email)
                 .filter(other -> !other.id().equals(account.id()))
                 .ifPresent(other -> {
+                    auditBind(account, false, requestIp, userAgent, now);
                     throw new DomainException(ErrorCode.EMAIL_TAKEN, "该邮箱已被使用");
                 });
 
         authMethods.updateCode(stored.consume(now));
         accounts.save(account.bindVerifiedEmail(email, now));
+        auditBind(account, true, requestIp, userAgent, now);
     }
 
     /** 解绑邮箱：需当前密码；解绑后不能再用验证码登录。 */
     @Transactional
-    public void unbindEmail(M1Principal principal, String currentPassword) {
+    public void unbindEmail(
+            M1Principal principal, String currentPassword, String requestIp, String userAgent) {
         Account account = requireAccount(principal);
+        Instant now = clock.instant();
         if (!passwordHasher.matches(currentPassword, account.passwordHash())) {
+            auditUnbind(account, false, requestIp, userAgent, now);
             throw unauthorized();
         }
         if (!account.canLoginByEmail()) {
+            auditUnbind(account, false, requestIp, userAgent, now);
             throw new DomainException(ErrorCode.VALIDATION_ERROR, "尚未绑定邮箱");
         }
         // 密码恒存在，解绑邮箱不会使账号失去所有登录方式；如未来支持清空密码，
         // 此处需改为「至少保留一种登录方式」校验（FR-M1-11）。
-        accounts.save(account.unbindEmail(clock.instant()));
+        accounts.save(account.unbindEmail(now));
+        auditUnbind(account, true, requestIp, userAgent, now);
     }
 
     // ------------------------------------------------------------------ 内部
@@ -238,6 +252,20 @@ public class EmailCodeService {
         // 邮箱可能未绑定任何账号，故 account_id 为空；不记录验证码
         auditWriter.write(AuthLoginEvent.failure(
                 UUID.randomUUID(), AuthLoginEvent.LoginMethod.EMAIL, null, ip, userAgent, now));
+    }
+
+    private void auditBind(
+            Account account, boolean success, String ip, String userAgent, Instant now) {
+        auditWriter.write(AuthLoginEvent.bind(
+                UUID.randomUUID(), account.id(), AuthLoginEvent.LoginMethod.EMAIL,
+                null, success, ip, userAgent, now));
+    }
+
+    private void auditUnbind(
+            Account account, boolean success, String ip, String userAgent, Instant now) {
+        auditWriter.write(AuthLoginEvent.unbind(
+                UUID.randomUUID(), account.id(), AuthLoginEvent.LoginMethod.EMAIL,
+                null, success, ip, userAgent, now));
     }
 
     private static DomainException unauthorized() {

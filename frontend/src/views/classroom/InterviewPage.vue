@@ -119,7 +119,11 @@ const nextDisabled = computed(() => {
 })
 
 function isTerminal(status: SessionStatus): boolean {
-  return status === 'ended' || status === 'reviewing' || status === 'submitted'
+  return status === 'ended'
+    || status === 'reviewing'
+    || status === 'submitted'
+    || status === 'selected'
+    || status === 'evaluated'
 }
 
 function addRecorder(type: StreamType, stream: MediaStream, offsetBaseMs: number): void {

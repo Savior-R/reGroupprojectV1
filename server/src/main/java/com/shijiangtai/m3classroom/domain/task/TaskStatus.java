@@ -5,9 +5,9 @@ import com.shijiangtai.shared.domain.ErrorCode;
 import java.util.Map;
 
 public enum TaskStatus {
-    DRAFT("draft"),
     PUBLISHED("published"),
-    CLOSED("closed");
+    CLOSED("closed"),
+    DELETED("deleted");
 
     private final String wireValue;
 

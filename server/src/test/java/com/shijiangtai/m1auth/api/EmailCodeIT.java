@@ -113,13 +113,20 @@ class EmailCodeIT extends PostgresIntegrationTest {
                 .andExpect(status().isAccepted());
 
         String code = mockMail.lastCodeTo(email).orElseThrow();
+        String marker = "junit-bind-ok-" + UUID.randomUUID();
         mockMvc.perform(post("/api/v1/auth/email/bind")
                         .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", marker)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"email": "%s", "code": "%s", "current_password": "%s"}
                                 """.formatted(email, code, PASSWORD)))
                 .andExpect(status().isNoContent());
+
+        Map<String, Object> event = latestEventByUserAgent(marker);
+        assertThat(event.get("event_type")).isEqualTo("bind");
+        assertThat(event.get("method")).isEqualTo("email");
+        assertThat(event.get("success")).isEqualTo(true);
 
         mockMvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
@@ -140,14 +147,21 @@ class EmailCodeIT extends PostgresIntegrationTest {
                                 """.formatted(email)))
                 .andExpect(status().isAccepted());
         String code = mockMail.lastCodeTo(email).orElseThrow();
+        String marker = "junit-bind-fail-" + UUID.randomUUID();
 
         mockMvc.perform(post("/api/v1/auth/email/bind")
                         .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", marker)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"email": "%s", "code": "%s", "current_password": "wrong-pass-1"}
                                 """.formatted(email, code)))
                 .andExpect(status().isUnauthorized());
+
+        Map<String, Object> event = latestEventByUserAgent(marker);
+        assertThat(event.get("event_type")).isEqualTo("bind");
+        assertThat(event.get("method")).isEqualTo("email");
+        assertThat(event.get("success")).isEqualTo(false);
     }
 
     @Test
@@ -253,21 +267,35 @@ class EmailCodeIT extends PostgresIntegrationTest {
         String token = register(username);
         seedVerifiedEmail(username, email);
 
+        String wrongMarker = "junit-unbind-fail-" + UUID.randomUUID();
         mockMvc.perform(delete("/api/v1/auth/email")
                         .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", wrongMarker)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"current_password": "wrong-pass-1"}
                                 """))
                 .andExpect(status().isUnauthorized());
 
+        Map<String, Object> failed = latestEventByUserAgent(wrongMarker);
+        assertThat(failed.get("event_type")).isEqualTo("unbind");
+        assertThat(failed.get("method")).isEqualTo("email");
+        assertThat(failed.get("success")).isEqualTo(false);
+
+        String marker = "junit-unbind-ok-" + UUID.randomUUID();
         mockMvc.perform(delete("/api/v1/auth/email")
                         .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", marker)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"current_password": "%s"}
                                 """.formatted(PASSWORD)))
                 .andExpect(status().isNoContent());
+
+        Map<String, Object> event = latestEventByUserAgent(marker);
+        assertThat(event.get("event_type")).isEqualTo("unbind");
+        assertThat(event.get("method")).isEqualTo("email");
+        assertThat(event.get("success")).isEqualTo(true);
 
         mockMvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + token))
                 .andExpect(jsonPath("$.email").doesNotExist())
@@ -291,5 +319,15 @@ class EmailCodeIT extends PostgresIntegrationTest {
 
         assertThat(code).hasSize(6).matches("\\d{6}");
         assertThat(mockMail.sentMessages()).isNotEmpty();
+    }
+
+    private Map<String, Object> latestEventByUserAgent(String userAgent) {
+        return jdbc.queryForMap("""
+                select event_type, method, provider, success, account_id
+                from m1_auth.auth_login_events
+                where user_agent = :ua
+                order by created_at desc, id desc
+                limit 1
+                """, Map.of("ua", userAgent));
     }
 }

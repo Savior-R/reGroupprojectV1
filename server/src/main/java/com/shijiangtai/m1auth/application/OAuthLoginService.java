@@ -140,54 +140,82 @@ public class OAuthLoginService {
         Account account = accounts.findById(identity.accountId())
                 .orElseThrow(() -> new DomainException(ErrorCode.UNAUTHORIZED, "账号不存在"));
         auditWriter.write(new AuthLoginEvent(
-                UUID.randomUUID(), account.id(), AuthLoginEvent.LoginMethod.WECHAT,
-                identity.provider(), true, requestIp, userAgent, now));
+                UUID.randomUUID(), account.id(), AuthLoginEvent.EventType.LOGIN,
+                AuthLoginEvent.LoginMethod.WECHAT, identity.provider(), true,
+                requestIp, userAgent, now));
         return authService.issue(account);
     }
 
     /** 登录后绑定微信：需当前密码 + 未绑定的 registration_ticket。 */
     @Transactional
-    public void bindWechat(M1Principal principal, String ticket, String currentPassword) {
+    public void bindWechat(
+            M1Principal principal, String ticket, String currentPassword,
+            String requestIp, String userAgent) {
         Account account = requireAccount(principal);
+        Instant now = clock.instant();
         if (!passwordHasher.matches(currentPassword, account.passwordHash())) {
+            auditBind(account, false, requestIp, userAgent, now);
             throw new DomainException(ErrorCode.UNAUTHORIZED, "密码错误");
         }
 
         TicketPayload payload = stateStore.findRegistrationTicket(ticket)
-                .orElseThrow(() -> new DomainException(
-                        ErrorCode.OAUTH_STATE_INVALID, "ticket 无效或已过期，请重新扫码"));
+                .orElseThrow(() -> {
+                    auditBind(account, false, requestIp, userAgent, now);
+                    return new DomainException(
+                            ErrorCode.OAUTH_STATE_INVALID, "ticket 无效或已过期，请重新扫码");
+                });
 
         authMethods.findIdentity(payload.provider(), payload.providerUserId())
                 .filter(existing -> !existing.accountId().equals(account.id()))
                 .ifPresent(existing -> {
+                    auditBind(account, false, requestIp, userAgent, now);
                     throw new DomainException(
                             ErrorCode.OAUTH_IDENTITY_TAKEN, "该微信已绑定其他账号");
                 });
 
-        Instant now = clock.instant();
         authMethods.saveIdentity(OAuthIdentity.wechat(
                 UUID.randomUUID(), account.id(), payload.providerUserId(), payload.unionId(),
                 payload.email(), payload.nickname(), payload.avatarUrl(), now));
         stateStore.deleteRegistrationTicket(ticket);
+        auditBind(account, true, requestIp, userAgent, now);
         log.info("微信绑定成功 account_id={}", account.id().value());
     }
 
     /** 解绑微信：需当前密码；密码仍在，不会失去全部登录方式。 */
     @Transactional
-    public void unbindWechat(M1Principal principal, String currentPassword) {
+    public void unbindWechat(
+            M1Principal principal, String currentPassword, String requestIp, String userAgent) {
         Account account = requireAccount(principal);
+        Instant now = clock.instant();
         if (!passwordHasher.matches(currentPassword, account.passwordHash())) {
+            auditUnbind(account, false, requestIp, userAgent, now);
             throw new DomainException(ErrorCode.UNAUTHORIZED, "密码错误");
         }
         if (authMethods.findIdentityByAccount(account.id(), provider.name()).isEmpty()) {
+            auditUnbind(account, false, requestIp, userAgent, now);
             throw new DomainException(ErrorCode.VALIDATION_ERROR, "尚未绑定微信");
         }
         authMethods.deleteIdentity(account.id(), provider.name());
+        auditUnbind(account, true, requestIp, userAgent, now);
     }
 
     private Account requireAccount(M1Principal principal) {
         return accounts.findById(principal.accountId())
                 .orElseThrow(() -> new DomainException(ErrorCode.UNAUTHORIZED, "账号不存在"));
+    }
+
+    private void auditBind(
+            Account account, boolean success, String ip, String userAgent, Instant now) {
+        auditWriter.write(AuthLoginEvent.bind(
+                UUID.randomUUID(), account.id(), AuthLoginEvent.LoginMethod.WECHAT,
+                provider.name(), success, ip, userAgent, now));
+    }
+
+    private void auditUnbind(
+            Account account, boolean success, String ip, String userAgent, Instant now) {
+        auditWriter.write(AuthLoginEvent.unbind(
+                UUID.randomUUID(), account.id(), AuthLoginEvent.LoginMethod.WECHAT,
+                provider.name(), success, ip, userAgent, now));
     }
 
     public record QrView(String state, String authorizeUrl, Instant expiresAt) {

@@ -15,6 +15,8 @@ export type SessionStatus =
   | 'ended'
   | 'reviewing'
   | 'submitted'
+  | 'selected'
+  | 'evaluated'
   | 'cancelled'
   | 'failed'
 

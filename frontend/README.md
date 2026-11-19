@@ -1,9 +1,9 @@
-# M3 Frontend (Vue 3 + TypeScript + Vite)
+# 三尺讲台前端（Vue 3 + TypeScript + Vite）
 
-M3 frontend slice: shared app shell, student task entry, classroom / interview rooms with
-MediaRecorder upload, and the review / replay page with synchronized multi-stream playback.
+全站前端：M1 登录 / 组织、M2 课程、M3 任务与课堂录制、M4 报告、M5 题库、M6 训练、M7 评分统计。
+登录后统一由 `src/layouts/AppShell.vue` 提供角色导航；课堂 / 面试 / 回看 / 训练房间使用沉浸式布局。
 
-The backend (M3A/M3B/M3C) lives in `server/`; start it with `docker compose up -d --build`
+The backend lives in `server/`; start the full stack with `docker compose up -d --build`
 from the repository root before using the pages.
 
 ## Requirements
@@ -14,9 +14,17 @@ from the repository root before using the pages.
 
 ## Commands
 
+> 课堂 / 面试 / 训练录制依赖 `getUserMedia` / `getDisplayMedia`，浏览器只允许在
+> `localhost` 或 HTTPS 安全上下文使用。用 Windows 浏览器验收时请走
+> `http://localhost:5173`；WSL 的 LAN IP 可用于查看普通页面，但录制页会被浏览器拒绝。
+
 From the repository root:
 
 ```bash
+# 一键启动后端 + Vite（推荐；会处理 .env / demo DB / eval-worker）
+./scripts/dev.sh up --build
+
+# 只操作前端
 npm --prefix frontend install
 npm --prefix frontend run dev -- --host 127.0.0.1   # http://127.0.0.1:5173
 npm --prefix frontend run test -- --run              # Vitest (jsdom)
@@ -29,15 +37,19 @@ The same scripts work from `frontend/` (`npm run dev`, `npm run test -- --run`,
 
 ## Dev proxy
 
-`vite.config.ts` proxies `/api` to `http://localhost:8080` and `/ws` to
-`ws://localhost:8080` (WebSocket upgrade). If the backend is not running, pages render
-their error state with `HTTP_502`.
+`vite.config.ts` proxies `/api` and `/ws` to `http://localhost:8090` (Compose maps
+container `8080` to host `8090`). Override with `VITE_API_TARGET`, e.g.
+`VITE_API_TARGET=http://localhost:8080` for a local `bootRun`. If the backend is not
+running, pages render their error state with `HTTP_502`.
 
-## Dev identity (M1 JWT not landed)
+## Dev identity (dev/test fallback; login is required in docker)
 
-`src/stores/auth.ts` injects `X-Account-Id`, `X-School-Id`, and `X-Account-Type` from a
-dev preset. The default is student; open the app with `?dev_role=teacher` on first load
-to use the teacher identity:
+登录后 `src/stores/auth.ts` 从 JWT 同步真实身份，`src/api/client.ts` 同时发送
+`Authorization: Bearer` 与 `X-Account-*`。后端 `docker` profile 只接受 Bearer JWT；
+`X-Account-*` 仅在 `dev` / `test` profile 作为兜底。
+
+未登录时 M3 页面仍可用 dev preset 调试，默认学生；首次打开时加 `?dev_role=teacher`
+可切换教师身份：
 
 ```text
 http://127.0.0.1:5173/student/tasks?dev_role=teacher
@@ -49,20 +61,24 @@ http://127.0.0.1:5173/student/tasks?dev_role=teacher
 
 The selected role is persisted in `sessionStorage` under `m3.dev-identity`; the query
 parameter is only honoured when no role is stored yet. Clear that key to switch roles.
-These are development placeholders; M1 replaces them with JWT authentication.
 
 ## Routes
 
-- `/student/tasks` — student task list
-- `/student/tasks/:taskId` — task detail and session start / resume
-- `/student/sessions/:sessionId/classroom` — classroom room (camera + screen + audio)
-- `/student/sessions/:sessionId/interview` — interview room (camera + audio)
-- `/student/sessions/:sessionId/review` — review, synchronized replay, and submit
-- `/403`, plus a catch-all 404
+- `/login`、`/register`、`/register/oauth` — M1 认证
+- `/courses`、`/courses/:courseId` — 课程列表 / 详情；教师从详情进入「课程任务」
+- `/teacher/courses/:courseId/tasks`、`/new`、`/:taskId` — 教师任务列表 / 新建 / 编辑发布
+- `/student/tasks`、`/student/tasks/:taskId` — 学生任务
+- `/student/sessions/:sessionId/{classroom,interview,review}` — 课堂 / 面试 / 回看提交
+- `/student/training/**` — 训练首页、配置、课堂、回看、记录；训练报告走 M4 报告组件
+- `/teacher/question-bank` — M5 题库
+- `/student/results`、`/teacher/courses/:courseId/.../grading|stats` — M7 成绩与评分统计
+- `/evaluations/:id/report`、`/submissions/:id/report` — M4 共享报告终点
+- `/admin/setup`、`/admin/org`、`/admin/teachers` — M1 管理端
+- `/403`、`/404`、catch-all 404
 
-## Tests and build evidence
+旧文档路径 `/question-bank`、`/teacher/training-templates`、`/teacher/evaluations/:id`、
+`/admin/courses`、`/student`、`/teacher` 保留重定向。规范路径以 `src/app/router.ts` 为准。
 
-Current slice: 14 Vitest files / 111 tests passing; production build passing with only the
-pre-existing Element Plus chunk-size warning. Full results, browser-smoke blockers, and
-known gaps are recorded in
-`docs/team/evidence/2026-11-04-m3-frontend-classroom-replay.md`.
+## Build
+
+`npm run build` 已通过；完整 Vitest / E2E 结果在整合验收后统一补录。

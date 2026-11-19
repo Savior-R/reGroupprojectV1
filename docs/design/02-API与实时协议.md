@@ -1,7 +1,7 @@
 # 02 API 与实时协议
 
 > 上位文档：[需求规格说明书](../requirements/需求规格说明书.md)、[00 总体设计](00-总体设计.md)、[01 数据模型与迁移](01-数据模型与迁移.md)
-> 版本：V1.7（讨论稿）　状态：待评审　更新日期：2026-11-07
+> 版本：V1.9（契约对齐）　状态：待评审　更新日期：2026-11-18
 > 范围：M1—M7；M8 暂缓
 > 风格：REST / JSON + WebSocket + Redis Streams；Java 提供公开 API，Python 只提供内部 AI API
 
@@ -131,8 +131,8 @@ location = /_auth {
 | `course:members:read` | 查看课程老师组 / 学生名单（本组教师 / 本校管理员） |
 | `course:members:manage` | 管理课程老师组 / 学生 |
 | `task:read` | 查看任务 |
-| `task:create` | 创建 / 编辑草稿任务 |
-| `task:publish` / `task:close` | 发布 / 关闭任务 |
+| `task:create` | 创建 / 编辑任务（创建即发布） |
+| `task:close` | 关闭任务 |
 | `task:assignments:read` | 查看任务分配与提交名单 |
 | `session:start` | 开始试讲 / 训练 |
 | `session:read` | 查看本人或本课程 session |
@@ -142,7 +142,8 @@ location = /_auth {
 | `evaluation:read` | 查看 AI 评测报告 |
 | `question_bank:read` | 查看题库 |
 | `question_bank:manage` | 管理题库 |
-| `training:template:read` | 查看训练模板 |
+| `training:template:personal` | 创建 / 编辑 / 删除个人模板、复制教师发布 |
+| `training:template:read` | 查看自己的发布 / 学生可见发布 |
 | `training:template:manage` | 发布 / 下架训练模板 |
 | `training:session:start` | 开始训练 |
 | `training:record:read` | 查看训练记录 |
@@ -170,7 +171,7 @@ location = /_auth {
 | `course:members:manage` | — | ✓ | ✓ |
 | `task:read` | ✓ | ✓ | — |
 | `task:create` | — | ✓ | — |
-| `task:publish` / `task:close` | — | ✓ | — |
+| `task:close` | — | ✓ | — |
 | `task:assignments:read` | — | ✓ | — |
 | `session:start` | ✓ | — | — |
 | `session:read` | ✓（本人） | ✓（本课程） | — |
@@ -180,6 +181,7 @@ location = /_auth {
 | `evaluation:read` | ✓（本人） | ✓（本课程） | — |
 | `question_bank:read` | — | ✓ | ✓ |
 | `question_bank:manage` | — | ✓ | ✓ |
+| `training:template:personal` | ✓ | ✓ | — |
 | `training:template:read` | ✓ | ✓ | — |
 | `training:template:manage` | — | ✓ | — |
 | `training:session:start` | ✓ | — | — |
@@ -297,12 +299,11 @@ POST /api/v1/auth/oauth/wechat/register
 | GET | `/api/v1/student/tasks` | `task:read` | 学生任务列表 |
 | GET | `/api/v1/student/tasks/{task_id}` | `task:read` | 学生任务详情 / 面试前检查；按角色裁剪 |
 | GET | `/api/v1/courses/{course_id}/tasks` | `task:read` | 课程任务列表 |
-| POST | `/api/v1/courses/{course_id}/tasks` | `task:create` | 创建任务 / 草稿 |
+| POST | `/api/v1/courses/{course_id}/tasks` | `task:create` | 创建并发布任务；可传 `source_training_template_id` 从本人教师模板预填 |
 | GET | `/api/v1/tasks/{task_id}` | `task:read` | 任务详情 |
-| PATCH | `/api/v1/tasks/{task_id}` | `task:create` | 编辑草稿 |
-| POST | `/api/v1/tasks/{task_id}/publish` | `task:publish` | 发布任务 |
+| PATCH | `/api/v1/tasks/{task_id}` | `task:create` | 编辑任务；仅无 session / 提交时允许，成功后生成新配置快照与分配名单 |
 | POST | `/api/v1/tasks/{task_id}/close` | `task:close` | 关闭任务 |
-| DELETE | `/api/v1/tasks/{task_id}` | `task:create` | 删除草稿 |
+| DELETE | `/api/v1/tasks/{task_id}` | `task:create` | 软删除任务；课程老师组；有进行中 session 时拒绝 |
 | POST | `/api/v1/tasks/{task_id}/material` | `task:create` | 上传 / 替换参考材料（multipart） |
 | GET | `/api/v1/tasks/{task_id}/material` | `task:read` | 材料元数据 + 解析文本（教师组） |
 | DELETE | `/api/v1/tasks/{task_id}/material` | `task:create` | 删除参考材料 |
@@ -332,6 +333,8 @@ POST /api/v1/auth/oauth/wechat/register
 - 感知通道：`WS /ws/v1/sessions/{session_id}/perception?ticket=...` 只传二进制音频；控制 WS 只传命令 / 事件。
 - 结构化面试复用同一套 session / WS，区别在任务 `mode=interview` 与题目配置。
 - 训练 session 复用 `/api/v1/training/sessions`，不进入学生任务列表。
+- 2026-11-16 起，训练 session 也走同一套 `/api/v1/sessions/{id}`、WS 控制通道与三路录制接口；`SessionView.task_id` 为 `null`、`session_type=training`，录制对象键为 `recordings/{school_id}/training/{session_id}/{stream}.webm`。
+- M7 学生成绩详情 `/api/v1/submissions/{submission_id}/result` 增加 `session_id` 字段，用于前端跳转 M3 回放页；`ai_report_url` / `replay_url` 保留兼容，但前端改用内部报告与回放路由。
 - **学生可见性**：学生任务 / session / WS 快照不得返回 `reference_material`、`answer_points`、`rubric_weights`、虚拟学生参数与个性文本；只返回课题、模式、时长、虚拟学生姓名 / 头像 / 状态。教师组任务详情可返回完整配置。
 - **开始 / 结束**：课堂进行中以 WS 命令 `session.start` / `teacher.end_session` 为主；REST `/start` / `/end` 只做服务端幂等兜底，不作为页面刷新恢复。页面刷新按 recording_state=lost 处理，session failed。
 
@@ -343,7 +346,7 @@ POST /api/v1/auth/oauth/wechat/register
 | GET | `/api/v1/evaluations/{evaluation_id}` | `evaluation:read` | 评测详情 / 状态 |
 | GET | `/api/v1/evaluations/{evaluation_id}/report` | `evaluation:read` | 报告：总分、维度、雷达、建议 |
 | GET | `/api/v1/evaluations/{evaluation_id}/issues` | `evaluation:read` | 问题定位与建议 |
-| GET | `/api/v1/training/records/{record_id}/evaluation` | `evaluation:read` | 训练评测报告，仅本人 |
+| GET | `/api/v1/training/records/{record_id}/evaluation` | `evaluation:read` | 训练评测报告（06 §9.2 DTO），仅本人；由 M4 提供，M6 复用 |
 
 - 不提供手动重跑；失败由系统自动重试。
 - `partial` 报告展示已完成维度，不展示总分。
@@ -368,14 +371,21 @@ POST /api/v1/auth/oauth/wechat/register
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET / POST | `/api/v1/training/templates` | `training:template:read` / `manage` | 教师模板列表 / 发布 |
-| GET | `/api/v1/training/templates/{template_id}` | `training:template:read` | 模板详情；教师仅自己创建，学生仅目标课程可用模板 |
-| POST | `/api/v1/training/templates/{template_id}/unpublish` | `training:template:manage` | 下架模板 |
-| GET | `/api/v1/student/training/templates` | `training:template:read` | 学生可选模板 |
-| GET | `/api/v1/student/training/templates/{template_id}` | `training:template:read` | 学生模板公开配置 |
+| GET / POST | `/api/v1/training/my-templates` | `training:template:personal` | 本人个人模板列表 / 从零创建 |
+| GET / PATCH | `/api/v1/training/my-templates/{template_id}` | `training:template:personal` | 本人模板详情 / 编辑；发布中教师配置锁定 |
+| DELETE | `/api/v1/training/my-templates/{template_id}` | `training:template:personal` | 软删除；自动下架发布、释放额度、清理关联记录 / 材料 |
+| POST | `/api/v1/training/my-templates/from-publication` | `training:template:personal` | 学生复制教师发布到个人模板 |
+| GET | `/api/v1/training/my-templates/{template_id}/task-config` | `training:template:personal` | 教师任务预填配置 |
+| POST | `/api/v1/training/template-materials` | `training:template:personal` | 上传 / 解析模板参考材料 |
+| DELETE | `/api/v1/training/template-materials/{material_id}` | `training:template:personal` | 删除未附着模板材料 |
+| GET | `/api/v1/training/publications` | `training:template:manage` | 本人发布列表（教师） |
+| POST | `/api/v1/training/my-templates/{template_id}/publications` | `training:template:manage` | 发布到课程 |
+| POST | `/api/v1/training/publications/{publication_id}/unpublish` | `training:template:manage` | 下架发布 |
+| GET | `/api/v1/student/training/templates` | `training:template:read` | 学生可见的教师发布 |
+| GET | `/api/v1/student/training/templates/{publication_id}` | `training:template:read` | 学生发布公开配置 |
 | POST | `/api/v1/training/materials` | `training:session:start` | 上传自由训练参考材料 |
 | DELETE | `/api/v1/training/materials/{material_id}` | `training:session:start` | 删除未使用材料 |
-| POST | `/api/v1/training/sessions` | `training:session:start` | 开始训练 |
+| POST | `/api/v1/training/sessions` | `training:session:start` | 开始训练；传 `template_id` 或 `publication_id` |
 | GET | `/api/v1/training/sessions/{session_id}` | `training:session:start` | 训练 session |
 | POST | `/api/v1/training/sessions/{session_id}/end` | `training:session:start` | 结束训练 |
 | POST | `/api/v1/training/sessions/{session_id}/cancel` | `training:session:start` | 取消未开始训练 |
@@ -383,6 +393,8 @@ POST /api/v1/auth/oauth/wechat/register
 | GET | `/api/v1/training/records` | `training:record:read` | 本人训练记录 |
 | GET | `/api/v1/training/records/{record_id}` | `training:record:read` | 本人记录详情 |
 | DELETE | `/api/v1/training/records/{record_id}` | `training:record:manage` | 删除训练记录 |
+
+- 旧 `/api/v1/training/templates`（GET / POST）与 `/api/v1/training/templates/{template_id}/unpublish` 由 `my-templates` / `publications` 接口替代；迁移期可保留只读兼容，代码迁移完成后删除。
 
 ### 4.7 M7 教师评测
 
@@ -403,6 +415,8 @@ POST /api/v1/auth/oauth/wechat/register
 
 - 管理员没有 `teacher_eval:*` 权限，访问返回 403。
 - M7 统计只使用 `completed` 最终分；`pending_*` / `ai_partial` / `ai_failed` 单独计数。
+- `GET /submissions/{submission_id}/result` 返回 `session_id`，前端据此进入 `/student/sessions/{session_id}/review`；报告入口使用 `/submissions/{submission_id}/report`，不再直接打开内部 API URL。
+- `GET /tasks/{task_id}/grading-submissions` 的每行新增 `session_id`，教师评分页据此内嵌 M3 回放；M3 仍按课程老师组 + 已提交校验访问。
 
 ## 5. 内部 API
 
@@ -694,8 +708,10 @@ Idempotency-Key: {job_id}
 | `TEACHER_NOT_IN_GROUP` | 403 | 不在课程老师组 |
 | `LAST_TEACHER` | 422 | 不能移出最后一名教师 |
 | `CLASS_NOT_ELIGIBLE` | 422 | 班级不在课程专业范围 |
-| `TASK_NOT_DRAFT` | 422 | 任务不是草稿 |
-| `TASK_ALREADY_PUBLISHED` | 409 | 任务已发布 |
+| `TASK_HAS_SESSIONS` | 409 | 任务存在进行中 session，不能编辑 / 删除 |
+| `TASK_HAS_SUBMISSIONS` | 409 | 任务已有提交，不能编辑 |
+| `TASK_DELETED` | 409 | 任务已软删除 |
+| `TASK_VERSION_CONFLICT` | 409 | 任务并发编辑冲突 |
 | `TASK_CLOSED` | 422 | 任务已关闭 |
 | `TASK_NO_STUDENTS` | 422 | 课程无在课学生 |
 | `COURSE_ENDED` | 422 | 课程已结束，不能新建 / 发布任务 |
@@ -729,15 +745,24 @@ Idempotency-Key: {job_id}
 | `QUESTION_DISABLED` | 422 | 题目已停用 |
 | `ANSWER_POINTS_MISSING` | 422 | 答案要点缺失 |
 | `QUESTION_IN_USE` | 409 | 题目被任务引用 |
-| `TRAINING_SOURCE_INVALID` | 422 | 源任务不是已发布 / 已关闭自由试讲 |
-| `TRAINING_NOT_ELIGIBLE` | 422 | 教师 / 学生 / 课程不满足训练条件 |
-| `TRAINING_TEMPLATE_EXISTS` | 409 | 同源任务 / 课程 / 档位已有模板 |
-| `TRAINING_TEMPLATE_UNAVAILABLE` | 422 | 模板已下架 / 不可用 |
+| `TRAINING_TEMPLATE_NOT_FOUND` | 404 | 模板不存在或不可见 |
+| `TRAINING_TEMPLATE_INVALID` | 422 | 模板字段 / 快照非法 |
+| `TRAINING_TEMPLATE_UNAVAILABLE` | 422 | 模板已删除 / 不属于当前角色 / 发布不可用 |
+| `TRAINING_TEMPLATE_LIMIT` | 409 | 每个账号 active 模板已达 30 |
+| `TRAINING_TEMPLATE_LOCKED` | 409 | 教师模板存在 published 发布，配置锁定 |
+| `TRAINING_TEMPLATE_COPY_FAILED` | 502 | 复制模板材料对象失败；整体回滚 |
+| `TRAINING_PUBLICATION_EXISTS` | 409 | 同模板 + 课程已有 published 发布 |
+| `TRAINING_PUBLICATION_NOT_FOUND` | 404 | 发布不存在或不可见 |
+| `TRAINING_PUBLICATION_UNAVAILABLE` | 422 | 发布已下架 / 课程不可用 |
+| `TRAINING_NOT_ELIGIBLE` | 422 | 教师 / 学生 / 课程不满足发布或训练条件 |
 | `TRAINING_SESSION_ACTIVE` | 409 | 已有进行中的训练 session |
-| `TRAINING_CONFIG_IMMUTABLE` | 422 | 试图修改时长 / 权重 |
+| `TRAINING_CONFIG_INVALID` | 422 | 请求配置非法（来源二选一、时长 / 权重 / 虚拟学生越界） |
+| `TRAINING_CONFIG_IMMUTABLE` | 422 | 试图在 session 中覆盖模板时长 / 权重 / 课题 / 材料 |
 | `TRAINING_MATERIAL_INVALID` | 422 | 训练参考材料不可用 |
-| `TRAINING_RECORD_LIMIT` | 422 | 超过 3 条训练记录 |
+| `TRAINING_RECORD_LIMIT` | 422 | 自动删除最旧记录失败时的内部兜底 |
 | `TRAINING_RECORD_EXPIRED` | 404 | 训练记录已过期 / 删除；对外统一 404 |
+| `TASK_TEMPLATE_INVALID` | 422 | M3A 预填时模板不可用 |
+| `TASK_TEMPLATE_MATERIAL_COPY_FAILED` | 502 | M3A 复制模板材料到任务材料失败 |
 | `GRADING_CONFIG_INVALID` | 422 | 权重 / 打分模式非法 |
 | `GRADING_CONFIG_LOCKED` | 409 | 首次评分后权重 / 模式已锁定 |
 | `GRADING_CONFIG_VERSION_CONFLICT` | 409 | 评分配置版本冲突 |

@@ -120,11 +120,22 @@ onMounted(load)
           </div>
           <div class="course-detail__actions">
             <ElButton @click="router.push('/courses')">返回列表</ElButton>
+            <ElButton
+              v-if="course?.can_manage"
+              type="primary"
+              plain
+              @click="router.push(`/teacher/courses/${courseId}/tasks`)"
+            >
+              课程任务
+            </ElButton>
             <ElButton v-if="course?.can_manage" @click="router.push(`/courses/${courseId}/teachers`)">
               老师组
             </ElButton>
             <ElButton v-if="course?.can_manage" @click="router.push(`/courses/${courseId}/students`)">
               学生管理
+            </ElButton>
+            <ElButton v-if="auth.isStudent && !course?.can_manage" @click="router.push('/student/tasks')">
+              我的任务
             </ElButton>
             <ElButton v-if="course?.can_join" type="primary" @click="join">加入课程</ElButton>
             <ElButton v-if="course?.can_leave" @click="leave">退出课程</ElButton>

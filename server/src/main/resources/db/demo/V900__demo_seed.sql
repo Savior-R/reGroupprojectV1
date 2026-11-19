@@ -527,20 +527,18 @@ VALUES
   ('76000000-0000-0000-0000-000000000025', '70000000-0000-0000-0000-000000000005', 5, 'session.ended', 1080000, 'system', NULL, '{"reason":"manual","duration_ms":1080000}'::jsonb);
 
 -- ---------------------------------------------------------------------------
--- M6: training template
+-- M6: personal training templates and course publication
 -- ---------------------------------------------------------------------------
 INSERT INTO m6_training.training_templates
-  (id, source_task_id, source_task_config_version, course_id, training_level,
-   classroom_mode, config_snapshot, created_by, status, published_at)
+  (id, school_id, owner_account_id, owner_role, name, training_level,
+   classroom_mode, source_type, config_snapshot, status, created_at, updated_at)
 VALUES
-  ('A0000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 1,
-   '40000000-0000-0000-0000-000000000101', 'progressive', 'free',
+  ('A0000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001',
+   '20000000-0000-0000-0000-000000000011', 'teacher', '荷塘月色 · 进阶',
+   'progressive', 'free', 'manual',
    $train_snap$
       {
-        "schema_version": 1,
-        "source_task_id": "60000000-0000-0000-0000-000000000001",
-        "source_task_config_version": 1,
-        "course_id": "40000000-0000-0000-0000-000000000101",
+        "schema_version": 2,
         "training_level": "progressive",
         "classroom_mode": "free",
         "topic": "荷塘月色",
@@ -562,7 +560,44 @@ VALUES
         }
       }
       $train_snap$::jsonb,
-   '20000000-0000-0000-0000-000000000011', 'published', '2026-11-03 13:00:00+00');
+   'active', '2026-11-03 13:00:00+00', '2026-11-03 13:00:00+00');
+
+INSERT INTO m6_training.training_template_publications
+  (id, template_id, course_id, status, published_at, unpublish_reason,
+   created_by, created_at, updated_at)
+VALUES
+  ('A0000000-0000-0000-0000-000000000002', 'A0000000-0000-0000-0000-000000000001',
+   '40000000-0000-0000-0000-000000000101', 'published', '2026-11-03 13:00:00+00', NULL,
+   '20000000-0000-0000-0000-000000000011', '2026-11-03 13:00:00+00', '2026-11-03 13:00:00+00');
+
+INSERT INTO m6_training.training_templates
+  (id, school_id, owner_account_id, owner_role, name, training_level,
+   classroom_mode, source_type, source_template_id, source_publication_id,
+   config_snapshot, status, created_at, updated_at)
+VALUES
+  ('A0000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001',
+   '20000000-0000-0000-0000-000000000101', 'student', '荷塘月色（我的副本）',
+   'progressive', 'free', 'template',
+   'A0000000-0000-0000-0000-000000000001',
+   'A0000000-0000-0000-0000-000000000002',
+   $student_train_snap$
+      {
+        "schema_version": 2,
+        "training_level": "progressive",
+        "classroom_mode": "free",
+        "topic": "荷塘月色",
+        "textbook_version": "部编版高中语文必修上册",
+        "duration": {"recommended_seconds": 900, "max_seconds": 1200},
+        "weights": {"content": 30, "expression": 20, "interaction": 20, "board": 15, "time": 15},
+        "virtual_students": [
+          {"name": "林小雨", "avatar": "avatar-01", "personality_text": "性格外向，喜欢提问，但有时注意力不集中。", "activity": 0.60, "question_rate": 0.50, "ability": 0.70, "attention_baseline": 0.50, "discipline_probability": 0.40, "seat_no": 1, "sort_order": 1},
+          {"name": "陈子航", "avatar": "avatar-02", "personality_text": "安静认真，回答问题前会先思考。", "activity": 0.50, "question_rate": 0.30, "ability": 0.60, "attention_baseline": 0.70, "discipline_probability": 0.20, "seat_no": 2, "sort_order": 2},
+          {"name": "周可欣", "avatar": "avatar-03", "personality_text": "活泼好动，容易和同桌说话。", "activity": 0.70, "question_rate": 0.60, "ability": 0.50, "attention_baseline": 0.40, "discipline_probability": 0.60, "seat_no": 3, "sort_order": 3}
+        ],
+        "reference_material": null
+      }
+      $student_train_snap$::jsonb,
+   'active', '2026-11-03 14:00:00+00', '2026-11-03 14:00:00+00');
 
 -- ---------------------------------------------------------------------------
 -- M4: evaluations for the five submissions
@@ -657,13 +692,15 @@ VALUES
 -- M6: training session/meta/record/material
 -- ---------------------------------------------------------------------------
 INSERT INTO m6_training.training_session_meta
-  (session_id, template_id, training_level, effective_config_snapshot)
+  (session_id, template_id, publication_id, training_level, effective_config_snapshot)
 VALUES
-  ('70000000-0000-0000-0000-000000000006', 'A0000000-0000-0000-0000-000000000001', 'progressive',
+  ('70000000-0000-0000-0000-000000000006', 'A0000000-0000-0000-0000-000000000001',
+   'A0000000-0000-0000-0000-000000000002', 'progressive',
    $train_eff$
       {
-        "schema_version": 1,
+        "schema_version": 2,
         "template_id": "A0000000-0000-0000-0000-000000000001",
+        "publication_id": "A0000000-0000-0000-0000-000000000002",
         "training_level": "progressive",
         "course_id": "40000000-0000-0000-0000-000000000101",
         "topic": "荷塘月色",
@@ -686,14 +723,28 @@ VALUES
       $train_eff$::jsonb);
 
 INSERT INTO m6_training.training_records
-  (id, training_session_id, student_account_id, template_id, selected_at, expires_at, status)
+  (id, training_session_id, student_account_id, template_id, publication_id,
+   selected_at, expires_at, status)
 VALUES
-  ('A0000000-0000-0000-0000-000000000011', '70000000-0000-0000-0000-000000000006', '20000000-0000-0000-0000-000000000101', 'A0000000-0000-0000-0000-000000000001', '2026-11-03 14:15:00+00', '2026-12-03 14:15:00+00', 'selected');
+  ('A0000000-0000-0000-0000-000000000011', '70000000-0000-0000-0000-000000000006', '20000000-0000-0000-0000-000000000101', 'A0000000-0000-0000-0000-000000000001', 'A0000000-0000-0000-0000-000000000002', '2026-11-03 14:15:00+00', '2026-12-03 14:15:00+00', 'selected');
 
+-- Demo note: the seeded template material reuses the task material object key
+-- so the existing demo MinIO asset remains valid; real template uploads use
+-- training-template-materials/... as defined in 08 §9.
 INSERT INTO m6_training.training_materials
-  (id, student_account_id, filename, mime, size, object_key, parsed_text, char_count, status, expires_at)
+  (id, owner_account_id, usage, template_id, filename, mime, size, object_key,
+   parsed_text, char_count, status, expires_at, created_at)
 VALUES
-  ('A0000000-0000-0000-0000-000000000021', '20000000-0000-0000-0000-000000000101', '训练材料.txt', 'text/plain', 1024, 'training-materials/10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000101/A0000000-0000-0000-0000-000000000021.txt', '这是一份用于自由训练演示的参考材料，包含课文背景和教学提示。', 30, 'uploaded', '2026-11-04 14:15:00+00');
+  ('A0000000-0000-0000-0000-000000000021', '20000000-0000-0000-0000-000000000101',
+   'free_session', NULL, '训练材料.txt', 'text/plain', 1024,
+   'training-materials/10000000-0000-0000-0000-000000000001/20000000-0000-0000-0000-000000000101/A0000000-0000-0000-0000-000000000021.txt',
+   '这是一份用于自由训练演示的参考材料，包含课文背景和教学提示。', 30, 'uploaded',
+   '2026-11-04 14:15:00+00', '2026-11-03 14:15:00+00'),
+  ('A0000000-0000-0000-0000-000000000022', '20000000-0000-0000-0000-000000000011',
+   'template', 'A0000000-0000-0000-0000-000000000001', '荷塘月色.txt', 'text/plain', 2048,
+   'materials/10000000-0000-0000-0000-000000000001/40000000-0000-0000-0000-000000000101/60000000-0000-0000-0000-000000000001/63000000-0000-0000-0000-000000000001.txt',
+   '曲曲折折的荷塘上面，弥望的是田田的叶子。叶子出水很高，像亭亭的舞女的裙。层层的叶子中间，零星地点缀着些白花。', 80,
+   'attached', NULL, '2026-11-03 13:00:00+00');
 
 -- ---------------------------------------------------------------------------
 -- ops: one pending cleanup job

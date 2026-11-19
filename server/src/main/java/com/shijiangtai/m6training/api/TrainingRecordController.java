@@ -5,7 +5,6 @@ import com.shijiangtai.m6training.application.TrainingRecordService;
 import com.shijiangtai.m6training.application.command.SelectTrainingRecordCommand;
 import com.shijiangtai.m6training.application.view.TrainingRecordSelectionView;
 import com.shijiangtai.m6training.application.view.TrainingRecordView;
-import com.shijiangtai.m6training.application.view.TrainingReportView;
 import com.shijiangtai.shared.application.CurrentUserProvider;
 import com.shijiangtai.shared.domain.PageResult;
 import java.util.UUID;
@@ -19,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Retained training records and the self-only report (08 §10.5–§10.6). */
+/** Retained training records (08 §10.5); the self-only report is served by M4 (08 §10.6). */
 @RestController
 @RequestMapping("/api/v1/training/records")
 public class TrainingRecordController {
@@ -57,10 +56,5 @@ public class TrainingRecordController {
     public ResponseEntity<Void> delete(@PathVariable UUID recordId) {
         service.delete(currentUserProvider.require(), recordId);
         return ResponseEntity.noContent().build();
-    }
-
-    @GetMapping("/{recordId}/evaluation")
-    public TrainingReportView evaluation(@PathVariable UUID recordId) {
-        return service.getEvaluation(currentUserProvider.require(), recordId);
     }
 }

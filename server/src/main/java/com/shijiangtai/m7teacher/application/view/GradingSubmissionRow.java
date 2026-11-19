@@ -12,6 +12,7 @@ public record GradingSubmissionRow(
         String className,
         UUID classIdSnapshot,
         String studentStatus,
+        UUID sessionId,
         String sessionStatus,
         Instant submittedAt,
         AiScoreView ai,

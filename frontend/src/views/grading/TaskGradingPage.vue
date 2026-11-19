@@ -19,6 +19,7 @@ import {
   ElTag,
 } from 'element-plus'
 import M7PageHeader from './M7PageHeader.vue'
+import ReplayPage from '../replay/ReplayPage.vue'
 import {
   batchSaveTeacherScores,
   clearTeacherScores,
@@ -67,6 +68,19 @@ const data = ref<GradingResponse | null>(null)
 const loading = ref(true)
 const errorMessage = ref('')
 const errorCode = ref('')
+
+const replayVisible = ref(false)
+const replaySessionId = ref('')
+const replayStudent = ref('')
+
+function openReplay(row: GradingRow): void {
+  if (!row.session_id) {
+    return
+  }
+  replaySessionId.value = row.session_id
+  replayStudent.value = row.student_name
+  replayVisible.value = true
+}
 
 const classId = ref('')
 const statusFilter = ref('')
@@ -786,7 +800,7 @@ void load()
               </ElTag>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="操作" width="100" fixed="right">
+          <ElTableColumn label="操作" width="250" fixed="right">
             <template #default="{ row }">
               <ElButton
                 size="small"
@@ -795,6 +809,20 @@ void load()
               >
                 评分
               </ElButton>
+              <ElButton
+                size="small"
+                :disabled="!row.session_id"
+                @click="openReplay(row as GradingRow)"
+              >
+                回放
+              </ElButton>
+              <router-link
+                v-if="row.ai?.evaluation_id"
+                class="m7-report-link"
+                :to="{ path: `/evaluations/${row.ai.evaluation_id}/report`, query: { from: route.fullPath } }"
+              >
+                AI 报告
+              </router-link>
             </template>
           </ElTableColumn>
         </ElTable>
@@ -989,6 +1017,18 @@ void load()
         <ElButton type="primary" :loading="batchSaving" @click="saveBatch">保存全部</ElButton>
       </template>
     </ElDialog>
+
+    <ElDialog
+      v-model="replayVisible"
+      :title="`学生回放 · ${replayStudent}`"
+      width="92%"
+      top="4vh"
+      destroy-on-close
+    >
+      <div class="m7-replay-dialog">
+        <ReplayPage v-if="replaySessionId" :session-id="replaySessionId" />
+      </div>
+    </ElDialog>
   </div>
 </template>
 
@@ -997,16 +1037,35 @@ void load()
   max-width: 1320px;
   margin: 0 auto;
   padding: 24px;
-  color: #e8eef9;
+  color: var(--m1-text-regular);
+}
+
+.m7-report-link {
+  margin-left: 8px;
+  color: var(--m1-primary);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.m7-replay-dialog {
+  display: flex;
+  flex-direction: column;
+  height: 74vh;
+  min-height: 420px;
+  overflow: auto;
+}
+
+.m7-report-link:hover {
+  text-decoration: underline;
 }
 
 .m7-card {
-  border: 1px solid #1f2b44;
-  background: #0f1a2e;
+  border: 1px solid var(--m1-border);
+  background: var(--m1-bg-surface);
 }
 
 .m7-state {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .m7-alert {
@@ -1015,7 +1074,7 @@ void load()
 
 .m7-error-code {
   margin: 4px 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
@@ -1032,7 +1091,7 @@ void load()
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 13px;
 }
 
@@ -1050,20 +1109,20 @@ void load()
 
 .m7-summary__item {
   padding: 10px 12px;
-  border: 1px solid #1f2b44;
+  border: 1px solid var(--m1-border);
   border-radius: 10px;
-  background: #111c33;
+  background: var(--m1-bg-subtle);
 }
 
 .m7-summary__item span {
   display: block;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
 .m7-summary__item strong {
   font-size: 20px;
-  color: #f5a524;
+  color: var(--m1-accent);
 }
 
 .m7-filters {
@@ -1077,8 +1136,8 @@ void load()
 .m7-table {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: #111c33;
-  --el-table-row-hover-bg-color: #17233c;
+  --el-table-header-bg-color: var(--m1-bg-subtle);
+  --el-table-row-hover-bg-color: var(--m1-bg-hover);
 }
 
 .m7-inline-tag {
@@ -1086,7 +1145,7 @@ void load()
 }
 
 .m7-score--muted {
-  color: #6f819e;
+  color: var(--m1-text-secondary);
 }
 
 .m7-pagination {
@@ -1105,7 +1164,7 @@ void load()
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .m7-score-row,
@@ -1123,27 +1182,27 @@ void load()
   margin: 14px 0;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #111c33;
-  color: #8fa3c0;
+  background: var(--m1-bg-subtle);
+  color: var(--m1-text-secondary);
 }
 
 .m7-preview strong {
-  color: #f5a524;
+  color: var(--m1-accent);
 }
 
 .m7-config-total {
   margin: 0 0 12px;
-  color: #3dd68c;
+  color: var(--m1-success);
   font-size: 13px;
 }
 
 .m7-config-total--bad {
-  color: #ff6b6b;
+  color: var(--m1-danger);
 }
 
 .m7-batch-hint {
   margin: 0 0 12px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 13px;
 }
 
@@ -1157,6 +1216,6 @@ void load()
   gap: 6px;
   margin-top: 12px;
   font-size: 13px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 </style>

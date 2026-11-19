@@ -4,23 +4,21 @@ import com.shijiangtai.m6training.domain.TrainingEffectiveConfig;
 import com.shijiangtai.m6training.domain.TrainingLevel;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
  * M4 evaluation seam (08 §8).
  *
- * <p>Trigger publishes {@code TrainingRecordSelectedEvent} so M4 owns evaluation creation. Reads
- * come from {@code m4_eval.*} read-only until M4 exposes a report API.
+ * <p>Trigger publishes {@code TrainingRecordSelectedEvent} so M4 owns evaluation creation. Status
+ * reads use {@code m4_eval.*} directly; report reads go through M4's public API (06 §9.2) and are
+ * intentionally not duplicated here.
  */
 public interface TrainingEvaluationPort {
 
     void requestEvaluation(EvaluationRequest request);
 
     Optional<EvaluationState> findState(UUID recordId);
-
-    Optional<EvaluationReport> findReport(UUID recordId);
 
     void deleteByRecord(UUID recordId);
 
@@ -40,32 +38,5 @@ public interface TrainingEvaluationPort {
             String errorCode,
             String errorMessage,
             Instant completedAt) {
-    }
-
-    record EvaluationReport(
-            UUID evaluationId,
-            String status,
-            BigDecimal totalScore,
-            List<DimensionScore> dimensions,
-            List<Issue> issues,
-            List<String> warnings,
-            Instant completedAt) {
-    }
-
-    record DimensionScore(
-            String dimension,
-            BigDecimal score,
-            BigDecimal confidence,
-            String subScoresJson) {
-    }
-
-    record Issue(
-            String dimension,
-            Long startMs,
-            Long endMs,
-            String severity,
-            String evidence,
-            String suggestion,
-            boolean isSuggestion) {
     }
 }

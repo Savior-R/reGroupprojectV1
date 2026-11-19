@@ -11,6 +11,7 @@ import {
   setToken,
 } from '../../api/auth'
 import type { AccountType, ClassView, MajorView, SchoolView } from '../../api/auth'
+import { useAuthStore } from '../../stores/auth'
 
 /**
  * 两步注册（03 §3.1 / 03 §3.9 /register）：
@@ -137,11 +138,14 @@ async function submit(): Promise<void> {
       major_ids: accountType.value === 'teacher' ? form.majorIds : [],
     })
     setToken(result.token)
+    useAuthStore().syncFromToken()
     ElMessage.success('注册成功')
     if (accountType.value === 'admin') {
       void router.push('/admin/setup')
+    } else if (accountType.value === 'student') {
+      void router.push('/student/tasks')
     } else {
-      void router.push('/settings/security')
+      void router.push('/courses')
     }
   } catch (error) {
     ElMessage.error((error as { message?: string }).message ?? '注册失败')

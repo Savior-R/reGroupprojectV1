@@ -29,4 +29,6 @@ public interface SubmissionJpaRepository extends JpaRepository<SubmissionEntity,
     List<SubmissionEntity> findExpiredForRetention(@Param("now") Instant now);
 
     void deleteBySessionId(UUID sessionId);
+    long countByTaskId(UUID taskId);
+
 }

@@ -85,6 +85,13 @@ public final class InMemorySessionRepository implements SessionRepository {
                 .count();
     }
 
+    @Override
+    public long countByTask(TaskId taskId) {
+        return sessions.values().stream()
+                .filter(session -> taskId.equals(session.taskId()))
+                .count();
+    }
+
     /**
      * The fake has no task store, so it can only apply {@code max(ended_at, updated_at) + 24h};
      * the task-close extension is covered by the Postgres IT and by

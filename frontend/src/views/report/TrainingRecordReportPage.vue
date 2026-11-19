@@ -51,8 +51,13 @@ onMounted(resolve)
 <template>
   <div class="report-page">
     <header class="report-page__header">
-      <h1 class="report-page__title">训练评测报告</h1>
-      <p class="report-page__hint">训练记录仅本人可见。</p>
+      <div>
+        <h1 class="report-page__title">训练评测报告</h1>
+        <p class="report-page__hint">训练记录仅本人可见。</p>
+      </div>
+      <router-link class="report-page__back" :to="`/student/training/records/${recordId}`">
+        返回训练记录
+      </router-link>
     </header>
 
     <p v-if="loading" class="report-page__state">正在定位评测记录…</p>
@@ -86,29 +91,41 @@ onMounted(resolve)
 }
 
 .report-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 20px;
 }
 
 .report-page__title {
   margin: 0;
-  color: #e5e7eb;
+  color: var(--m1-text-primary);
+  font-family: var(--m1-font-serif);
   font-size: 24px;
 }
 
 .report-page__hint {
   margin: 6px 0 0;
-  color: #94a3b8;
+  color: var(--m1-text-secondary);
   font-size: 13px;
+}
+
+.report-page__back {
+  color: var(--m1-primary);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .report-page__state {
   margin: 0;
-  color: #94a3b8;
+  color: var(--m1-text-secondary);
 }
 
 .report-page__code {
   margin: 8px 0;
-  color: #94a3b8;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 </style>

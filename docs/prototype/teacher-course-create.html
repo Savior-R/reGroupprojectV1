@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>创建课程 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .create-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .create-main {
+      display: grid;
+      gap: 16px;
+    }
+
+    .form-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .form-card__head {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .form-card__num {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: none;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: var(--paper-0);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .form-card__head h2 {
+      font-size: 20px;
+    }
+
+    .form-card__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10.5px;
+    }
+
+    .form-card__body {
+      padding: 22px 24px;
+    }
+
+    .chip-select {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 7px;
+    }
+
+    .select-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-pill);
+      background: var(--surface);
+      color: var(--text-2);
+      font-size: 10px;
+      cursor: pointer;
+    }
+
+    .select-chip:hover {
+      border-color: var(--brand);
+      color: var(--brand);
+    }
+
+    .select-chip.is-selected {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .select-chip [data-icon] svg {
+      width: 11px;
+      height: 11px;
+    }
+
+    .teacher-add-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .teacher-add-row .input {
+      flex: 1;
+    }
+
+    .teacher-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .teacher-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .teacher-row__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .teacher-row__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .teacher-row__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .course-cover-preview {
+      position: relative;
+      min-height: 120px;
+      overflow: hidden;
+      padding: 16px 18px;
+      border-radius: var(--r-md);
+      background:
+        radial-gradient(280px 150px at 85% 0%, rgba(255, 255, 255, 0.11), transparent 70%),
+        linear-gradient(135deg, #245c4f, #163f36);
+      color: #f4f7f2;
+    }
+
+    .course-cover-preview::after {
+      position: absolute;
+      right: -20px;
+      bottom: -40px;
+      width: 120px;
+      height: 120px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 50%;
+      box-shadow: 0 0 0 15px rgba(255, 255, 255, 0.03);
+      content: "";
+    }
+
+    .course-cover-preview span {
+      position: relative;
+      z-index: 1;
+      color: rgba(244, 247, 242, 0.55);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      letter-spacing: 0.08em;
+    }
+
+    .course-cover-preview h3 {
+      position: relative;
+      z-index: 1;
+      margin-top: 14px;
+      color: #f4f7f2;
+      font-size: 23px;
+    }
+
+    .course-cover-preview p {
+      position: relative;
+      z-index: 1;
+      margin-top: 4px;
+      color: rgba(244, 247, 242, 0.6);
+      font-size: 9.5px;
+    }
+
+    /* Aside */
+    .summary-card {
+      position: sticky;
+      top: 30px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-2);
+    }
+
+    .summary-card::before {
+      display: block;
+      height: 4px;
+      background: linear-gradient(90deg, var(--brand), var(--gold));
+      content: "";
+    }
+
+    .summary-card__head {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .summary-card__head .eyebrow {
+      color: var(--accent);
+    }
+
+    .summary-card__head h2 {
+      margin-top: 6px;
+      font-size: 22px;
+    }
+
+    .summary-card__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .summary-list {
+      display: grid;
+      padding: 6px 20px;
+    }
+
+    .summary-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 10.5px;
+    }
+
+    .summary-row:last-child {
+      border-bottom: 0;
+    }
+
+    .summary-row dt {
+      color: var(--text-3);
+    }
+
+    .summary-row dd {
+      margin: 0;
+      color: var(--text);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .summary-card__foot {
+      padding: 14px 20px 18px;
+      border-top: 1px solid var(--line);
+      background: var(--paper-0);
+    }
+
+    .summary-card__foot p {
+      margin-top: 8px;
+      color: var(--text-3);
+      font-size: 8.5px;
+      line-height: 1.55;
+      text-align: center;
+    }
+
+    @media (max-width: 1180px) {
+      .create-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .summary-card {
+        position: static;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .form-card__head,
+      .form-card__body {
+        padding: 18px;
+      }
+    }
+  </style>
+</head>
+<body data-role="teacher" data-nav="courses">
+  <div data-app-header></div>
+
+  <div class="context-bar">
+    <div class="context-bar__inner">
+      <div class="breadcrumb">
+        <a href="courses.html?role=teacher">课程</a>
+        <span class="breadcrumb__sep">/</span>
+        <span class="breadcrumb__current">创建课程</span>
+      </div>
+      <div class="context-tabs">
+        <a class="context-tab" href="courses.html?role=teacher">我的课程</a>
+        <a class="context-tab is-active" href="teacher-course-create.html">创建课程</a>
+      </div>
+    </div>
+  </div>
+
+  <main class="page page--form">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">CREATE COURSE / 创建课程</p>
+        <h1 class="page-title">创建学生课程</h1>
+        <p class="page-lead">为在课学生创建课程，设置专业范围、老师组与结束日期。创建后课程立即启用，学生可在课程列表中看到并加入。</p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn--secondary" href="courses.html?role=teacher"><span data-icon="arrow-left"></span>返回课程</a>
+        <button class="btn btn--primary" type="button" data-open="create-course-modal"><span data-icon="check"></span>创建课程</button>
+      </div>
+    </header>
+
+    <div class="create-layout">
+      <div class="create-main">
+        <section class="form-card">
+          <div class="form-card__head">
+            <span class="form-card__num">01</span>
+            <div><h2>基本信息</h2><p>课程名称、代码与简介；创建后可继续维护课程信息。</p></div>
+          </div>
+          <div class="form-card__body">
+            <div class="form-grid">
+              <label class="field span-2"><span class="label">课程名称 <span class="req">*</span></span><input class="input" value="语文教学论" aria-label="课程名称"></label>
+              <label class="field"><span class="label">课程代码 <span class="req">*</span></span><input class="input" value="CHN 2401" aria-label="课程代码"></label>
+              <label class="field"><span class="label">学期</span><select class="select" aria-label="学期"><option>2026 秋季学期</option><option>2027 春季学期</option></select></label>
+              <label class="field span-2"><span class="label">课程简介</span><textarea class="textarea" rows="4" aria-label="课程简介">面向汉语言文学（师范）专业的语文教学法课程，覆盖阅读教学、写作教学与课堂实践；以试讲任务为主线，结合 AI 评测与教师评分。</textarea><span class="field-hint">会在课程详情页向学生展示，最多 500 字。</span></label>
+            </div>
+          </div>
+        </section>
+
+        <section class="form-card">
+          <div class="form-card__head">
+            <span class="form-card__num">02</span>
+            <div><h2>学生范围</h2><p>选择课程面向的专业与结课日期；学生需在范围内才能加入。</p></div>
+          </div>
+          <div class="form-card__body">
+            <span class="label">专业范围 <span class="req">*</span></span>
+            <div class="chip-select">
+              <button class="select-chip is-selected" type="button" data-toast="已选择专业（原型演示）。"><span data-icon="check"></span>汉语言文学（师范）</button>
+              <button class="select-chip is-selected" type="button" data-toast="已选择专业（原型演示）。"><span data-icon="check"></span>学科教学（语文）</button>
+              <button class="select-chip" type="button" data-toast="选择专业（原型演示）。"><span data-icon="plus"></span>教育学</button>
+              <button class="select-chip" type="button" data-toast="选择专业（原型演示）。"><span data-icon="plus"></span>数学与应用数学（师范）</button>
+            </div>
+            <p class="field-hint" style="margin-top:6px">至少选择一个专业；停用专业不可选，学生只能在范围内看到课程。</p>
+            <div class="form-grid" style="margin-top:18px">
+              <label class="field"><span class="label">结束日期 <span class="req">*</span></span><input class="input" type="date" value="2027-01-15" aria-label="结束日期"></label>
+              <label class="field"><span class="label">学生加入方式</span><select class="select" aria-label="学生加入方式"><option>学生可自行加入</option><option>由教师导入名单</option></select></label>
+            </div>
+          </div>
+        </section>
+
+        <section class="form-card">
+          <div class="form-card__head">
+            <span class="form-card__num">03</span>
+            <div><h2>老师组</h2><p>课程创建者默认为 owner；可添加本专业教师共同管理课程。</p></div>
+          </div>
+          <div class="form-card__body">
+            <div class="teacher-list">
+              <div class="teacher-row"><span class="avatar avatar--sm avatar--gold">王</span><div class="teacher-row__main"><strong>王宁</strong><span>课程创建者 · owner</span></div><span class="badge badge--success">owner</span></div>
+              <div class="teacher-row"><span class="avatar avatar--sm avatar--cinnabar">李</span><div class="teacher-row__main"><strong>李静</strong><span>汉语言文学 · 可管理课程与评分</span></div><button class="btn btn--ghost btn--xs" type="button" data-toast="移除老师组（原型演示）。">移除</button></div>
+            </div>
+            <div class="teacher-add-row">
+              <input class="input" placeholder="搜索教师姓名 / 用户名" aria-label="搜索教师">
+              <button class="btn btn--secondary btn--sm" type="button" data-toast="添加老师组（原型演示）。"><span data-icon="plus"></span>添加</button>
+            </div>
+            <p class="field-hint" style="margin-top:6px">老师组可创建任务、评分与查看统计；管理员不参与课程任务与评测。</p>
+          </div>
+        </section>
+
+        <section class="form-card">
+          <div class="form-card__head">
+            <span class="form-card__num">04</span>
+            <div><h2>课程预览</h2><p>创建后学生看到的课程封面与摘要。</p></div>
+          </div>
+          <div class="form-card__body">
+            <div class="course-cover-preview">
+              <span>CHN 2401 · 2026 秋季学期</span>
+              <h3>语文教学论</h3>
+              <p>汉语言文学（师范） · 王宁 / 李静 · 32 名学生</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside>
+        <section class="summary-card">
+          <div class="summary-card__head">
+            <p class="eyebrow eyebrow--plain">COURSE SUMMARY</p>
+            <h2>课程摘要</h2>
+            <p>创建后立即启用</p>
+          </div>
+          <dl class="summary-list">
+            <div class="summary-row"><dt>课程名称</dt><dd>语文教学论</dd></div>
+            <div class="summary-row"><dt>课程代码</dt><dd>CHN 2401</dd></div>
+            <div class="summary-row"><dt>专业范围</dt><dd>汉语言文学、学科教学（语文）</dd></div>
+            <div class="summary-row"><dt>老师组</dt><dd>王宁、李静</dd></div>
+            <div class="summary-row"><dt>结束日期</dt><dd>2027-01-15</dd></div>
+            <div class="summary-row"><dt>学生加入</dt><dd>学生可自行加入</dd></div>
+          </dl>
+          <div class="summary-card__foot">
+            <button class="btn btn--primary btn--block" type="button" data-open="create-course-modal"><span data-icon="check"></span>创建课程</button>
+            <a class="btn btn--ghost btn--block btn--sm" href="courses.html?role=teacher" style="margin-top:7px">取消</a>
+            <p>创建后可在课程详情继续维护老师组、学生与任务。</p>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Create confirmation -->
+  <div class="overlay" data-overlay-for="create-course-modal"></div>
+  <div class="modal" id="create-course-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="create-course-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="create-course-title">创建课程？</div>
+        <div class="drawer__sub">创建后立即启用，学生可在课程列表中看到。</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="create-course-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="stack" style="gap:8px">
+        <div class="check-item"><span data-icon="check-circle"></span><span>课程名称与代码完整</span></div>
+        <div class="check-item"><span data-icon="check-circle"></span><span>专业范围 2 个</span></div>
+        <div class="check-item"><span data-icon="check-circle"></span><span>老师组 2 人</span></div>
+        <div class="check-item"><span data-icon="check-circle"></span><span>结束日期 2027-01-15</span></div>
+      </div>
+      <div class="alert alert--note" style="margin-top:16px"><span data-icon="info"></span><div><span>创建后学生即可加入；如果需要限制加入，可在课程设置中改为教师导入。</span></div></div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="create-course-modal">返回修改</button>
+      <a class="btn btn--primary" href="course-detail.html?role=teacher"><span data-icon="check"></span>确认创建</a>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+</body>
+</html>

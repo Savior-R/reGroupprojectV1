@@ -11,6 +11,7 @@ import {
   setToken,
 } from '../../api/auth'
 import type { AccountType, ClassView, MajorView, SchoolView } from '../../api/auth'
+import { useAuthStore } from '../../stores/auth'
 
 /**
  * OAuth 引导注册（FR-M1-11 / 03 §3.2.3）：未绑定微信扫码后补齐账号信息，
@@ -110,11 +111,14 @@ async function submit(): Promise<void> {
       major_ids: accountType.value === 'teacher' ? form.majorIds : [],
     })
     setToken(result.token)
+    useAuthStore().syncFromToken()
     ElMessage.success('注册成功，已绑定微信')
     if (accountType.value === 'admin') {
       void router.push('/admin/setup')
+    } else if (accountType.value === 'student') {
+      void router.push('/student/tasks')
     } else {
-      void router.push('/settings/security')
+      void router.push('/courses')
     }
   } catch (error) {
     ElMessage.error((error as { message?: string }).message ?? '注册失败，请重新扫码')

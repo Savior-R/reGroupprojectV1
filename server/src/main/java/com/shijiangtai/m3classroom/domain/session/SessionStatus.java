@@ -10,6 +10,13 @@ public enum SessionStatus {
     ENDED("ended"),
     REVIEWING("reviewing"),
     SUBMITTED("submitted"),
+    /**
+     * M6 training terminal statuses. M6 writes them into the shared
+     * {@code m3_classroom.sessions} row after a training record is selected/evaluated;
+     * M3 only parses them for replay/read paths and never transitions into them.
+     */
+    SELECTED("selected"),
+    EVALUATED("evaluated"),
     CANCELLED("cancelled"),
     FAILED("failed");
 

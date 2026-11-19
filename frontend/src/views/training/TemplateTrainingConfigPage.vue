@@ -60,7 +60,7 @@ async function start(): Promise<void> {
       virtual_students: students.value.map(toWireStudent),
       material_id: null,
     })
-    await router.push(`/student/training/sessions/${session.session_id}`)
+    await router.push(`/student/training/sessions/${session.session_id}/classroom`)
   } catch (error) {
     errorMessage.value = error instanceof ApiError
       ? error.message
@@ -136,7 +136,7 @@ onMounted(load)
 }
 
 .state {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .summary-card__header {
@@ -151,7 +151,7 @@ onMounted(load)
 
 .summary-card__header p {
   margin: 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .summary-grid {
@@ -164,18 +164,18 @@ onMounted(load)
 .summary-grid div {
   display: grid;
   gap: 4px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
 .summary-grid strong {
-  color: #e8eef9;
+  color: var(--m1-text-primary);
   font-size: 14px;
 }
 
 .fixed-note {
   margin: 16px 0 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 </style>

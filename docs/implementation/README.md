@@ -15,7 +15,7 @@
 | [04-M3-实现设计.md](04-M3-实现设计.md) | M3 | M3 Owner（A/B）+ Media/Training Owner（C） | 任务配置、SessionActor、课堂 / 面试、录制、回放 | 设计提交（待复审） | 10% |
 | [05-M4-实现设计.md](05-M4-实现设计.md) | M4 | AI Owner | 评测触发 / job / 回调 / 报告 / 输入接口 | 设计提交（待复审） | 10% |
 | [06-M7-实现设计.md](06-M7-实现设计.md) | M7 | Score/QA Owner | 评分、最终分、统计、排行榜、CSV、学生结果 | 设计提交（待复审） | 10% |
-| [07-M6-实现设计.md](07-M6-实现设计.md) | M6 | Media/Training Owner | 训练模板、训练 session、训练记录、隐私 | 设计提交（待复审） | 10% |
+| [07-M6-实现设计.md](07-M6-实现设计.md) | M6 | Media/Training Owner | 个人训练模板、课程发布、训练 session、训练记录、隐私、任务预填 | 设计提交（待复审） | 10% |
 | [08-Python-AI-实现设计.md](08-Python-AI-实现设计.md) | Python | AI Owner + M3 Owner（classroom / ASR / OCR） | provider / capability / worker / M4 评测 | 设计提交（待复审）；M3 调用层代码 / mock 测试已落地 | 10% |
 
 > 完成度口径见 [进度看板](../team/02-进度看板.md) 第 1.2 节；本表只做模块级汇总，详细 gate 与证据以看板为准。

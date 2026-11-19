@@ -36,11 +36,6 @@ public class InMemoryTaskRepository implements TaskRepository {
     }
 
     @Override
-    public void delete(TaskId id) {
-        tasks.remove(id);
-    }
-
-    @Override
     public <T> T withLock(TaskId id, Function<Task, T> action) {
         ReentrantLock lock = locks.computeIfAbsent(id, ignored -> new ReentrantLock());
         lock.lock();

@@ -57,9 +57,15 @@ const route = useRoute()
 const router = useRouter()
 
 const sessionId = computed(() => String(route.params.sessionId ?? ''))
-const reviewPath = computed(() => `/student/sessions/${sessionId.value}/review`)
 
 const session = ref<SessionView | null>(null)
+const isTraining = computed(() => session.value?.session_type === 'training')
+const reviewPath = computed(() =>
+  isTraining.value
+    ? `/student/training/sessions/${sessionId.value}/review`
+    : `/student/sessions/${sessionId.value}/review`,
+)
+const homePath = computed(() => (isTraining.value ? '/student/training' : '/student/tasks'))
 const classroom = ref<ClassroomState>(createInitialClassroomState())
 const wsStatus = ref<WsConnectionStatus | null>(null)
 const media = shallowRef<AcquiredMedia | null>(null)
@@ -135,7 +141,11 @@ const controlsFailed = computed(
 )
 
 function isTerminal(status: SessionStatus): boolean {
-  return status === 'ended' || status === 'reviewing' || status === 'submitted'
+  return status === 'ended'
+    || status === 'reviewing'
+    || status === 'submitted'
+    || status === 'selected'
+    || status === 'evaluated'
 }
 
 function addRecorder(type: StreamType, stream: MediaStream, offsetBaseMs: number): void {
@@ -707,7 +717,7 @@ async function confirmExit(): Promise<void> {
     return
   }
   if (failure.value || endError.value || classroom.value.status !== 'in_progress') {
-    await router.push('/student/tasks')
+    await router.push(homePath.value)
     return
   }
   try {

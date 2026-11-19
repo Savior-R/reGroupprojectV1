@@ -117,7 +117,7 @@ class SubmissionTransactionIT extends PostgresIntegrationTest {
     void publishTask() {
         cleanupProbe.reset();
         failureControl.failSubmissionCreated(false);
-        TaskView view = taskApplicationService.createDraft(teacher(), freeCommandWithStudent());
+        TaskView view = taskApplicationService.createPreparedTask(teacher(), freeCommandWithStudent());
         taskId = new TaskId(view.taskId());
         materialService.upload(
                 teacher(), taskId, "a.txt", "text/plain",

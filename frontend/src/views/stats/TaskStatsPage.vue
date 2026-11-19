@@ -253,12 +253,12 @@ void load()
   max-width: 1200px;
   margin: 0 auto;
   padding: 24px;
-  color: #e8eef9;
+  color: var(--m1-text-primary);
 }
 
 .m7-card {
-  border: 1px solid #1f2b44;
-  background: #0f1a2e;
+  border: 1px solid var(--m1-border);
+  background: var(--m1-bg-surface);
 }
 
 .m7-section {
@@ -288,19 +288,19 @@ void load()
 
 .m7-summary__item {
   padding: 10px 12px;
-  border: 1px solid #1f2b44;
+  border: 1px solid var(--m1-border);
   border-radius: 10px;
-  background: #111c33;
+  background: var(--m1-bg-subtle);
 }
 
 .m7-summary__item span {
   display: block;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
 .m7-summary__item strong {
-  color: #f5a524;
+  color: var(--m1-accent);
   font-size: 20px;
 }
 
@@ -313,7 +313,7 @@ void load()
   display: flex;
   justify-content: space-between;
   margin-bottom: 6px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 13px;
 }
 
@@ -327,11 +327,11 @@ void load()
 .m7-bar__fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #f5a524, #ffc966);
+  background: linear-gradient(90deg, var(--m1-accent), #ffc966);
 }
 
 .m7-bar__fill--weak {
-  background: linear-gradient(90deg, #ff6b6b, #ff9b9b);
+  background: linear-gradient(90deg, var(--m1-danger), #ff9b9b);
 }
 
 .m7-weak {
@@ -342,14 +342,14 @@ void load()
 
 .m7-weak span + span::before {
   content: ' / ';
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .m7-table {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: #111c33;
-  --el-table-row-hover-bg-color: #17233c;
+  --el-table-header-bg-color: var(--m1-bg-subtle);
+  --el-table-row-hover-bg-color: var(--m1-bg-hover);
 }
 
 .m7-pagination {
@@ -358,12 +358,12 @@ void load()
 }
 
 .m7-muted {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
 .m7-state {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .m7-alert {
@@ -372,7 +372,7 @@ void load()
 
 .m7-error-code {
   margin: 4px 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 </style>

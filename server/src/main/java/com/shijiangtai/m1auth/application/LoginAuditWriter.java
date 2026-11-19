@@ -9,13 +9,15 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 登录审计写入（FR-M1-11 第 6 条、requirements §4-18、M1-T15、A25）。
+ * 认证审计写入（FR-M1-11 第 6 条、requirements §4-18、M1-T15、A25）。
  *
- * <p><b>必须使用独立事务</b>：密码 / 邮箱登录失败会抛 {@code DomainException} 回滚主事务；
- * 若审计与主事务共用事务，刚写入的失败事件会被一并回滚，表现为「登录失败从不落审计」。
+ * <p>覆盖登录（login）、绑定（bind）、解绑（unbind）三类事件（V15）。
+ *
+ * <p><b>必须使用独立事务</b>：密码 / 邮箱登录或绑定/解绑失败会抛 {@code DomainException}
+ * 回滚主事务；若审计与主事务共用事务，刚写入的失败事件会被一并回滚，表现为「失败从不落审计」。
  * 因此这里用 {@link Propagation#REQUIRES_NEW} 先提交审计，再让主事务回滚。
  *
- * <p>审计失败不影响登录主流程（03 §3.10）；不记录 token / 验证码 / secret。
+ * <p>审计失败不影响认证主流程（03 §3.10）；不记录 token / 验证码 / secret。
  */
 @Component
 public class LoginAuditWriter {

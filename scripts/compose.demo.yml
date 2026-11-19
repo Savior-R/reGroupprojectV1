@@ -1,0 +1,10 @@
+# 本地验收 / 演示栈覆盖：使用 demo 数据库和 demo 账号数据。
+# 由 scripts/dev.sh 与 docker-compose.yml 一起加载：
+#   docker compose -f docker-compose.yml -f scripts/compose.demo.yml ...
+services:
+  app:
+    environment:
+      SPRING_PROFILES_ACTIVE: docker,demo
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/shijiangtai_demo?stringtype=unspecified
+      # demo 环境不需要真实 SMTP；否则 /actuator/health 会因为 mail 检查变 DOWN。
+      MANAGEMENT_HEALTH_MAIL_ENABLED: "false"

@@ -30,7 +30,6 @@ public record SessionView(
 
     public SessionView {
         Objects.requireNonNull(sessionId, "sessionId");
-        Objects.requireNonNull(taskId, "taskId");
         Objects.requireNonNull(sessionType, "sessionType");
         Objects.requireNonNull(mode, "mode");
         Objects.requireNonNull(status, "status");

@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>结构化面试 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .stage-bar__progress {
+      position: absolute;
+      right: 0;
+      bottom: -1px;
+      left: 0;
+      height: 2px;
+      background: rgba(233, 238, 233, 0.06);
+    }
+
+    .stage-bar__progress i {
+      display: block;
+      width: 16%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--stage-amber), #f0cd8c);
+    }
+
+    .stage-bar {
+      position: relative;
+    }
+
+    .interview-workspace {
+      display: flex;
+      min-height: 0;
+      flex: 1;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .interview-camera {
+      position: relative;
+      display: flex;
+      min-height: 0;
+      flex: 1;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-lg);
+      background:
+        radial-gradient(ellipse at 50% 22%, rgba(224, 164, 74, 0.11), transparent 52%),
+        radial-gradient(ellipse at 50% 110%, rgba(42, 103, 88, 0.26), transparent 65%),
+        var(--stage-0);
+      box-shadow: var(--shadow-stage);
+    }
+
+    .interview-camera::before,
+    .interview-camera::after {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      border-color: rgba(233, 238, 233, 0.28);
+      border-style: solid;
+      content: "";
+    }
+
+    .interview-camera::before {
+      top: 20px;
+      left: 20px;
+      border-width: 1px 0 0 1px;
+    }
+
+    .interview-camera::after {
+      right: 20px;
+      bottom: 20px;
+      border-width: 0 1px 1px 0;
+    }
+
+    .interview-figure {
+      position: relative;
+      width: clamp(170px, 22vw, 280px);
+      height: clamp(210px, 28vw, 350px);
+      margin-top: 4%;
+      opacity: 0.9;
+    }
+
+    .interview-figure::before {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: 40%;
+      aspect-ratio: 1;
+      border: 1px solid rgba(233, 238, 233, 0.34);
+      border-radius: 50%;
+      background: rgba(233, 238, 233, 0.08);
+      content: "";
+      transform: translateX(-50%);
+    }
+
+    .interview-figure::after {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      height: 52%;
+      border: 1px solid rgba(233, 238, 233, 0.26);
+      border-radius: 50% 50% 8px 8px;
+      background: linear-gradient(180deg, rgba(233, 238, 233, 0.12), rgba(233, 238, 233, 0.035));
+      content: "";
+    }
+
+    .interview-camera__label {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-pill);
+      background: rgba(7, 16, 14, 0.72);
+      color: var(--stage-muted);
+      font-size: 9px;
+      transform: translateX(-50%);
+    }
+
+    .interview-camera__label [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      color: var(--stage-green);
+    }
+
+    .interview-camera__hint {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      padding: 5px 11px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-pill);
+      background: rgba(7, 16, 14, 0.72);
+      color: var(--stage-muted);
+      font-size: 9px;
+      white-space: nowrap;
+      transform: translateX(-50%);
+    }
+
+    .interview-camera__rec {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 8px;
+      border: 1px solid rgba(217, 95, 74, 0.32);
+      border-radius: var(--r-pill);
+      background: rgba(217, 95, 74, 0.11);
+      color: var(--stage-red);
+      font-size: 8.5px;
+      font-weight: 600;
+    }
+
+    .interview-camera__rec::before {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+      animation: livePulse 1.6s ease-in-out infinite;
+    }
+
+    .interview-transcript {
+      flex: none;
+      padding: 12px 14px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-lg);
+      background: var(--stage-1);
+    }
+
+    .interview-transcript__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--stage-muted);
+      font-size: 9px;
+    }
+
+    .interview-transcript__live {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--stage-green);
+    }
+
+    .interview-transcript__live::before {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+      animation: livePulse 1.6s ease-in-out infinite;
+    }
+
+    .interview-transcript__text {
+      margin-top: 7px;
+      color: rgba(233, 238, 233, 0.78);
+      font-size: 10px;
+      line-height: 1.65;
+    }
+
+    .interview-transcript__text em {
+      color: var(--stage-faint);
+      font-style: normal;
+    }
+
+    .interview-dock {
+      flex: none;
+    }
+
+    .question-card {
+      display: flex;
+      min-height: 0;
+      flex: 1;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-lg);
+      background: var(--stage-1);
+      box-shadow: var(--shadow-stage);
+    }
+
+    .question-card__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--stage-line);
+    }
+
+    .question-card__head strong {
+      color: var(--stage-text);
+      font-family: var(--font-serif);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .question-dots {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .question-dot {
+      width: 18px;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--stage-3);
+    }
+
+    .question-dot.is-active {
+      background: var(--stage-amber);
+    }
+
+    .question-card__body {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      padding: 20px 18px;
+      overflow-y: auto;
+    }
+
+    .question-category {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .question-category .badge {
+      background: rgba(224, 164, 74, 0.12);
+      color: var(--stage-amber);
+    }
+
+    .question-card h1 {
+      margin-top: 18px;
+      color: var(--stage-text);
+      font-size: clamp(22px, 2.1vw, 30px);
+      font-weight: 600;
+      line-height: 1.55;
+      letter-spacing: 0.01em;
+    }
+
+    .question-hint {
+      margin-top: 18px;
+      padding: 11px 12px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-sm);
+      background: var(--stage-2);
+      color: var(--stage-muted);
+      font-size: 9px;
+      line-height: 1.65;
+    }
+
+    .question-hint strong {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 4px;
+      color: var(--stage-text);
+      font-size: 9px;
+      font-weight: 600;
+    }
+
+    .question-hint strong [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      color: var(--stage-amber);
+    }
+
+    .question-card__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: auto;
+      padding-top: 20px;
+      color: var(--stage-muted);
+      font-size: 9px;
+    }
+
+    .question-card__meta span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .question-card__meta [data-icon] svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    .question-card__note {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      margin-top: 12px;
+      padding: 9px 10px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-sm);
+      background: var(--stage-2);
+      color: var(--stage-faint);
+      font-size: 8.5px;
+      line-height: 1.55;
+    }
+
+    .question-card__note [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      flex: none;
+      margin-top: 1px;
+      color: var(--stage-amber);
+    }
+
+    .question-card__foot {
+      padding: 14px 16px;
+      border-top: 1px solid var(--stage-line);
+      background: var(--stage-2);
+    }
+
+    .interview-flow {
+      padding: 14px 16px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-lg);
+      background: var(--stage-1);
+    }
+
+    .interview-flow__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--stage-muted);
+      font-size: 9px;
+    }
+
+    .interview-flow__list {
+      display: grid;
+      gap: 7px;
+      margin-top: 10px;
+    }
+
+    .interview-flow__item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--stage-faint);
+      font-size: 9px;
+    }
+
+    .interview-flow__num {
+      display: grid;
+      place-items: center;
+      width: 17px;
+      height: 17px;
+      flex: none;
+      border: 1px solid var(--stage-line-strong);
+      border-radius: 50%;
+      font-family: var(--font-mono);
+      font-size: 7px;
+    }
+
+    .interview-flow__item.is-active {
+      color: var(--stage-amber);
+    }
+
+    .interview-flow__item.is-active .interview-flow__num {
+      border-color: var(--stage-amber);
+      background: rgba(224, 164, 74, 0.12);
+      color: var(--stage-amber);
+    }
+
+    .interview-flow__item.is-done {
+      color: var(--stage-green);
+    }
+
+    .interview-flow__item.is-done .interview-flow__num {
+      border-color: var(--stage-green);
+      background: rgba(121, 195, 155, 0.12);
+      color: var(--stage-green);
+    }
+
+    .timer {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+      color: var(--stage-text);
+      font-family: var(--font-mono);
+      font-size: 26px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+      line-height: 1;
+    }
+
+    .timer small {
+      color: var(--stage-faint);
+      font-family: var(--font-sans);
+      font-size: 9px;
+      font-weight: 400;
+    }
+
+    .timer.is-warning {
+      color: var(--stage-amber);
+    }
+
+    .device-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--stage-muted);
+      font-size: 9px;
+    }
+
+    .device-strip span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .device-strip [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      color: var(--stage-green);
+    }
+
+    @media (max-width: 1100px) {
+      .stage-main--interview {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .stage-aside {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body class="stage">
+  <div class="stage-shell">
+    <header class="stage-bar">
+      <a class="stage-bar__back" href="student-task-detail.html"><span data-icon="arrow-left"></span>返回</a>
+      <div class="stage-bar__brand">
+        <span class="seal seal--sm" aria-hidden="true">三</span>
+        <span>三尺讲台</span>
+      </div>
+      <div class="stage-title">
+        教师资格证结构化面试
+        <span class="stage-title__sub">微格教学实训 / 李静</span>
+      </div>
+      <div class="stage-meta">
+        <span class="stage-meta__item" id="question-progress">第 1 / 2 题</span>
+        <span class="stage-meta__item stage-meta__item--ok"><span data-icon="wifi"></span>WS 已连接</span>
+        <span class="stage-meta__item stage-meta__item--live"><span data-icon="circle"></span>REC 00:42</span>
+        <span class="stage-meta__item mono" id="total-timer">04:32 / 05:00</span>
+      </div>
+      <div class="stage-bar__actions">
+        <button class="btn btn--ghost btn--sm" type="button" data-toast="字幕已开启（原型演示）。"><span data-icon="message"></span>字幕</button>
+        <button class="btn btn--danger btn--sm" type="button" data-open="end-interview-modal"><span data-icon="x"></span>结束面试</button>
+      </div>
+      <div class="stage-bar__progress" aria-hidden="true"><i></i></div>
+    </header>
+
+    <div class="stage-main stage-main--interview">
+      <div class="interview-workspace">
+        <section class="interview-camera" aria-label="面试摄像头主画面">
+          <span class="interview-camera__label"><span data-icon="camera"></span>摄像头 · 主画面</span>
+          <span class="interview-camera__rec">REC</span>
+          <div class="interview-figure" aria-hidden="true"></div>
+          <span class="interview-camera__hint">请正视摄像头，保持上半身可见</span>
+        </section>
+
+        <section class="interview-transcript">
+          <div class="interview-transcript__head">
+            <span>实时转写 · 仅本人可见</span>
+            <span class="interview-transcript__live">识别中</span>
+          </div>
+          <p class="interview-transcript__text">
+            遇到这种情况，我会先<em>稳定课堂秩序</em>，用眼神和停顿提醒两名学生停止争执，
+            然后在不打断教学的前提下，把注意力引回课堂。课后我会分别了解情况……
+          </p>
+        </section>
+
+        <footer class="stage-dock interview-dock">
+          <div class="stage-dock__group">
+            <span class="device-pill device-pill--ok"><span data-icon="mic"></span><span class="mic-level" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></span>
+            <span class="device-pill device-pill--ok"><span data-icon="camera"></span>摄像头正常</span>
+            <span class="device-pill device-pill--ok"><span data-icon="wifi"></span>网络稳定</span>
+          </div>
+          <span class="stage-dock__selected">本题用时 <strong id="question-timer">00:42</strong></span>
+          <div class="stage-dock__status">
+            <button class="btn btn--ghost btn--sm" type="button" data-toast="字幕开关（原型演示）。">字幕 开</button>
+            <button class="btn btn--secondary btn--sm" type="button" id="next-question"><span data-icon="skip-forward"></span>下一题</button>
+            <button class="btn btn--danger btn--sm" type="button" data-open="end-interview-modal">结束面试</button>
+          </div>
+        </footer>
+      </div>
+
+      <aside class="stage-aside">
+        <section class="question-card">
+          <div class="question-card__head">
+            <strong id="question-title">第 1 题</strong>
+            <div class="question-dots">
+              <span class="question-dot is-active" id="dot-1"></span>
+              <span class="question-dot" id="dot-2"></span>
+            </div>
+          </div>
+          <div class="question-card__body">
+            <div class="question-category">
+              <span class="badge" id="question-cat-1">班级管理</span>
+              <span class="badge badge--warning" id="question-cat-2">应急应变</span>
+            </div>
+            <h1 id="question-stem">作为班主任，发现两名学生在课堂上发生争执，你会如何处理？</h1>
+            <div class="question-hint" id="question-hint">
+              <strong><span data-icon="info"></span>作答时建议覆盖</strong>
+              <span id="question-hint-text">现场处置 · 课后沟通 · 后续跟进。先稳定课堂，再处理冲突；注意说明如何避免类似情况再次发生。</span>
+            </div>
+            <div class="question-card__meta">
+              <span><span data-icon="clock"></span>本题用时 <strong id="question-time-meta" style="color:var(--stage-text);font-weight:500">00:42</strong></span>
+              <span><span data-icon="target"></span><span id="question-dim">评分维度：班级管理 / 应急应变</span></span>
+            </div>
+            <div class="question-card__note">
+              <span data-icon="lock"></span>
+              <span>学生端不显示答案要点；题目逐题展示，到时间自动结束面试。</span>
+            </div>
+          </div>
+          <div class="question-card__foot">
+            <div class="timer is-warning"><span id="aside-timer">04:32</span><small>剩余</small></div>
+            <div class="device-strip" style="margin-top:10px">
+              <span><span data-icon="check-circle"></span>摄像头</span>
+              <span><span data-icon="check-circle"></span>麦克风</span>
+              <span><span data-icon="check-circle"></span>网络</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="interview-flow">
+          <div class="interview-flow__head">
+            <span>面试流程</span>
+            <span>2 题 · 5 分钟</span>
+          </div>
+          <div class="interview-flow__list">
+            <div class="interview-flow__item is-active" id="flow-1"><span class="interview-flow__num">1</span><span>应急应变 · 作答中</span></div>
+            <div class="interview-flow__item" id="flow-2"><span class="interview-flow__num">2</span><span>教育理念 · 待开始</span></div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <!-- End interview modal -->
+  <div class="overlay" data-overlay-for="end-interview-modal"></div>
+  <div class="modal" id="end-interview-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="end-interview-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="end-interview-title">结束本次面试？</div>
+        <div class="drawer__sub">第 1 / 2 题 · 总用时 00:42</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="end-interview-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--warning">
+        <span data-icon="alert-triangle"></span>
+        <div><div class="alert__title">还有 1 题未作答</div><span>结束后将停止录制并进入回看页；未作答题目不会补时，提交后本次回放只读。</span></div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="end-interview-modal">继续作答</button>
+      <a class="btn btn--primary" href="review.html"><span data-icon="check"></span>结束并回看</a>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+  <script>
+    const questions = [
+      {
+        category: "班级管理 / 应急应变",
+        categoryA: "班级管理",
+        categoryB: "应急应变",
+        stem: "作为班主任，发现两名学生在课堂上发生争执，你会如何处理？"
+      },
+      {
+        category: "教育理念 / 职业认知",
+        categoryA: "教育理念",
+        categoryB: "职业认知",
+        stem: "你如何看待“没有教不好的学生，只有不会教的老师”这句话？"
+      }
+    ];
+    let currentQuestion = 0;
+
+    document.getElementById("next-question").addEventListener("click", function () {
+      if (currentQuestion === 0) {
+        currentQuestion = 1;
+        document.getElementById("question-title").textContent = "第 2 题";
+        document.getElementById("question-stem").textContent = questions[1].stem;
+        document.getElementById("question-hint-text").textContent = "教育理念 · 学生差异 · 教师责任。先亮明观点，再说明边界与条件，最后落到因材施教与协同育人。";
+        document.getElementById("question-cat-1").textContent = questions[1].categoryA;
+        document.getElementById("question-cat-2").textContent = questions[1].categoryB;
+        document.getElementById("question-dim").textContent = "评分维度：" + questions[1].category;
+        document.getElementById("question-progress").textContent = "第 2 / 2 题";
+        document.getElementById("dot-1").classList.remove("is-active");
+        document.getElementById("dot-2").classList.add("is-active");
+        document.getElementById("flow-1").classList.remove("is-active");
+        document.getElementById("flow-1").classList.add("is-done");
+        document.getElementById("flow-2").classList.add("is-active");
+        document.getElementById("next-question").disabled = true;
+        window.PrototypeUI.toast("已进入第 2 题（原型演示）。");
+      }
+    });
+  </script>
+</body>
+</html>

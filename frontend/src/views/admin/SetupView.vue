@@ -3,7 +3,6 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createSchool, setToken } from '../../api/auth'
-import AdminShell from './AdminShell.vue'
 
 /** 首次建校（FR-M1-03 / 03 §3.9 /admin/setup）：建校后服务端返回新 token，替换旧 token。 */
 
@@ -32,8 +31,7 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <AdminShell>
-    <div class="setup-page">
+  <div class="setup-page">
     <el-card class="card">
       <template #header>创建学校</template>
       <ol class="steps">
@@ -48,8 +46,7 @@ async function submit(): Promise<void> {
         <el-button type="primary" :loading="loading" @click="submit">创建并绑定</el-button>
       </el-form>
     </el-card>
-    </div>
-  </AdminShell>
+  </div>
 </template>
 
 <style scoped>

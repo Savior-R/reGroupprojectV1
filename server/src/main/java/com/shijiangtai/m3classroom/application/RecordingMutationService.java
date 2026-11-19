@@ -4,6 +4,7 @@ import com.shijiangtai.m3classroom.application.command.CompletePartCommand;
 import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage;
 import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage.ObjectStat;
 import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage.PartEtag;
+import com.shijiangtai.m3classroom.application.port.SchoolDirectoryPort;
 import com.shijiangtai.m3classroom.application.view.MultipartUploadView;
 import com.shijiangtai.m3classroom.application.view.RecordingStreamView;
 import com.shijiangtai.m3classroom.domain.recording.Recording;
@@ -17,6 +18,7 @@ import com.shijiangtai.m3classroom.domain.recording.StreamType;
 import com.shijiangtai.m3classroom.domain.session.Session;
 import com.shijiangtai.m3classroom.domain.session.SessionRepository;
 import com.shijiangtai.m3classroom.domain.session.SessionStatus;
+import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.m3classroom.domain.task.Task;
 import com.shijiangtai.m3classroom.domain.task.TaskRepository;
 import com.shijiangtai.m3classroom.domain.task.TaskSnapshot;
@@ -34,6 +36,7 @@ import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -67,8 +70,10 @@ class RecordingMutationService {
     private final RecordingAccessPolicy accessPolicy;
     private final IdGenerator idGenerator;
     private final ClockProvider clockProvider;
+    private final SchoolDirectoryPort schoolDirectory;
     private final RecordingObjectKeyBuilder objectKeyBuilder = new RecordingObjectKeyBuilder();
 
+    /** Test seam for task-session recording; training sessions need the school port. */
     RecordingMutationService(
             SessionRepository sessionRepository,
             TaskRepository taskRepository,
@@ -77,6 +82,20 @@ class RecordingMutationService {
             RecordingAccessPolicy accessPolicy,
             IdGenerator idGenerator,
             ClockProvider clockProvider) {
+        this(sessionRepository, taskRepository, recordingRepository, storage, accessPolicy,
+                idGenerator, clockProvider, accountId -> Optional.empty());
+    }
+
+    @Autowired
+    RecordingMutationService(
+            SessionRepository sessionRepository,
+            TaskRepository taskRepository,
+            RecordingRepository recordingRepository,
+            RecordingObjectStorage storage,
+            RecordingAccessPolicy accessPolicy,
+            IdGenerator idGenerator,
+            ClockProvider clockProvider,
+            SchoolDirectoryPort schoolDirectory) {
         this.sessionRepository = Objects.requireNonNull(sessionRepository, "sessionRepository");
         this.taskRepository = Objects.requireNonNull(taskRepository, "taskRepository");
         this.recordingRepository = Objects.requireNonNull(
@@ -85,6 +104,7 @@ class RecordingMutationService {
         this.accessPolicy = Objects.requireNonNull(accessPolicy, "accessPolicy");
         this.idGenerator = Objects.requireNonNull(idGenerator, "idGenerator");
         this.clockProvider = Objects.requireNonNull(clockProvider, "clockProvider");
+        this.schoolDirectory = Objects.requireNonNull(schoolDirectory, "schoolDirectory");
     }
 
     @Transactional
@@ -114,16 +134,26 @@ class RecordingMutationService {
         }
         requireStartableRecording(recording);
 
-        Task task = taskRepository.findById(session.taskId())
-                .orElseThrow(() -> new DomainException(ErrorCode.RESOURCE_NOT_FOUND,
-                        "任务不存在", Map.of("task_id", session.taskId().value())));
-        TaskSnapshot snapshot = task.snapshot();
-        if (snapshot == null) {
-            throw new DomainException(ErrorCode.TASK_CONFIG_INVALID, "任务快照不存在",
-                    Map.of("task_id", session.taskId().value().toString()));
+        String objectKey;
+        if (session.type() == SessionType.TRAINING) {
+            java.util.UUID schoolId = schoolDirectory
+                    .findSchoolByAccount(session.studentAccountId().value())
+                    .orElseThrow(() -> new DomainException(ErrorCode.INTERNAL_ERROR,
+                            "训练学生缺少学校",
+                            Map.of("session_id", sessionId.value().toString())));
+            objectKey = objectKeyBuilder.trainingKey(schoolId, sessionId.value(), type);
+        } else {
+            Task task = taskRepository.findById(session.taskId())
+                    .orElseThrow(() -> new DomainException(ErrorCode.RESOURCE_NOT_FOUND,
+                            "任务不存在", Map.of("task_id", session.taskId().value())));
+            TaskSnapshot snapshot = task.snapshot();
+            if (snapshot == null) {
+                throw new DomainException(ErrorCode.TASK_CONFIG_INVALID, "任务快照不存在",
+                        Map.of("task_id", session.taskId().value().toString()));
+            }
+            objectKey = objectKeyBuilder.taskKey(
+                    snapshot.schoolId(), session.taskId().value(), sessionId.value(), type);
         }
-        String objectKey = objectKeyBuilder.taskKey(
-                snapshot.schoolId(), session.taskId().value(), sessionId.value(), type);
         String mime = mimeFor(type);
         RecordingObjectStorage.MultipartUpload upload =
                 storage.createMultipart(objectKey, mime);

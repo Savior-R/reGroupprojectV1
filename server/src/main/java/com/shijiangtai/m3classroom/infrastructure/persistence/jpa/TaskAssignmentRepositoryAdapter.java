@@ -53,6 +53,7 @@ public class TaskAssignmentRepositoryAdapter implements TaskAssignmentRepository
     @Override
     public void deleteByTask(TaskId taskId) {
         repository.deleteByTaskId(taskId.value());
+        repository.flush();
     }
 
     private TaskAssignmentEntity toEntity(TaskAssignment assignment) {

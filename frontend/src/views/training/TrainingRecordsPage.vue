@@ -193,11 +193,11 @@ onMounted(load)
 
 .records-page header p {
   margin: 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .state {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .record-list {
@@ -226,7 +226,7 @@ onMounted(load)
 
 .record-card__meta {
   margin: 6px 0 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 

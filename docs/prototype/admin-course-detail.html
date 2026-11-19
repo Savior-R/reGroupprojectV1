@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>课程详情 · 语文教学论 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .course-back {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      color: var(--text-3);
+      font-size: 11px;
+    }
+
+    .course-back a {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text-2);
+    }
+
+    .course-hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 30px;
+      overflow: hidden;
+      margin-bottom: 22px;
+      padding: 28px 30px;
+      border-radius: var(--r-lg);
+      background:
+        radial-gradient(520px 260px at 82% -10%, rgba(224, 164, 74, 0.13), transparent 65%),
+        radial-gradient(520px 300px at 0% 110%, rgba(42, 103, 88, 0.5), transparent 65%),
+        linear-gradient(140deg, #173f36, #0d2d26);
+      color: #eef3ee;
+      box-shadow: var(--shadow-2);
+    }
+
+    .course-hero::after {
+      position: absolute;
+      right: -70px;
+      bottom: -120px;
+      width: 300px;
+      height: 300px;
+      border: 1px solid rgba(238, 243, 238, 0.1);
+      border-radius: 50%;
+      box-shadow: 0 0 0 28px rgba(238, 243, 238, 0.025);
+      content: "";
+      pointer-events: none;
+    }
+
+    .course-hero__main {
+      position: relative;
+      z-index: 1;
+      min-width: 0;
+    }
+
+    .course-hero .eyebrow {
+      color: rgba(238, 243, 238, 0.55);
+    }
+
+    .course-hero .eyebrow::before {
+      background: #e6b45d;
+    }
+
+    .course-hero h1 {
+      margin-top: 12px;
+      color: #f5f7f2;
+      font-size: clamp(34px, 4vw, 52px);
+      line-height: 1.16;
+      letter-spacing: 0.01em;
+    }
+
+    .course-hero__lead {
+      max-width: 52em;
+      margin-top: 10px;
+      color: rgba(238, 243, 238, 0.62);
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .course-hero__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .course-hero__meta .chip {
+      min-height: 25px;
+      padding: 2px 9px;
+      border-color: rgba(238, 243, 238, 0.16);
+      background: rgba(238, 243, 238, 0.07);
+      color: rgba(238, 243, 238, 0.72);
+      font-size: 10px;
+    }
+
+    .course-hero__side {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .course-hero__watermark {
+      color: rgba(238, 243, 238, 0.1);
+      font-family: var(--font-serif);
+      font-size: 150px;
+      font-weight: 600;
+      line-height: 0.8;
+      letter-spacing: -0.08em;
+      user-select: none;
+    }
+
+    .course-hero__actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 7px;
+    }
+
+    .course-hero .btn--primary {
+      border-color: #e0a44a;
+      background: #e0a44a;
+      color: #1b1408;
+    }
+
+    .course-hero .btn--primary:hover {
+      border-color: #ecb65f;
+      background: #ecb65f;
+      color: #1b1408;
+    }
+
+    .course-hero .btn--secondary {
+      border-color: rgba(238, 243, 238, 0.2);
+      background: rgba(238, 243, 238, 0.08);
+      color: rgba(238, 243, 238, 0.82);
+    }
+
+    .course-hero .btn--secondary:hover {
+      border-color: rgba(238, 243, 238, 0.34);
+      background: rgba(238, 243, 238, 0.14);
+      color: #f5f7f2;
+    }
+
+    .course-hero .btn--danger {
+      border-color: rgba(232, 116, 95, 0.32);
+      background: rgba(232, 116, 95, 0.08);
+      color: #f2b3a8;
+    }
+
+    .course-hero .btn--danger:hover {
+      border-color: rgba(232, 116, 95, 0.55);
+      background: rgba(232, 116, 95, 0.14);
+      color: #ffd6cf;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .detail-main,
+    .detail-aside {
+      display: grid;
+      gap: 16px;
+    }
+
+    .fact-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .fact {
+      padding: 13px 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .fact span {
+      display: block;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .fact strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .teacher-mini {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .teacher-mini:last-child {
+      border-bottom: 0;
+    }
+
+    .teacher-mini__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .teacher-mini__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .teacher-mini__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .side-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .side-card .card-head,
+    .side-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .course-info {
+      display: grid;
+      gap: 0;
+    }
+
+    .course-info__row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 10.5px;
+    }
+
+    .course-info__row:last-child {
+      border-bottom: 0;
+    }
+
+    .course-info__row dt {
+      color: var(--text-3);
+    }
+
+    .course-info__row dd {
+      margin: 0;
+      color: var(--text);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .org-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .org-name__mark {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: none;
+      place-items: center;
+      border-radius: var(--r-xs);
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .org-name strong {
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .log-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .log-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .log-item:last-child {
+      border-bottom: 0;
+    }
+
+    .log-item__dot {
+      width: 6px;
+      height: 6px;
+      flex: none;
+      margin-top: 5px;
+      border-radius: 50%;
+      background: var(--brand);
+    }
+
+    .log-item__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .log-item__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .log-item__main span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 8.5px;
+      line-height: 1.5;
+    }
+
+    .admin-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 12px 14px;
+      border-left: 3px solid var(--brand);
+      border-radius: 2px;
+      background: var(--brand-soft);
+      color: var(--text-2);
+      font-size: 9.5px;
+      line-height: 1.6;
+    }
+
+    .admin-note [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      margin-top: 1px;
+      color: var(--brand);
+    }
+
+    .modal--course {
+      width: min(600px, 94vw);
+    }
+
+    @media (max-width: 1180px) {
+      .course-hero,
+      .detail-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .course-hero__side {
+        align-items: flex-start;
+      }
+
+      .course-hero__watermark {
+        display: none;
+      }
+
+      .course-hero__actions {
+        justify-content: flex-start;
+      }
+
+      .fact-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .course-hero {
+        padding: 22px;
+      }
+
+      .fact-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body data-role="admin" data-nav="courses">
+  <div data-app-header></div>
+
+  <div class="context-bar">
+    <div class="context-bar__inner">
+      <div class="breadcrumb">
+        <a href="courses.html?role=admin">课程管理</a>
+        <span class="breadcrumb__sep">/</span>
+        <span class="breadcrumb__current">语文教学论</span>
+        <span class="breadcrumb__sep">/</span>
+        <span>详情</span>
+      </div>
+      <div class="context-tabs">
+        <a class="context-tab is-active" href="#overview">概览</a>
+        <a class="context-tab" href="#students">学生</a>
+        <a class="context-tab" href="#teachers">老师组</a>
+      </div>
+    </div>
+  </div>
+
+  <main class="page">
+    <div class="course-back">
+      <a href="courses.html?role=admin"><span data-icon="arrow-left"></span>课程管理</a>
+      <span class="breadcrumb__sep">/</span>
+      <span>语文教学论</span>
+    </div>
+
+    <section class="course-hero">
+      <div class="course-hero__main">
+        <p class="eyebrow">ADMIN / COURSE · CHN 2401</p>
+        <h1>语文教学论</h1>
+        <p class="course-hero__lead">
+          汉语言文学（师范）专业 · 2026 秋季学期 · 王宁主讲。管理员只维护课程元数据，不进入任务、评分、统计与评测业务。
+        </p>
+        <div class="course-hero__meta">
+          <span class="chip"><span data-icon="users"></span>32 名学生</span>
+          <span class="chip"><span data-icon="grid"></span>2 个班级</span>
+          <span class="chip"><span data-icon="podium"></span>2 名教师</span>
+          <span class="chip"><span data-icon="check-circle"></span>启用中</span>
+        </div>
+      </div>
+      <div class="course-hero__side">
+        <span class="course-hero__watermark" aria-hidden="true">语</span>
+        <div class="course-hero__actions">
+          <button class="btn btn--secondary" type="button" data-open="edit-course-modal"><span data-icon="edit"></span>编辑课程信息</button>
+          <button class="btn btn--danger" type="button" data-open="archive-course-modal"><span data-icon="archive"></span>归档课程</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="stat-strip" style="margin-bottom:22px">
+      <div class="stat"><div class="stat__label">在课学生</div><div class="stat__value">32</div><div class="stat__meta">语文2401 / 2402</div></div>
+      <div class="stat"><div class="stat__label">班级</div><div class="stat__value">2</div><div class="stat__meta">2024 级</div></div>
+      <div class="stat"><div class="stat__label">老师组</div><div class="stat__value">2</div><div class="stat__meta">1 名 owner</div></div>
+      <div class="stat"><div class="stat__label">学分</div><div class="stat__value stat__value--brand">3.0</div><div class="stat__meta">2026 秋季学期</div></div>
+    </div>
+
+    <div class="detail-grid">
+      <div class="detail-main">
+        <section class="card" id="overview">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">课程概览</h2><p class="card-sub">管理员可维护的课程元数据</p></div>
+            <span class="badge badge--success">启用中</span>
+          </div>
+          <div class="card-body">
+            <div class="fact-grid">
+              <div class="fact"><span>课程代码</span><strong>CHN 2401</strong></div>
+              <div class="fact"><span>学期</span><strong>2026 秋季</strong></div>
+              <div class="fact"><span>学分</span><strong>3.0</strong></div>
+              <div class="fact"><span>专业范围</span><strong>汉语言文学（师范）</strong></div>
+              <div class="fact"><span>开始日期</span><strong>2026-09-01</strong></div>
+              <div class="fact"><span>结束日期</span><strong>2027-01-15</strong></div>
+              <div class="fact"><span>创建人</span><strong>王宁</strong></div>
+              <div class="fact"><span>创建时间</span><strong>2026-08-20 10:14</strong></div>
+              <div class="fact"><span>最近更新</span><strong>2026-11-16 16:20</strong></div>
+            </div>
+            <div class="admin-note" style="margin-top:14px">
+              <span data-icon="info"></span>
+              <span>管理员不参与任务发布、学生提交、评分与 AI 评测；归档只影响课程的活跃状态，历史录像与报告只读保留。</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" id="students">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">学生概览</h2><p class="card-sub">只读名单 · 按班级与学号排序</p></div>
+            <span class="badge">32 名学生</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table table--compact">
+              <thead><tr><th>学生</th><th>班级</th><th>学号</th><th>状态</th></tr></thead>
+              <tbody>
+                <tr><td><div class="org-name"><span class="org-name__mark">林</span><strong>林小雨</strong></div></td><td>语文2401</td><td class="mono">2024010128</td><td><span class="badge badge--success">在课</span></td></tr>
+                <tr><td><div class="org-name"><span class="org-name__mark">张</span><strong>张晨</strong></div></td><td>语文2401</td><td class="mono">2024010116</td><td><span class="badge badge--success">在课</span></td></tr>
+                <tr><td><div class="org-name"><span class="org-name__mark">李</span><strong>李思远</strong></div></td><td>语文2401</td><td class="mono">2024010107</td><td><span class="badge badge--success">在课</span></td></tr>
+                <tr><td><div class="org-name"><span class="org-name__mark">王</span><strong>王雨桐</strong></div></td><td>语文2402</td><td class="mono">2024010203</td><td><span class="badge badge--success">在课</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="list-foot">
+            <span class="list-foot__info">共 32 名学生 · 显示 1—4</span>
+            <div class="pagination" aria-label="课程学生分页">
+              <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+              <button class="pagination__btn is-active" type="button">1</button>
+              <button class="pagination__btn" type="button">2</button>
+              <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" id="teachers">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">老师组</h2><p class="card-sub">主讲与成员由教师 / 管理员维护</p></div>
+            <span class="badge">2 名教师</span>
+          </div>
+          <div class="card-body" style="padding-top:6px;padding-bottom:6px">
+            <div class="teacher-mini"><span class="avatar avatar--sm avatar--gold">王</span><div class="teacher-mini__main"><strong>王宁</strong><span>主讲 · 语文教学论 · 创建人</span></div><span class="badge badge--success">owner</span></div>
+            <div class="teacher-mini"><span class="avatar avatar--sm avatar--cinnabar">李</span><div class="teacher-mini__main"><strong>李静</strong><span>老师组 · 微格实训</span></div><span class="badge">member</span></div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="detail-aside">
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">课程状态</h2><p class="card-sub">归档后只读</p></div>
+            <span class="badge badge--success">启用中</span>
+          </div>
+          <div class="card-body">
+            <div class="course-info">
+              <div class="course-info__row"><dt>当前状态</dt><dd>启用中</dd></div>
+              <div class="course-info__row"><dt>归档状态</dt><dd>未归档</dd></div>
+              <div class="course-info__row"><dt>学生可见</dt><dd>是</dd></div>
+              <div class="course-info__row"><dt>最后更新</dt><dd>11-16 16:20</dd></div>
+            </div>
+            <button class="btn btn--danger btn--block btn--sm" type="button" data-open="archive-course-modal" style="margin-top:11px"><span data-icon="archive"></span>归档课程</button>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">元数据变更</h2><p class="card-sub">最近 3 条</p></div>
+          </div>
+          <div class="card-body" style="padding-top:6px;padding-bottom:8px">
+            <div class="log-list">
+              <div class="log-item"><span class="log-item__dot"></span><div class="log-item__main"><strong>课程结束日期更新</strong><span>陈明 · 11-12 09:31 · 2027-01-10 → 2027-01-15</span></div></div>
+              <div class="log-item"><span class="log-item__dot"></span><div class="log-item__main"><strong>老师组新增李静</strong><span>陈明 · 09-06 14:08</span></div></div>
+              <div class="log-item"><span class="log-item__dot"></span><div class="log-item__main"><strong>课程创建</strong><span>王宁 · 08-20 10:14</span></div></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head"><div class="card-head__main"><h2 class="card-title">管理员边界</h2></div></div>
+          <div class="card-body">
+            <div class="xs faint" style="display:grid;gap:7px;line-height:1.6">
+              <span>· 只维护课程名称、代码、学期、学分、专业范围与结束日期。</span>
+              <span>· 不进入任务、评分、报告与统计；不查看学生成绩明细。</span>
+              <span>· 归档后课程退出活跃列表，历史数据只读保留。</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Edit course modal -->
+  <div class="overlay" data-overlay-for="edit-course-modal"></div>
+  <div class="modal modal--course" id="edit-course-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="edit-course-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="edit-course-title">编辑课程信息</div>
+        <div class="drawer__sub">只修改元数据；任务、评分与评测不在管理员范围</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="edit-course-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="form-grid">
+        <label class="field span-2"><span class="label">课程名称 <span class="req">*</span></span><input class="input" value="语文教学论" aria-label="课程名称"></label>
+        <label class="field"><span class="label">课程代码</span><input class="input" value="CHN 2401" aria-label="课程代码"></label>
+        <label class="field"><span class="label">学分</span><input class="input" value="3.0" aria-label="学分"></label>
+        <label class="field span-2"><span class="label">专业范围</span><input class="input" value="汉语言文学（师范）" aria-label="专业范围"></label>
+        <label class="field"><span class="label">学期</span><select class="select" aria-label="学期"><option>2026 秋季</option><option>2027 春季</option></select></label>
+        <label class="field"><span class="label">结束日期</span><input class="input" type="date" value="2027-01-15" aria-label="结束日期"></label>
+      </div>
+      <div class="alert alert--info" style="margin-top:14px"><span data-icon="info"></span><div>修改课程名称与结束日期会影响学生 / 教师列表展示；历史任务与报告不变。</div></div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="edit-course-modal">取消</button>
+      <button class="btn btn--primary" type="button" data-close="edit-course-modal" data-toast="课程信息已保存（原型演示）。"><span data-icon="check"></span>保存修改</button>
+    </div>
+  </div>
+
+  <!-- Archive course modal -->
+  <div class="overlay" data-overlay-for="archive-course-modal"></div>
+  <div class="modal" id="archive-course-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="archive-course-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="archive-course-title">归档课程</div>
+        <div class="drawer__sub">课程退出活跃列表，历史数据只读保留</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="archive-course-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--danger">
+        <span data-icon="alert-triangle"></span>
+        <div>归档「语文教学论」后，学生与教师不能再进入课程发起新任务；历史任务、录像、报告与评分只读保留。归档需要二次确认。</div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="archive-course-modal">取消</button>
+      <a class="btn btn--danger-solid" href="courses.html?role=admin" data-close="archive-course-modal" data-toast="课程已归档（原型演示）。">确认归档</a>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+</body>
+</html>

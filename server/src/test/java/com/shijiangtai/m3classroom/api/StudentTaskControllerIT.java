@@ -88,7 +88,7 @@ class StudentTaskControllerIT extends PostgresIntegrationTest {
                 new CourseId(COURSE_ID), TaskMode.INTERVIEW, "结构化面试", null,
                 null, null, null, null, List.of(),
                 new QuestionConfig(List.of(questionId), 300));
-        TaskView view = taskApplicationService.createDraft(TEACHER, command);
+        TaskView view = taskApplicationService.createPreparedTask(TEACHER, command);
         TaskId taskId = new TaskId(view.taskId());
         taskPublishService.publish(TEACHER, taskId);
         return taskId;

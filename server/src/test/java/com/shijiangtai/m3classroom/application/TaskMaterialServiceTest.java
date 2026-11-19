@@ -149,7 +149,7 @@ class TaskMaterialServiceTest {
 
     private TaskId createFreeTask() {
         TaskId taskId = new TaskId(UUID.randomUUID());
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 taskId, COURSE, com.shijiangtai.m3classroom.TestFixtures.TEACHER,
                 new TaskDraft(TaskMode.FREE, "荷塘月色", "部编版", 900, 1200,
                         RubricWeights.defaults(TaskMode.FREE), null, List.of(), null),
@@ -160,7 +160,7 @@ class TaskMaterialServiceTest {
 
     private TaskId createInterviewTask() {
         TaskId taskId = new TaskId(UUID.randomUUID());
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 taskId, COURSE, com.shijiangtai.m3classroom.TestFixtures.TEACHER,
                 new TaskDraft(TaskMode.INTERVIEW, "结构化面试", null, 300, 300,
                         RubricWeights.defaults(TaskMode.INTERVIEW), null, List.of(),

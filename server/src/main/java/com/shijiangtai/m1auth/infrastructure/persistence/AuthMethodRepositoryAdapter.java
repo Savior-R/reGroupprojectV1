@@ -50,6 +50,8 @@ public class AuthMethodRepositoryAdapter implements AuthMethodRepository {
             rs.getObject("id", UUID.class),
             rs.getObject("account_id", UUID.class) == null
                     ? null : new AccountId(rs.getObject("account_id", UUID.class)),
+            AuthLoginEvent.EventType.valueOf(
+                    rs.getString("event_type").toUpperCase(java.util.Locale.ROOT)),
             AuthLoginEvent.LoginMethod.valueOf(
                     rs.getString("method").toUpperCase(java.util.Locale.ROOT)),
             rs.getString("provider"),
@@ -215,13 +217,14 @@ public class AuthMethodRepositoryAdapter implements AuthMethodRepository {
     public void insertLoginEvent(AuthLoginEvent event) {
         jdbc.update("""
                 insert into m1_auth.auth_login_events
-                    (id, account_id, method, provider, success, ip, user_agent, created_at)
-                values (:id, :accountId, :method, :provider, :success,
+                    (id, account_id, event_type, method, provider, success, ip, user_agent, created_at)
+                values (:id, :accountId, :eventType, :method, :provider, :success,
                         cast(:ip as inet), :userAgent, :createdAt)
                 """, new MapSqlParameterSource()
                 .addValue("id", event.id())
                 .addValue("accountId",
                         event.accountId() == null ? null : event.accountId().value())
+                .addValue("eventType", event.eventType().dbValue())
                 .addValue("method", event.method().dbValue())
                 .addValue("provider", event.provider())
                 .addValue("success", event.success())

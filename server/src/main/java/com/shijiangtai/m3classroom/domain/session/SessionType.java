@@ -5,7 +5,12 @@ import com.shijiangtai.shared.domain.ErrorCode;
 import java.util.Map;
 
 public enum SessionType {
-    TASK("task");
+    TASK("task"),
+    /**
+     * M6 training session. Training rows are created by M6, have no task id and
+     * use the M3 classroom / recording runtime through this type.
+     */
+    TRAINING("training");
 
     private final String wireValue;
 

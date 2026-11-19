@@ -4,7 +4,6 @@ import com.shijiangtai.m6training.application.command.SelectTrainingRecordComman
 import com.shijiangtai.m6training.application.event.TrainingRecordCleanupRequestedEvent;
 import com.shijiangtai.m6training.application.view.TrainingRecordSelectionView;
 import com.shijiangtai.m6training.application.view.TrainingRecordView;
-import com.shijiangtai.m6training.application.view.TrainingReportView;
 import com.shijiangtai.m6training.domain.TrainingError;
 import com.shijiangtai.m6training.domain.TrainingException;
 import com.shijiangtai.m6training.domain.TrainingRecord;
@@ -16,13 +15,13 @@ import com.shijiangtai.m6training.domain.TrainingSessionStatus;
 import com.shijiangtai.m6training.domain.port.TrainingClassroomPort;
 import com.shijiangtai.m6training.domain.port.TrainingClassroomPort.ClassroomSession;
 import com.shijiangtai.m6training.domain.port.TrainingEvaluationPort;
-import com.shijiangtai.m6training.domain.port.TrainingEvaluationPort.EvaluationReport;
 import com.shijiangtai.m6training.domain.port.TrainingEvaluationPort.EvaluationState;
 import com.shijiangtai.shared.application.ClockProvider;
 import com.shijiangtai.shared.application.CurrentUser;
 import com.shijiangtai.shared.application.IdGenerator;
 import com.shijiangtai.shared.domain.PageResult;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -133,7 +132,9 @@ public class TrainingRecordServiceImpl implements TrainingRecordService {
                 studentId,
                 meta.templateId(),
                 now,
-                now.plus(TrainingRecord.RETENTION_MONTHS, ChronoUnit.MONTHS));
+                now.atZone(ZoneOffset.UTC)
+                        .plusMonths(TrainingRecord.RETENTION_MONTHS)
+                        .toInstant());
         try {
             recordRepository.save(record);
         } catch (DataIntegrityViolationException exception) {
@@ -202,35 +203,6 @@ public class TrainingRecordServiceImpl implements TrainingRecordService {
         record.markDeleted(clock.now());
         recordRepository.save(record);
         eventPublisher.publishEvent(new TrainingRecordCleanupRequestedEvent(record.id()));
-    }
-
-    @Override
-    @Transactional
-    public TrainingReportView getEvaluation(CurrentUser user, UUID recordId) {
-        TrainingRecord record = requireViewable(user, recordId);
-        EvaluationState state = evaluationPort.findState(recordId)
-                .orElseThrow(() -> new TrainingException(
-                        TrainingError.EVALUATION_NOT_READY, "评测尚未开始", Map.of()));
-        if ("failed".equals(state.status())) {
-            throw new TrainingException(TrainingError.EVALUATION_FAILED,
-                    "训练评测失败", Map.of("record_id", recordId.toString()));
-        }
-        if (!READY.contains(state.status())) {
-            throw new TrainingException(TrainingError.EVALUATION_NOT_READY,
-                    "评测尚未完成", Map.of("status", state.status()));
-        }
-        EvaluationReport report = evaluationPort.findReport(recordId)
-                .orElseThrow(() -> new TrainingException(
-                        TrainingError.EVALUATION_NOT_READY, "评测报告尚未生成", Map.of()));
-        return new TrainingReportView(
-                recordId,
-                report.evaluationId(),
-                report.status(),
-                report.totalScore(),
-                report.dimensions(),
-                report.issues(),
-                report.warnings(),
-                report.completedAt());
     }
 
     private TrainingRecord requireViewable(CurrentUser user, UUID recordId) {

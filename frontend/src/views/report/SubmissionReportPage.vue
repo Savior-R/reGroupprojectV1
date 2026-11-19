@@ -46,8 +46,14 @@ async function resolve(): Promise<void> {
   }
 }
 
+const backTarget = computed(() => {
+  const raw = route.query.from
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return typeof value === 'string' && value.startsWith('/') ? value : '/student/results'
+})
+
 function goBack(): void {
-  void router.push('/student/tasks')
+  void router.push(backTarget.value)
 }
 
 onMounted(resolve)
@@ -60,7 +66,7 @@ onMounted(resolve)
         <h1 class="report-page__title">AI 评测报告</h1>
         <p class="report-page__hint">按提交记录查看本次课堂的评测结果。</p>
       </div>
-      <ElButton text @click="goBack">返回任务</ElButton>
+      <ElButton text @click="goBack">返回</ElButton>
     </header>
 
     <p v-if="loading" class="report-page__state">正在定位评测记录…</p>
@@ -103,24 +109,24 @@ onMounted(resolve)
 
 .report-page__title {
   margin: 0;
-  color: #e5e7eb;
+  color: var(--m1-text-primary);
   font-size: 24px;
 }
 
 .report-page__hint {
   margin: 6px 0 0;
-  color: #94a3b8;
+  color: var(--m1-text-secondary);
   font-size: 13px;
 }
 
 .report-page__state {
   margin: 0;
-  color: #94a3b8;
+  color: var(--m1-text-secondary);
 }
 
 .report-page__code {
   margin: 8px 0;
-  color: #94a3b8;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 </style>

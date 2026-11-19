@@ -96,7 +96,7 @@ async function start(): Promise<void> {
       virtual_students: students.value.map(toWireStudent),
       material_id: material.value?.material_id ?? null,
     })
-    await router.push(`/student/training/sessions/${session.session_id}`)
+    await router.push(`/student/training/sessions/${session.session_id}/classroom`)
   } catch (error) {
     errorMessage.value = error instanceof ApiError
       ? error.message
@@ -199,13 +199,13 @@ async function start(): Promise<void> {
 }
 
 .form-label {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 13px;
 }
 
 .hint {
   margin: 0 0 16px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
@@ -223,7 +223,7 @@ async function start(): Promise<void> {
 
 .material-box__file p {
   margin: 6px 0 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
@@ -241,7 +241,7 @@ async function start(): Promise<void> {
 
 .material-box__drop p {
   margin: 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .upload-button {
@@ -249,9 +249,9 @@ async function start(): Promise<void> {
   overflow: hidden;
   display: inline-flex;
   padding: 8px 14px;
-  border: 1px solid #f5a524;
+  border: 1px solid var(--m1-accent);
   border-radius: 8px;
-  color: #f5a524;
+  color: var(--m1-accent);
   cursor: pointer;
 }
 

@@ -67,7 +67,15 @@ function defaultUserAgent(): string {
 function defaultMediaDevices(): MediaDevicesLike {
   const devices = typeof navigator === 'undefined' ? undefined : navigator.mediaDevices
   if (!devices) {
-    throw new MediaError('unsupported', '当前浏览器不支持媒体采集')
+    // Browsers only expose mediaDevices in a secure context. localhost / 127.0.0.1
+    // count as trustworthy even over HTTP; a LAN IP such as http://192.168.x.x does not.
+    const insecure = typeof window !== 'undefined' && window.isSecureContext === false
+    throw new MediaError(
+      'unsupported',
+      insecure
+        ? '录制需要 HTTPS 或 localhost 安全上下文，请通过 http://localhost:5173 打开'
+        : '当前浏览器不支持媒体采集',
+    )
   }
   return devices
 }

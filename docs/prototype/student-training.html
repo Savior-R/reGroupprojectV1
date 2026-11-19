@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>训练 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .training-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .training-main {
+      display: grid;
+      gap: 26px;
+    }
+
+    .level-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .level-row .segmented {
+      background: var(--surface);
+    }
+
+    .level-note {
+      color: var(--text-3);
+      font-size: 10.5px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .section-head h2 {
+      font-size: 21px;
+    }
+
+    .section-head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .section-head .count-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .template-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .template-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+      transition:
+        transform var(--dur-2) var(--ease),
+        border-color var(--dur-2) var(--ease),
+        box-shadow var(--dur-2) var(--ease);
+    }
+
+    .template-card:hover {
+      border-color: var(--line-strong);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-2);
+    }
+
+    .template-card::before {
+      position: absolute;
+      top: 0;
+      left: 18px;
+      width: 38px;
+      height: 2px;
+      background: var(--brand);
+      content: "";
+    }
+
+    .template-card--recommended::before {
+      background: var(--accent);
+    }
+
+    .template-card__top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .template-card__icon {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: var(--r-sm);
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .template-card--recommended .template-card__icon {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .template-card__icon svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .template-card h3 {
+      margin-top: 13px;
+      font-size: 20px;
+    }
+
+    .template-card__course {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .template-card__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px 12px;
+      margin-top: 12px;
+      color: var(--text-2);
+      font-size: 10px;
+    }
+
+    .template-card__meta span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .template-card__meta [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      color: var(--text-3);
+    }
+
+    .template-card__foot {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 16px;
+      padding-top: 13px;
+      border-top: 1px solid var(--line);
+    }
+
+    .template-card__foot .spacer {
+      flex: 1;
+    }
+
+    .template-card--mine {
+      border-style: solid;
+      box-shadow: none;
+    }
+
+    .template-card__foot .action-danger {
+      color: var(--danger);
+    }
+
+    .template-card__foot .action-danger:hover {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .create-card {
+      display: flex;
+      min-height: 190px;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 18px;
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--r-lg);
+      background: rgba(255, 253, 248, 0.5);
+    }
+
+    .create-card__icon {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      color: var(--text-3);
+    }
+
+    .create-card__icon svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .create-card h3 {
+      margin-top: 12px;
+      font-size: 18px;
+    }
+
+    .create-card p {
+      margin-top: 4px;
+      color: var(--text-3);
+      font-size: 10px;
+      line-height: 1.55;
+    }
+
+    .create-card .btn {
+      margin-top: 13px;
+    }
+
+    /* Free training */
+    .free-card {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      overflow: hidden;
+      padding: 24px 26px;
+      border-radius: var(--r-lg);
+      background:
+        radial-gradient(480px 220px at 86% 0%, rgba(224, 164, 74, 0.13), transparent 65%),
+        linear-gradient(140deg, #173f36, #0d2d26);
+      color: #eef3ee;
+      box-shadow: var(--shadow-2);
+    }
+
+    .free-card::after {
+      position: absolute;
+      right: -40px;
+      bottom: -80px;
+      width: 220px;
+      height: 220px;
+      border: 1px solid rgba(238, 243, 238, 0.1);
+      border-radius: 50%;
+      box-shadow: 0 0 0 20px rgba(238, 243, 238, 0.028);
+      content: "";
+      pointer-events: none;
+    }
+
+    .free-card__icon {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      width: 50px;
+      height: 50px;
+      flex: none;
+      place-items: center;
+      border: 1px solid rgba(238, 243, 238, 0.16);
+      border-radius: var(--r-md);
+      background: rgba(238, 243, 238, 0.07);
+      color: #e6b45d;
+    }
+
+    .free-card__icon svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .free-card__body {
+      position: relative;
+      z-index: 1;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .free-card__body h2 {
+      color: #f5f7f2;
+      font-size: 21px;
+    }
+
+    .free-card__body p {
+      margin-top: 4px;
+      color: rgba(238, 243, 238, 0.58);
+      font-size: 10.5px;
+      line-height: 1.6;
+    }
+
+    .free-card .btn--primary {
+      position: relative;
+      z-index: 1;
+      border-color: #e0a44a;
+      background: #e0a44a;
+      color: #1b1408;
+      flex: none;
+    }
+
+    .free-card .btn--primary:hover {
+      border-color: #ecb65f;
+      background: #ecb65f;
+      color: #1b1408;
+    }
+
+    /* Aside */
+    .side-stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .side-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .side-card .card-head,
+    .side-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .path {
+      display: grid;
+      gap: 0;
+    }
+
+    .path-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .path-step:last-child {
+      border-bottom: 0;
+    }
+
+    .path-step__mark {
+      display: grid;
+      width: 22px;
+      height: 22px;
+      flex: none;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+    }
+
+    .path-step.is-active .path-step__mark {
+      border-color: var(--brand);
+      background: var(--brand);
+      color: var(--on-brand);
+    }
+
+    .path-step strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .path-step span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 9.5px;
+      line-height: 1.5;
+    }
+
+    .record-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .record {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .record:last-child {
+      border-bottom: 0;
+    }
+
+    .record__score {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      flex: none;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--paper-2);
+      color: var(--text);
+      font-family: var(--font-serif);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+
+    .record__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .record__main strong {
+      display: block;
+      overflow: hidden;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .record__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .quota {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 7px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .quota strong {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    @media (max-width: 1180px) {
+      .training-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .side-stack {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 900px) {
+      .template-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .side-stack {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .free-card {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body data-role="student" data-nav="training">
+  <div data-app-header></div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">TRAINING / 训练</p>
+        <h1 class="page-title">训练</h1>
+        <p class="page-lead">选择教师发布的模板，或创建 / 复制自己的模板；训练配置可引用全部我的模板，再自由调整。</p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn--secondary" href="student-training.html#records"><span data-icon="clock"></span>训练记录</a>
+        <a class="btn btn--primary" href="training-config.html?mode=free"><span data-icon="sparkles"></span>自由训练</a>
+      </div>
+    </header>
+
+    <div class="stat-strip" style="margin-bottom:22px">
+      <div class="stat"><div class="stat__label">本周训练</div><div class="stat__value">5</div><div class="stat__meta">目标 4 次 · 已达成</div></div>
+      <div class="stat"><div class="stat__label">教师模板</div><div class="stat__value">3</div><div class="stat__meta">当前档位可见</div></div>
+      <div class="stat"><div class="stat__label">我的模板</div><div class="stat__value" id="my-template-stat">2 <small>/ 30</small></div><div class="stat__meta" id="my-template-meta">含 1 个模拟考核</div></div>
+      <div class="stat"><div class="stat__label">训练平均分</div><div class="stat__value stat__value--brand">86.0</div><div class="stat__meta">最近 3 次</div></div>
+    </div>
+
+    <div class="training-layout">
+      <div class="training-main">
+        <div class="level-row">
+          <div class="segmented" data-tabs="training-level" role="tablist" aria-label="训练档位">
+            <button type="button" role="tab" aria-selected="true" data-tab="progressive">进阶</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="mock_exam">模拟考核</button>
+          </div>
+          <span class="level-note">进阶：15—20 分钟，有提示；模拟考核：固定 20 分钟，到点自动结束。</span>
+        </div>
+
+        <section>
+          <div class="section-head">
+            <div>
+              <h2>教师发布模板</h2>
+              <p>来自当前课程的教师模板 · 不显示参考材料与权重</p>
+            </div>
+            <span class="count-badge"><span data-icon="layers"></span>3 个</span>
+          </div>
+          <div class="template-grid" id="teacher-template-grid">
+            <article class="template-card template-card--recommended" data-training-level="progressive">
+              <div class="template-card__top">
+                <span class="template-card__icon"><span data-icon="book-open"></span></span>
+                <span class="badge badge--accent">推荐</span>
+              </div>
+              <h3>荷塘月色</h3>
+              <p class="template-card__course">语文教学论 · 王宁 · 进阶</p>
+              <div class="template-card__meta">
+                <span><span data-icon="clock"></span>20 分钟</span>
+                <span><span data-icon="users"></span>3 名学生</span>
+                <span><span data-icon="camera"></span>三路录制</span>
+              </div>
+              <div class="template-card__foot">
+                <a class="btn btn--primary btn--sm" href="training-config.html?mode=template">开始训练</a>
+                <span class="spacer"></span>
+                <a class="btn btn--ghost btn--sm" href="student-template-editor.html?source=copy&from=teacher-1">复制到我的模板</a>
+              </div>
+            </article>
+
+            <article class="template-card" data-training-level="progressive">
+              <div class="template-card__top">
+                <span class="template-card__icon"><span data-icon="book"></span></span>
+                <span class="badge">已复制</span>
+              </div>
+              <h3>少年闰土</h3>
+              <p class="template-card__course">微格教学实训 · 李静 · 进阶</p>
+              <div class="template-card__meta">
+                <span><span data-icon="clock"></span>15 分钟</span>
+                <span><span data-icon="users"></span>2 名学生</span>
+                <span><span data-icon="camera"></span>三路录制</span>
+              </div>
+              <div class="template-card__foot">
+                <a class="btn btn--primary btn--sm" href="training-config.html?mode=template">开始训练</a>
+                <span class="spacer"></span>
+                <a class="btn btn--ghost btn--sm" href="student-template-editor.html?id=mine-1">已复制 · 编辑</a>
+              </div>
+            </article>
+
+            <article class="template-card" data-training-level="mock_exam" hidden>
+              <div class="template-card__top">
+                <span class="template-card__icon"><span data-icon="target"></span></span>
+                <span class="badge badge--warning">模拟考核</span>
+              </div>
+              <h3>教师资格证 · 全真模拟</h3>
+              <p class="template-card__course">微格教学实训 · 李静 · 模拟考核</p>
+              <div class="template-card__meta">
+                <span><span data-icon="clock"></span>20 分钟</span>
+                <span><span data-icon="users"></span>4 名学生</span>
+                <span><span data-icon="camera"></span>两路录制</span>
+              </div>
+              <div class="template-card__foot">
+                <a class="btn btn--primary btn--sm" href="training-config.html?mode=template">开始训练</a>
+                <span class="spacer"></span>
+                <a class="btn btn--ghost btn--sm" href="student-template-editor.html?source=copy&from=teacher-3">复制到我的模板</a>
+              </div>
+            </article>
+          </div>
+          <div class="list-foot">
+            <span class="list-foot__info" id="teacher-template-info">共 3 个教师模板 · 当前档位 2</span>
+            <div class="pagination" aria-label="教师模板分页">
+              <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+              <button class="pagination__btn is-active" type="button">1</button>
+              <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <div>
+              <h2>我的模板</h2>
+              <p>自己创建或从教师模板复制；训练配置可引用全部模板并自由修改</p>
+            </div>
+            <span class="count-badge" id="my-template-count"><span data-icon="layers"></span><span id="my-template-count-text">2 / 30</span></span>
+          </div>
+          <div class="template-grid" id="my-template-grid">
+            <article class="template-card template-card--mine" data-training-level="progressive" data-my-template>
+              <div class="template-card__top">
+                <span class="template-card__icon"><span data-icon="edit"></span></span>
+                <span class="badge badge--success">active</span>
+              </div>
+              <h3>荷塘月色（我的副本）</h3>
+              <p class="template-card__course">复制自 王宁 · 进阶 · 20 分钟 · 3 名学生</p>
+              <div class="template-card__meta">
+                <span><span data-icon="refresh"></span>更新于 11-15</span>
+                <span><span data-icon="layers"></span>复制的</span>
+              </div>
+              <div class="template-card__foot">
+                <a class="btn btn--primary btn--sm" href="training-config.html?mode=template&template=mine-1">开始训练</a>
+                <a class="btn btn--ghost btn--sm" href="training-config.html?mode=free&template=mine-1">引用配置</a>
+                <span class="spacer"></span>
+                <a class="btn btn--ghost btn--sm" href="student-template-editor.html?id=mine-1">编辑</a>
+                <button class="btn btn--ghost btn--sm action-danger" type="button" data-open="delete-template-modal">删除</button>
+              </div>
+            </article>
+
+            <article class="template-card template-card--mine" data-training-level="mock_exam" data-my-template hidden>
+              <div class="template-card__top">
+                <span class="template-card__icon"><span data-icon="target"></span></span>
+                <span class="badge badge--success">active</span>
+              </div>
+              <h3>全真模拟 · 我的配置</h3>
+              <p class="template-card__course">自己创建 · 模拟考核 · 20 分钟 · 3 名学生</p>
+              <div class="template-card__meta">
+                <span><span data-icon="refresh"></span>更新于 11-13</span>
+                <span><span data-icon="edit"></span>创建的</span>
+              </div>
+              <div class="template-card__foot">
+                <a class="btn btn--primary btn--sm" href="training-config.html?mode=template&template=mine-2">开始训练</a>
+                <a class="btn btn--ghost btn--sm" href="training-config.html?mode=free&template=mine-2">引用配置</a>
+                <span class="spacer"></span>
+                <a class="btn btn--ghost btn--sm" href="student-template-editor.html?id=mine-2">编辑</a>
+                <button class="btn btn--ghost btn--sm action-danger" type="button" data-open="delete-template-modal">删除</button>
+              </div>
+            </article>
+
+            <div class="create-card">
+              <span class="create-card__icon"><span data-icon="plus"></span></span>
+              <h3>从零创建模板</h3>
+              <p>设置课题、档位、时长与虚拟学生；保存后可在训练配置中引用，并继续自由修改。</p>
+              <a class="btn btn--secondary btn--sm" href="student-template-editor.html">新建模板</a>
+            </div>
+          </div>
+          <div class="list-foot">
+            <span class="list-foot__info" id="my-template-info">共 2 个我的模板 · 当前档位 1</span>
+            <div class="pagination" aria-label="我的模板分页">
+              <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+              <button class="pagination__btn is-active" type="button">1</button>
+              <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="free">
+          <div class="free-card">
+            <span class="free-card__icon"><span data-icon="sparkles"></span></span>
+            <div class="free-card__body">
+              <h2>自由训练</h2>
+              <p>空白开始，或引用我的模板带入课题、时长与虚拟学生；带入后所有配置都可以自由修改。</p>
+            </div>
+            <a class="btn btn--primary" href="training-config.html?mode=free"><span data-icon="arrow-right"></span>开始自由训练</a>
+          </div>
+        </section>
+      </div>
+
+      <aside class="side-stack">
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">训练路径</h2>
+              <p class="card-sub">进阶 → 模拟考核</p>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="path">
+              <div class="path-step is-active">
+                <span class="path-step__mark">1</span>
+                <div><strong>进阶训练</strong><span>有提示、可调整虚拟学生；先练稳课堂结构。</span></div>
+              </div>
+              <div class="path-step">
+                <span class="path-step__mark">2</span>
+                <div><strong>模拟考核</strong><span>固定 20 分钟，到点自动结束；用于检验真实水平。</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="side-card" id="records">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">最近记录</h2>
+              <p class="card-sub">每条保留 1 个月</p>
+            </div>
+            <a class="chip" href="student-training.html">全部</a>
+          </div>
+          <div class="card-body" style="padding-top:6px;padding-bottom:6px">
+            <div class="record-list">
+              <div class="record">
+                <span class="record__score">88.0</span>
+                <div class="record__main"><strong>荷塘月色 · 进阶</strong><span>11-15 · 已完成 · 剩 30 天</span></div>
+                <a class="btn btn--ghost btn--xs" href="report.html">报告</a>
+              </div>
+              <div class="record">
+                <span class="record__score">84.5</span>
+                <div class="record__main"><strong>自由训练 · 15 分钟</strong><span>11-12 · 已完成 · 剩 27 天</span></div>
+                <a class="btn btn--ghost btn--xs" href="report.html">报告</a>
+              </div>
+              <div class="record">
+                <span class="record__score" style="color:var(--warning)">…</span>
+                <div class="record__main"><strong>少年闰土 · 进阶</strong><span>11-16 · 评测中</span></div>
+                <span class="badge badge--warning">等待</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">模板额度</h2>
+              <p class="card-sub">个人模板 · active</p>
+            </div>
+            <span class="badge" id="my-template-quota-badge">2 / 30</span>
+          </div>
+          <div class="card-body">
+            <div class="quota"><span>已使用</span><strong id="my-template-quota-used">2 / 30</strong></div>
+            
+            <p class="xs faint" style="margin-top:10px;line-height:1.6">创建、复制共用同一额度；教师模板发布到课程后仍归教师所有。</p>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Delete template modal -->
+  <div class="overlay" data-overlay-for="delete-template-modal"></div>
+  <div class="modal" id="delete-template-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="delete-template-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="delete-template-title">删除我的模板</div>
+        <div class="drawer__sub">仅删除自己的模板；教师发布的原模板不受影响。</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="delete-template-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--danger">
+        <span data-icon="alert-triangle"></span>
+        <div>删除「<strong id="delete-template-name">该模板</strong>」后，训练配置中将不再出现该模板；该模板关联的训练记录、录像 / 报告与参考材料会一并清理。此操作不可撤销。</div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="delete-template-modal">取消</button>
+      <button class="btn btn--danger-solid" type="button" id="confirm-delete-template" data-close="delete-template-modal" data-toast="我的模板已删除（原型演示）。">删除模板</button>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+  <script>
+    function updateTrainingCounts() {
+      const teacher = document.querySelectorAll("#teacher-template-grid [data-training-level]:not([hidden])").length;
+      const mineAll = Array.from(document.querySelectorAll("#my-template-grid [data-my-template]"));
+      const mine = mineAll.filter(function (card) { return !card.hidden; }).length;
+      const mock = mineAll.filter(function (card) { return card.dataset.trainingLevel === "mock_exam"; }).length;
+      document.getElementById("teacher-template-info").textContent = "共 3 个教师模板 · 当前档位 " + teacher;
+      document.getElementById("my-template-info").textContent = "共 " + mineAll.length + " 个我的模板 · 当前档位 " + mine;
+      document.getElementById("my-template-count-text").textContent = mineAll.length + " / 30";
+      document.getElementById("my-template-stat").innerHTML = mineAll.length + ' <small>/ 30</small>';
+      document.getElementById("my-template-meta").textContent = "含 " + mock + " 个模拟考核";
+      document.getElementById("my-template-quota-badge").textContent = mineAll.length + " / 30";
+      document.getElementById("my-template-quota-used").textContent = mineAll.length + " / 30";
+    }
+
+    document.querySelectorAll('[data-tabs="training-level"] [data-tab]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        const level = button.dataset.tab;
+        document.querySelectorAll("[data-training-level]").forEach(function (card) {
+          card.hidden = card.dataset.trainingLevel !== level;
+        });
+        updateTrainingCounts();
+      });
+    });
+
+    let pendingMyTemplate = null;
+    document.querySelectorAll('[data-open="delete-template-modal"]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        pendingMyTemplate = button.closest("[data-my-template]");
+        document.getElementById("delete-template-name").textContent = pendingMyTemplate.querySelector("h3").textContent;
+      });
+    });
+
+    document.getElementById("confirm-delete-template").addEventListener("click", function () {
+      if (!pendingMyTemplate) return;
+      pendingMyTemplate.remove();
+      pendingMyTemplate = null;
+      updateTrainingCounts();
+    });
+
+    updateTrainingCounts();
+  </script>
+</body>
+</html>

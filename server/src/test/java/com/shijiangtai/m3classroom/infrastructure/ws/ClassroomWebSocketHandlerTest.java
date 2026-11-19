@@ -161,12 +161,12 @@ class ClassroomWebSocketHandlerTest {
     }
 
     private static Task publishedTask() {
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()), new CourseId(COURSE_ID),
                 new AccountId(TEACHER_ID), TestFixtures.freeDraft(), NOW);
         TaskSnapshot snapshot = new TaskSnapshotFactory().create(
                 task, TestFixtures.course(), List.of(), NOW);
-        task.publish(snapshot, NOW);
+        task.publishInitial(snapshot, null, NOW);
         return task;
     }
 

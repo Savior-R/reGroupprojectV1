@@ -18,6 +18,10 @@ public interface SubmissionRepository {
 
     boolean existsBySession(SessionId sessionId);
 
+    default long countByTask(TaskId taskId) {
+        throw new UnsupportedOperationException("countByTask is not implemented");
+    }
+
     /**
      * Submissions whose course ended at least one year before {@code now}
      * ({@code courses.end_at + INTERVAL '1 year' <= now}). A null course end is never a

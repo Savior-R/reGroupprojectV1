@@ -3,7 +3,9 @@ FROM gradle:8.14.3-jdk21 AS build
 WORKDIR /workspace
 COPY settings.gradle.kts build.gradle.kts ./
 COPY src/main ./src/main
-RUN gradle bootJar --no-daemon -x test
+# BuildKit 缓存 Gradle 依赖，避免每次源码变更都重新访问 Maven Central。
+RUN --mount=type=cache,target=/home/gradle/.gradle \
+    gradle bootJar --no-daemon -x test
 
 FROM eclipse-temurin:21-jre-alpine
 RUN addgroup -S app && adduser -S app -G app

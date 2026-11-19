@@ -5,8 +5,9 @@ import com.shijiangtai.m4eval.domain.TrainingRecordSelectedEvent;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Creates an evaluation after a submission or training record is committed (05 §4.1).
@@ -26,7 +27,8 @@ public class EvaluationTriggerListener {
                 applicationService, "applicationService");
     }
 
-    @EventListener
+    @TransactionalEventListener(
+            phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onSubmissionCreated(SubmissionCreatedEvent event) {
         try {
             applicationService.getOrCreateForSubmission(event.submissionId());
@@ -36,7 +38,8 @@ public class EvaluationTriggerListener {
         }
     }
 
-    @EventListener
+    @TransactionalEventListener(
+            phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onTrainingRecordSelected(TrainingRecordSelectedEvent event) {
         try {
             applicationService.getOrCreateForTrainingRecord(event.trainingRecordId());

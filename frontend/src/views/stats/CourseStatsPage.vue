@@ -138,12 +138,12 @@ void load()
   max-width: 1100px;
   margin: 0 auto;
   padding: 24px;
-  color: #e8eef9;
+  color: var(--m1-text-primary);
 }
 
 .m7-card {
-  border: 1px solid #1f2b44;
-  background: #0f1a2e;
+  border: 1px solid var(--m1-border);
+  background: var(--m1-bg-surface);
 }
 
 .m7-section {
@@ -165,31 +165,31 @@ void load()
 
 .m7-summary__item {
   padding: 10px 12px;
-  border: 1px solid #1f2b44;
+  border: 1px solid var(--m1-border);
   border-radius: 10px;
-  background: #111c33;
+  background: var(--m1-bg-subtle);
 }
 
 .m7-summary__item span {
   display: block;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
 .m7-summary__item strong {
-  color: #f5a524;
+  color: var(--m1-accent);
   font-size: 20px;
 }
 
 .m7-table {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: #111c33;
-  --el-table-row-hover-bg-color: #17233c;
+  --el-table-header-bg-color: var(--m1-bg-subtle);
+  --el-table-row-hover-bg-color: var(--m1-bg-hover);
 }
 
 .m7-state {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .m7-alert {
@@ -198,7 +198,7 @@ void load()
 
 .m7-error-code {
   margin: 4px 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 </style>

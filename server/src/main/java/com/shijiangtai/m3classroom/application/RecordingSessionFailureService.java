@@ -91,6 +91,8 @@ class RecordingSessionFailureService {
 
     private static boolean isTerminalForRecordingFailure(SessionStatus status) {
         return status == SessionStatus.SUBMITTED
+                || status == SessionStatus.SELECTED
+                || status == SessionStatus.EVALUATED
                 || status == SessionStatus.CANCELLED
                 || status == SessionStatus.FAILED;
     }

@@ -97,6 +97,7 @@ public final class Session {
     /**
      * Rebuilds a session from persisted fields. {@code courseId} is nullable because the
      * {@code sessions.course_id} foreign key is {@code ON DELETE SET NULL}.
+     * {@code taskId} is nullable for M6 training sessions, which have no task row.
      */
     public static Session rehydrate(
             SessionId id,
@@ -115,7 +116,6 @@ public final class Session {
             Instant updatedAt) {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(type, "type");
-        Objects.requireNonNull(taskId, "taskId");
         Objects.requireNonNull(studentAccountId, "studentAccountId");
         Objects.requireNonNull(mode, "mode");
         Objects.requireNonNull(status, "status");
@@ -188,6 +188,8 @@ public final class Session {
         Objects.requireNonNull(reason, "reason");
         Objects.requireNonNull(now, "now");
         if (status == SessionStatus.SUBMITTED
+                || status == SessionStatus.SELECTED
+                || status == SessionStatus.EVALUATED
                 || status == SessionStatus.CANCELLED
                 || status == SessionStatus.FAILED) {
             throw stateInvalid("fail", "会话已处于终态");

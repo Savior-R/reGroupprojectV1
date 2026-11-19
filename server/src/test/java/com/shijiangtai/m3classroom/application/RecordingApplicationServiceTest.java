@@ -687,11 +687,11 @@ class RecordingApplicationServiceTest {
                         RubricWeights.defaults(TaskMode.INTERVIEW), null, List.of(),
                         new QuestionConfig(List.of(), 300))
                 : freeDraft();
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()), COURSE, TEACHER, draft, NOW);
         TaskSnapshot snapshot = new TaskSnapshotFactory().create(
                 task, course(), List.of(), NOW);
-        task.publish(snapshot, NOW);
+        task.publishInitial(snapshot, null, NOW);
         tasks.save(task);
         return task.id();
     }

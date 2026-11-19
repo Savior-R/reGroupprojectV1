@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>注册 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    body {
+      background-image:
+        radial-gradient(900px 520px at 92% -8%, rgba(42, 103, 88, 0.08), transparent 62%),
+        radial-gradient(700px 460px at -8% 20%, rgba(168, 68, 47, 0.045), transparent 58%),
+        repeating-linear-gradient(0deg, rgba(24, 38, 34, 0.014) 0 1px, transparent 1px 4px);
+    }
+
+    .register-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 22px 40px;
+    }
+
+    .register-top__right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      color: var(--text-3);
+      font-size: 11px;
+    }
+
+    .register-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 48px;
+      align-items: start;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 34px 40px 80px;
+    }
+
+    .register-head {
+      margin-bottom: 28px;
+    }
+
+    .register-head h1 {
+      margin-top: 10px;
+      font-size: 42px;
+      letter-spacing: -0.01em;
+    }
+
+    .register-head p {
+      max-width: 48em;
+      margin-top: 10px;
+      color: var(--text-2);
+      font-size: 12.5px;
+      line-height: 1.75;
+    }
+
+    .step-indicator {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .step-indicator__item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-3);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .step-indicator__num {
+      display: inline-grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: var(--surface);
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 9px;
+    }
+
+    .step-indicator__item.is-active {
+      color: var(--text);
+    }
+
+    .step-indicator__item.is-active .step-indicator__num {
+      border-color: var(--brand);
+      background: var(--brand);
+      color: var(--on-brand);
+    }
+
+    .step-indicator__item.is-done .step-indicator__num {
+      border-color: var(--success);
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .step-indicator__line {
+      width: 42px;
+      height: 1px;
+      background: var(--line-strong);
+    }
+
+    .reg-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .reg-section {
+      position: relative;
+      padding: 26px 28px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .reg-section:last-of-type {
+      border-bottom: 0;
+    }
+
+    .reg-section__head {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+
+    .reg-section__num {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      flex: none;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: var(--paper-0);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .reg-section__head h2 {
+      font-size: 20px;
+    }
+
+    .reg-section__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 11px;
+    }
+
+    .account-types {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .type-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      background: var(--surface);
+      cursor: pointer;
+      text-align: left;
+      transition:
+        border-color var(--dur-1) var(--ease),
+        background var(--dur-1) var(--ease),
+        box-shadow var(--dur-1) var(--ease);
+    }
+
+    .type-card:hover {
+      border-color: var(--ink-300);
+    }
+
+    .type-card.is-selected,
+    .type-card[aria-selected="true"] {
+      border-color: var(--brand);
+      background: var(--brand-wash);
+      box-shadow: inset 0 0 0 1px var(--brand);
+    }
+
+    .type-card__icon {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: var(--r-sm);
+      background: var(--paper-2);
+      color: var(--text-2);
+    }
+
+    .type-card.is-selected .type-card__icon,
+    .type-card[aria-selected="true"] .type-card__icon {
+      background: var(--brand);
+      color: var(--on-brand);
+    }
+
+    .type-card__icon svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .type-card__title {
+      color: var(--text);
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+
+    .type-card__desc {
+      color: var(--text-3);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+
+    .type-card__check {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      color: var(--brand);
+      opacity: 0;
+      transition: opacity var(--dur-1) var(--ease);
+    }
+
+    .type-card.is-selected .type-card__check,
+    .type-card[aria-selected="true"] .type-card__check {
+      opacity: 1;
+    }
+
+    .type-card__check svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px 18px;
+    }
+
+    .field-grid .span-2 {
+      grid-column: 1 / -1;
+    }
+
+    .password-wrap {
+      position: relative;
+      display: block;
+    }
+
+    .password-wrap .input {
+      padding-right: 42px;
+    }
+
+    .password-wrap .icon-btn {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 36px;
+      height: 36px;
+    }
+
+    .major-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 2px;
+    }
+
+    .major-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-pill);
+      background: var(--surface);
+      color: var(--text-2);
+      font-size: 10.5px;
+    }
+
+    .major-chip.is-active {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .reg-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 28px;
+      border-top: 1px solid var(--line);
+      background: var(--paper-0);
+    }
+
+    .reg-foot__hint {
+      color: var(--text-3);
+      font-size: 10.5px;
+    }
+
+    /* Aside */
+    .reg-aside {
+      position: sticky;
+      top: 30px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .summary-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .summary-card__head {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+      background:
+        linear-gradient(135deg, rgba(42, 103, 88, 0.08), transparent 65%),
+        var(--surface);
+    }
+
+    .summary-card__head .eyebrow {
+      color: var(--accent);
+    }
+
+    .summary-card__head h2 {
+      margin-top: 6px;
+      font-size: 22px;
+    }
+
+    .summary-list {
+      display: grid;
+      gap: 0;
+      padding: 6px 20px;
+    }
+
+    .summary-item {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 11.5px;
+    }
+
+    .summary-item:last-child {
+      border-bottom: 0;
+    }
+
+    .summary-item dt {
+      color: var(--text-3);
+    }
+
+    .summary-item dd {
+      margin: 0;
+      color: var(--text);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .summary-card__foot {
+      padding: 16px 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .reg-notes {
+      padding: 18px 20px;
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--r-lg);
+      background: rgba(255, 253, 248, 0.5);
+    }
+
+    .reg-notes h3 {
+      font-size: 14px;
+    }
+
+    .reg-notes ul {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .reg-notes li {
+      display: flex;
+      gap: 8px;
+      color: var(--text-3);
+      font-size: 10.5px;
+      line-height: 1.6;
+    }
+
+    .reg-notes li::before {
+      color: var(--accent);
+      content: "·";
+    }
+
+    @media (max-width: 1080px) {
+      .register-shell {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 24px;
+      }
+
+      .reg-aside {
+        position: static;
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .register-top,
+      .register-shell {
+        padding-right: 18px;
+        padding-left: 18px;
+      }
+
+      .account-types,
+      .field-grid,
+      .reg-aside {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .field-grid .span-2 {
+        grid-column: auto;
+      }
+
+      .register-head h1 {
+        font-size: 34px;
+      }
+
+      .reg-section {
+        padding: 22px 18px;
+      }
+
+      .reg-foot {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 16px 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="register-top">
+    <a class="brand" href="index.html" aria-label="三尺讲台">
+      <span class="seal seal--sm" aria-hidden="true">三</span>
+      <span class="brand__text">
+        <span class="brand__name">三尺讲台</span>
+        <span class="brand__sub">TEACHING STUDIO</span>
+      </span>
+    </a>
+    <div class="register-top__right">
+      <span>已有账号？</span>
+      <a href="login.html">去登录</a>
+      <span style="color:var(--line-strong)">/</span>
+      <a href="index.html">原型说明</a>
+    </div>
+  </header>
+
+  <main class="register-shell">
+    <div>
+      <header class="register-head">
+        <p class="eyebrow">CREATE ACCOUNT</p>
+        <h1>先选身份，再进课堂。</h1>
+        <p>账号类型提交后不可变更；学生和教师需要绑定学校、专业与班级，管理员注册后进入建校流程。</p>
+        <div class="step-indicator" aria-label="注册步骤">
+          <span class="step-indicator__item is-active"><span class="step-indicator__num">1</span>身份与组织</span>
+          <span class="step-indicator__line"></span>
+          <span class="step-indicator__item"><span class="step-indicator__num">2</span>账号与密码</span>
+          <span class="step-indicator__line"></span>
+          <span class="step-indicator__item"><span class="step-indicator__num">3</span>完成</span>
+        </div>
+      </header>
+
+      <div class="reg-card">
+        <section class="reg-section">
+          <div class="reg-section__head">
+            <span class="reg-section__num">01</span>
+            <div>
+              <h2>选择账号类型</h2>
+              <p>学生 / 教师 / 管理员；注册后不可变更。</p>
+            </div>
+          </div>
+
+          <div class="account-types" data-tabs="account-type" role="tablist" aria-label="账号类型">
+            <button class="type-card is-selected" type="button" role="tab" aria-selected="true" data-tab="student">
+              <span class="type-card__check"><span data-icon="check-circle"></span></span>
+              <span class="type-card__icon"><span data-icon="graduation"></span></span>
+              <span class="type-card__title">学生</span>
+              <span class="type-card__desc">参加课程、试讲任务与训练，查看自己的报告。</span>
+            </button>
+            <button class="type-card" type="button" role="tab" aria-selected="false" data-tab="teacher">
+              <span class="type-card__check"><span data-icon="check-circle"></span></span>
+              <span class="type-card__icon"><span data-icon="podium"></span></span>
+              <span class="type-card__title">教师</span>
+              <span class="type-card__desc">创建课程与任务、管理题库、评分与统计。</span>
+            </button>
+            <button class="type-card" type="button" role="tab" aria-selected="false" data-tab="admin">
+              <span class="type-card__check"><span data-icon="check-circle"></span></span>
+              <span class="type-card__icon"><span data-icon="shield"></span></span>
+              <span class="type-card__title">管理员</span>
+              <span class="type-card__desc">创建学校、维护组织与教师权限。</span>
+            </button>
+          </div>
+        </section>
+
+        <div data-panel-group="account-type">
+          <div data-panel="student">
+            <section class="reg-section">
+              <div class="reg-section__head">
+                <span class="reg-section__num">02</span>
+                <div>
+                  <h2>学校与专业</h2>
+                  <p>班级必须属于所选学校 / 专业 / 年级。</p>
+                </div>
+              </div>
+              <div class="field-grid">
+                <label class="field span-2">
+                  <span class="label">学校 <span class="req">*</span></span>
+                  <select class="select">
+                    <option>华中师范大学</option>
+                    <option>北京师范大学</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="label">年级 <span class="req">*</span></span>
+                  <select class="select">
+                    <option>2024 级</option>
+                    <option>2023 级</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="label">专业 <span class="req">*</span></span>
+                  <select class="select">
+                    <option>汉语言文学（师范）</option>
+                    <option>数学与应用数学（师范）</option>
+                  </select>
+                </label>
+                <label class="field span-2">
+                  <span class="label">班级 <span class="req">*</span></span>
+                  <div class="major-chips">
+                    <span class="major-chip is-active">语文2401</span>
+                    <span class="major-chip">语文2402</span>
+                    <span class="major-chip">语文2403</span>
+                  </div>
+                  <span class="field-hint">没有匹配班级时，请联系管理员先维护组织数据。</span>
+                </label>
+              </div>
+            </section>
+          </div>
+
+          <div data-panel="teacher" hidden>
+            <section class="reg-section">
+              <div class="reg-section__head">
+                <span class="reg-section__num">02</span>
+                <div>
+                  <h2>学校与专业范围</h2>
+                  <p>教师至少选择一个本校启用专业；可多选。</p>
+                </div>
+              </div>
+              <div class="field-grid">
+                <label class="field span-2">
+                  <span class="label">学校 <span class="req">*</span></span>
+                  <select class="select">
+                    <option>华中师范大学</option>
+                    <option>北京师范大学</option>
+                  </select>
+                </label>
+                <label class="field span-2">
+                  <span class="label">专业范围 <span class="req">*</span></span>
+                  <div class="major-chips">
+                    <span class="major-chip is-active">汉语言文学</span>
+                    <span class="major-chip is-active">学科教学（语文）</span>
+                    <span class="major-chip">数学与应用数学</span>
+                    <span class="major-chip">英语</span>
+                    <span class="major-chip">思想政治教育</span>
+                  </div>
+                  <span class="field-hint">教师可进入对应专业的课程与任务；管理员可后续调整。</span>
+                </label>
+              </div>
+            </section>
+          </div>
+
+          <div data-panel="admin" hidden>
+            <section class="reg-section">
+              <div class="reg-section__head">
+                <span class="reg-section__num">02</span>
+                <div>
+                  <h2>管理员说明</h2>
+                  <p>管理员不绑定学校；注册后先创建学校。</p>
+                </div>
+              </div>
+              <div class="alert alert--note">
+                <span data-icon="info"></span>
+                <div>
+                  <div class="alert__title">下一步：创建学校</div>
+                  <span>注册成功后将进入建校流程；建校完成后才能维护专业、班级与教师。</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <section class="reg-section">
+          <div class="reg-section__head">
+            <span class="reg-section__num">03</span>
+            <div>
+              <h2>账号与密码</h2>
+              <p>用户名即真实姓名；平台内唯一，重名请自行加后缀。</p>
+            </div>
+          </div>
+          <div class="field-grid">
+            <label class="field">
+              <span class="label">用户名 <span class="req">*</span></span>
+              <input class="input" type="text" placeholder="例如：林小雨" autocomplete="username">
+              <span class="field-hint">登录时使用，注册后不可修改。</span>
+            </label>
+            <label class="field">
+              <span class="label">邮箱（可选）</span>
+              <input class="input" type="email" placeholder="user@example.com" autocomplete="email">
+              <span class="field-hint">绑定并验证后可用于邮箱验证码登录。</span>
+            </label>
+            <label class="field">
+              <span class="label">密码 <span class="req">*</span></span>
+              <span class="password-wrap">
+                <input class="input" type="password" placeholder="8—64 位" autocomplete="new-password">
+                <button class="icon-btn" type="button" aria-label="显示密码" data-toast="原型演示：密码可见性切换。"><span data-icon="eye"></span></button>
+              </span>
+            </label>
+            <label class="field">
+              <span class="label">确认密码 <span class="req">*</span></span>
+              <input class="input" type="password" placeholder="再次输入密码" autocomplete="new-password">
+            </label>
+          </div>
+          <label class="check-row" style="margin-top:18px">
+            <input type="checkbox" checked hidden>
+            <span class="check-box"><span data-icon="check"></span></span>
+            <span>我已确认账号类型不可变更，并同意平台的使用说明与隐私规则。</span>
+          </label>
+        </section>
+
+        <div class="reg-foot">
+          <span class="reg-foot__hint">提交后自动登录；管理员将进入建校流程。</span>
+          <div class="row">
+            <a class="btn btn--ghost" href="login.html">返回登录</a>
+            <a class="btn btn--primary" href="student-home.html"><span data-icon="check"></span>提交注册</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="reg-aside">
+      <div class="summary-card">
+        <div class="summary-card__head">
+          <p class="eyebrow eyebrow--plain">YOUR DOSSIER</p>
+          <h2>注册摘要</h2>
+        </div>
+        <dl class="summary-list">
+          <div class="summary-item"><dt>账号类型</dt><dd id="summary-type">学生</dd></div>
+          <div class="summary-item"><dt>学校</dt><dd id="summary-school">华中师范大学</dd></div>
+          <div class="summary-item"><dt>专业</dt><dd id="summary-major">汉语言文学</dd></div>
+          <div class="summary-item"><dt>班级</dt><dd id="summary-class">语文2401</dd></div>
+          <div class="summary-item"><dt>用户名</dt><dd>待填写</dd></div>
+        </dl>
+        <div class="summary-card__foot">
+          <div class="alert alert--warning" style="padding:11px 12px">
+            <span data-icon="alert-triangle"></span>
+            <div><span>账号类型提交后不可变更。选错类型只能重新注册。</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="reg-notes">
+        <h3>注册前请确认</h3>
+        <ul>
+          <li>学生班级必须属于所选学校、专业和年级。</li>
+          <li>教师至少选择一个本校启用专业。</li>
+          <li>管理员注册后先建校，再维护组织与教师。</li>
+          <li>用户名平台唯一，建议使用真实姓名；重名可加后缀。</li>
+        </ul>
+      </div>
+    </aside>
+  </main>
+
+  <script src="assets/site.js"></script>
+  <script>
+    const summary = {
+      student: { type: "学生", school: "华中师范大学", major: "汉语言文学", klass: "语文2401" },
+      teacher: { type: "教师", school: "华中师范大学", major: "汉语言文学、学科教学（语文）", klass: "—" },
+      admin: { type: "管理员", school: "—", major: "—", klass: "—" }
+    };
+    document.querySelectorAll('[data-tabs="account-type"] [data-tab]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        const item = summary[button.dataset.tab] || summary.student;
+        document.getElementById("summary-type").textContent = item.type;
+        document.getElementById("summary-school").textContent = item.school;
+        document.getElementById("summary-major").textContent = item.major;
+        document.getElementById("summary-class").textContent = item.klass;
+      });
+    });
+  </script>
+</body>
+</html>

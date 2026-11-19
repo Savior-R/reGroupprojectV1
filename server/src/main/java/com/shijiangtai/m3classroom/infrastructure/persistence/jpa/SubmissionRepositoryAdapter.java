@@ -46,6 +46,11 @@ public class SubmissionRepositoryAdapter implements SubmissionRepository {
     }
 
     @Override
+    public long countByTask(TaskId taskId) {
+        return repository.countByTaskId(taskId.value());
+    }
+
+    @Override
     public List<Submission> findExpiredForRetention(Instant now) {
         return repository.findExpiredForRetention(now).stream()
                 .map(this::toDomain)

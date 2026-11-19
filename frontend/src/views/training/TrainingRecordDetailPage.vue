@@ -9,19 +9,12 @@ import {
   ElDescriptionsItem,
   ElMessage,
   ElMessageBox,
-  ElTable,
-  ElTableColumn,
   ElTag,
 } from 'element-plus'
 import { ApiError } from '../../types/api'
-import { deleteTrainingRecord, getTrainingRecord, getTrainingReport } from './api'
-import {
-  dimensionLabel,
-  evaluationLabel,
-  formatDateTime,
-  levelLabel,
-} from './format'
-import type { TrainingRecordView, TrainingReport } from './types'
+import { deleteTrainingRecord, getTrainingRecord } from './api'
+import { evaluationLabel, formatDateTime, levelLabel } from './format'
+import type { TrainingRecordView } from './types'
 
 /** Record detail / report entry (08 §10.6, §12.7); report is self-only. */
 
@@ -30,7 +23,6 @@ const router = useRouter()
 const recordId = computed(() => String(route.params.recordId ?? ''))
 
 const record = ref<TrainingRecordView | null>(null)
-const report = ref<TrainingReport | null>(null)
 const loading = ref(true)
 const errorMessage = ref('')
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -44,9 +36,6 @@ async function load(): Promise<void> {
   try {
     record.value = await getTrainingRecord(recordId.value)
     errorMessage.value = ''
-    if (record.value.report_available) {
-      await loadReport()
-    }
     if (!evaluating.value) {
       stopPolling()
     }
@@ -57,18 +46,6 @@ async function load(): Promise<void> {
     stopPolling()
   } finally {
     loading.value = false
-  }
-}
-
-async function loadReport(): Promise<void> {
-  try {
-    report.value = await getTrainingReport(recordId.value)
-  } catch (error) {
-    if (error instanceof ApiError
-      && error.code !== 'EVALUATION_NOT_READY'
-      && error.code !== 'EVALUATION_FAILED') {
-      errorMessage.value = error.message
-    }
   }
 }
 
@@ -176,9 +153,14 @@ onBeforeUnmount(stopPolling)
 
       <ElCard shadow="never">
         <template #header><h2>训练回放</h2></template>
-        <div class="replay-placeholder">
-          训练回放复用 05B 布局；M3 训练 session 的回放读取开放后在此挂载。
-        </div>
+        <p class="replay-hint">回放使用 M3 录制舞台：屏幕主画面 + 摄像头小窗 + 事件流。</p>
+        <ElButton
+          type="primary"
+          plain
+          @click="router.push(`/student/training/sessions/${record.session_id}/review`)"
+        >
+          查看回放
+        </ElButton>
       </ElCard>
 
       <ElCard v-if="evaluating" shadow="never">
@@ -193,58 +175,21 @@ onBeforeUnmount(stopPolling)
         </ElAlert>
       </ElCard>
 
-      <template v-else-if="report">
-        <ElCard shadow="never">
-          <template #header><h2>评测报告</h2></template>
-          <div class="score-row">
-            <span>总分</span>
-            <strong>{{ report.total_score ?? '—' }}</strong>
-            <ElTag type="success">{{ evaluationLabel(report.status) }}</ElTag>
-          </div>
-
-          <ElTable :data="report.dimensions" stripe>
-            <ElTableColumn label="维度" min-width="140">
-              <template #default="{ row }">{{ dimensionLabel(row.dimension) }}</template>
-            </ElTableColumn>
-            <ElTableColumn prop="score" label="得分" width="100" />
-            <ElTableColumn label="置信度" width="100">
-              <template #default="{ row }">
-                {{ row.confidence === null ? '—' : `${Math.round(row.confidence * 100)}%` }}
-              </template>
-            </ElTableColumn>
-          </ElTable>
-        </ElCard>
-
-        <ElCard v-if="report.issues.length" shadow="never">
-          <template #header><h2>问题与建议</h2></template>
-          <ul class="issue-list">
-            <li v-for="(issue, index) in report.issues" :key="`${issue.dimension}-${index}`">
-              <div class="issue-list__head">
-                <ElTag :type="issue.severity === 'high' ? 'danger' : 'warning'">
-                  {{ dimensionLabel(issue.dimension) }}
-                </ElTag>
-                <span v-if="issue.start_ms !== null" class="issue-list__time">
-                  {{ Math.round(issue.start_ms / 1000) }}s
-                  <template v-if="issue.end_ms !== null">
-                    – {{ Math.round(issue.end_ms / 1000) }}s
-                  </template>
-                </span>
-              </div>
-              <p>{{ issue.evidence }}</p>
-              <p v-if="issue.suggestion" class="issue-list__suggestion">
-                建议：{{ issue.suggestion }}
-              </p>
-            </li>
-          </ul>
-        </ElCard>
-
-        <ElCard v-if="report.warnings.length" shadow="never">
-          <template #header><h2>提示</h2></template>
-          <ul class="warning-list">
-            <li v-for="warning in report.warnings" :key="warning">{{ warning }}</li>
-          </ul>
-        </ElCard>
-      </template>
+      <ElCard v-else-if="record.report_available" shadow="never">
+        <template #header><h2>评测报告</h2></template>
+        <div class="score-row">
+          <span>总分</span>
+          <strong>{{ record.total_score ?? '—' }}</strong>
+          <ElTag type="success">{{ evaluationLabel(record.evaluation_status) }}</ElTag>
+        </div>
+        <p class="replay-hint">维度得分、置信度、问题时间线与改进建议在完整报告中查看。</p>
+        <ElButton
+          type="primary"
+          @click="router.push(`/student/training/records/${recordId}/report`)"
+        >
+          查看完整评测报告
+        </ElButton>
+      </ElCard>
     </template>
   </div>
 </template>
@@ -264,7 +209,7 @@ onBeforeUnmount(stopPolling)
 }
 
 .state {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .record-head {
@@ -280,7 +225,7 @@ onBeforeUnmount(stopPolling)
 
 .record-head p {
   margin: 0;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .record-head__tags {
@@ -289,15 +234,10 @@ onBeforeUnmount(stopPolling)
   align-items: flex-start;
 }
 
-.replay-placeholder {
-  min-height: 160px;
-  display: grid;
-  place-items: center;
-  color: #8fa3c0;
-  border: 1px dashed rgba(143, 163, 192, 0.35);
-  border-radius: 10px;
-  padding: 16px;
-  text-align: center;
+.replay-hint {
+  margin: 0 0 12px;
+  color: var(--m1-text-secondary);
+  font-size: 13px;
 }
 
 .score-row {
@@ -305,11 +245,11 @@ onBeforeUnmount(stopPolling)
   align-items: baseline;
   gap: 12px;
   margin-bottom: 12px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .score-row strong {
-  color: #f5a524;
+  color: var(--m1-accent);
   font-size: 32px;
 }
 
@@ -333,7 +273,7 @@ onBeforeUnmount(stopPolling)
 }
 
 .issue-list__time {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
   font-size: 12px;
 }
 
@@ -342,12 +282,12 @@ onBeforeUnmount(stopPolling)
 }
 
 .issue-list__suggestion {
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 
 .warning-list {
   margin: 0;
   padding-left: 18px;
-  color: #8fa3c0;
+  color: var(--m1-text-secondary);
 }
 </style>

@@ -7,14 +7,11 @@ import com.shijiangtai.m3classroom.domain.session.SessionType;
 import com.shijiangtai.m3classroom.domain.task.TaskMode;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.CourseId;
-import com.shijiangtai.shared.domain.DomainException;
-import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
 
@@ -83,6 +80,11 @@ public class SessionRepositoryAdapter implements SessionRepository {
     }
 
     @Override
+    public long countByTask(TaskId taskId) {
+        return repository.countByTaskId(taskId.value());
+    }
+
+    @Override
     public List<Session> findExpiredTemporary(Instant now) {
         return repository.findExpiredTemporary(now).stream()
                 .map(this::toDomain)
@@ -98,7 +100,7 @@ public class SessionRepositoryAdapter implements SessionRepository {
         SessionEntity entity = new SessionEntity();
         entity.setId(session.id().value());
         entity.setSessionType(session.type().wireValue());
-        entity.setTaskId(session.taskId().value());
+        entity.setTaskId(session.taskId() == null ? null : session.taskId().value());
         entity.setCourseId(session.courseId() == null ? null : session.courseId().value());
         entity.setStudentAccountId(session.studentAccountId().value());
         entity.setMode(session.mode().wireValue());
@@ -114,14 +116,10 @@ public class SessionRepositoryAdapter implements SessionRepository {
     }
 
     private Session toDomain(SessionEntity entity) {
-        if (entity.getTaskId() == null) {
-            throw new DomainException(ErrorCode.INTERNAL_ERROR, "会话缺少任务关联",
-                    Map.of("session_id", entity.getId().toString()));
-        }
         return Session.rehydrate(
                 new SessionId(entity.getId()),
                 SessionType.fromWire(entity.getSessionType()),
-                new TaskId(entity.getTaskId()),
+                entity.getTaskId() == null ? null : new TaskId(entity.getTaskId()),
                 entity.getCourseId() == null ? null : new CourseId(entity.getCourseId()),
                 new AccountId(entity.getStudentAccountId()),
                 TaskMode.fromWire(entity.getMode()),

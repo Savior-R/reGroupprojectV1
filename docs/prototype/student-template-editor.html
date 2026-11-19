@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>新建训练模板 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .template-editor-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .template-form {
+      display: grid;
+      gap: 16px;
+    }
+
+    .editor-section {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .editor-section__head {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .editor-section__num {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: none;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: var(--paper-0);
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .editor-section__head h2 {
+      font-size: 20px;
+    }
+
+    .editor-section__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10.5px;
+    }
+
+    .editor-section__body {
+      padding: 22px 24px;
+    }
+
+    .level-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    .level-row .segmented {
+      background: var(--paper-0);
+    }
+
+    .level-note {
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .focus-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 9px;
+    }
+
+    .focus-grid .check-row {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+      font-size: 11px;
+    }
+
+    .student-edit-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .student-edit {
+      display: grid;
+      grid-template-columns: 34px minmax(120px, 1.2fr) 130px repeat(3, 70px) 28px;
+      gap: 10px;
+      align-items: end;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .student-edit .field {
+      gap: 4px;
+    }
+
+    .student-edit .label {
+      font-size: 9px;
+    }
+
+    .student-edit .input,
+    .student-edit .select {
+      height: 32px;
+      font-size: 10px;
+    }
+
+    .student-edit__avatar {
+      display: grid;
+      place-items: center;
+      align-self: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .student-edit__remove {
+      display: grid;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      align-self: center;
+      border: 1px solid transparent;
+      border-radius: var(--r-xs);
+      background: transparent;
+      color: var(--text-3);
+    }
+
+    .student-edit__remove:hover {
+      border-color: var(--line);
+      background: var(--surface);
+      color: var(--danger);
+    }
+
+    .student-edit__remove svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    .student-edit-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .student-edit-foot span {
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .material-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .material-row [data-icon] svg {
+      width: 16px;
+      height: 16px;
+      color: var(--accent);
+    }
+
+    .material-row__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .material-row__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .material-row__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    /* Summary */
+    .summary-card {
+      position: sticky;
+      top: 30px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-2);
+    }
+
+    .summary-card::before {
+      display: block;
+      height: 4px;
+      background: linear-gradient(90deg, var(--brand), var(--gold));
+      content: "";
+    }
+
+    .summary-card__head {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .summary-card__head .eyebrow {
+      color: var(--accent);
+    }
+
+    .summary-card__head h2 {
+      margin-top: 6px;
+      font-size: 22px;
+    }
+
+    .summary-card__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .summary-list {
+      display: grid;
+      padding: 6px 20px;
+    }
+
+    .summary-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 10.5px;
+    }
+
+    .summary-row:last-child {
+      border-bottom: 0;
+    }
+
+    .summary-row dt {
+      color: var(--text-3);
+    }
+
+    .summary-row dd {
+      margin: 0;
+      color: var(--text);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .checklist {
+      display: grid;
+      gap: 7px;
+      padding: 14px 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .check-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      color: var(--text-2);
+      font-size: 9.5px;
+      line-height: 1.5;
+    }
+
+    .check-item [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      margin-top: 1px;
+      color: var(--success);
+    }
+
+    .check-item--warn [data-icon] svg {
+      color: var(--gold);
+    }
+
+    .summary-card__foot {
+      padding: 14px 20px 18px;
+      border-top: 1px solid var(--line);
+      background: var(--paper-0);
+    }
+
+    .summary-card__foot .btn + .btn {
+      margin-top: 7px;
+    }
+
+    .summary-card__foot p {
+      margin-top: 8px;
+      color: var(--text-3);
+      font-size: 8.5px;
+      line-height: 1.55;
+      text-align: center;
+    }
+
+    @media (max-width: 1180px) {
+      .template-editor-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .summary-card {
+        position: static;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .student-edit {
+        grid-template-columns: 34px minmax(0, 1fr) 130px 28px;
+      }
+
+      .student-edit__metric:nth-of-type(n + 2) {
+        display: none;
+      }
+
+      .focus-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .editor-section__head,
+      .editor-section__body {
+        padding: 18px;
+      }
+    }
+  </style>
+</head>
+<body data-role="student" data-nav="training">
+  <div data-app-header></div>
+
+  <div class="context-bar">
+    <div class="context-bar__inner">
+      <div class="breadcrumb">
+        <a href="student-training.html">训练</a>
+        <span class="breadcrumb__sep">/</span>
+        <span class="breadcrumb__current" id="breadcrumb-current">新建训练模板</span>
+      </div>
+      <div class="context-tabs">
+        <a class="context-tab" href="student-training.html">训练首页</a>
+        <a class="context-tab is-active" href="student-template-editor.html">模板编辑</a>
+        <a class="context-tab" href="training-config.html?mode=free">训练配置</a>
+      </div>
+    </div>
+  </div>
+
+  <main class="page page--form">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">TEMPLATE / 我的模板</p>
+        <h1 class="page-title" id="editor-title">新建训练模板</h1>
+        <p class="page-lead">学生可以创建自己的训练模板，也可以从教师模板复制后调整；训练时引用模板带入配置，仍可自由修改。</p>
+      </div>
+      <div class="head-actions">
+        <span class="badge badge--warning" id="editor-state" style="font-weight:500">未保存</span>
+        <a class="btn btn--ghost" href="student-training.html"><span data-icon="arrow-left"></span>返回训练</a>
+        <button class="btn btn--danger" id="delete-template-button" type="button" data-open="delete-template-modal" hidden><span data-icon="trash"></span>删除模板</button>
+        <button class="btn btn--secondary" type="button" data-toast="模板已保存（原型演示）。"><span data-icon="check"></span>保存模板</button>
+        <a class="btn btn--primary" id="save-and-config" href="training-config.html?mode=free"><span data-icon="play"></span>保存并去配置</a>
+      </div>
+    </header>
+
+    <div class="template-editor-layout">
+      <div class="template-form">
+        <section class="editor-section">
+          <div class="editor-section__head">
+            <span class="editor-section__num">01</span>
+            <div><h2>基本信息</h2><p>模板名称、课题、档位与时长；保存后可在「我的模板」继续编辑。</p></div>
+          </div>
+          <div class="editor-section__body">
+            <div class="alert alert--info" id="template-source-note" style="margin-bottom:16px">
+              <span data-icon="info"></span>
+              <div id="template-source-text">自己创建 · 保存后出现在「我的模板」，训练时可引用并自由修改。</div>
+            </div>
+            <div class="level-row">
+              <div class="segmented" data-tabs="student-template-level" role="tablist" aria-label="训练档位">
+                <button type="button" role="tab" aria-selected="true" data-tab="progressive">进阶</button>
+                <button type="button" role="tab" aria-selected="false" data-tab="mock_exam">模拟考核</button>
+              </div>
+              <span class="level-note">进阶：15—20 分钟有提示；模拟考核：固定 20 分钟，到点自动结束。</span>
+            </div>
+            <div class="form-grid">
+              <label class="field span-2"><span class="label">模板名称 <span class="req">*</span></span><input class="input" id="template-name" value="我的训练模板" aria-label="模板名称"></label>
+              <label class="field"><span class="label">课题 <span class="req">*</span></span><input class="input" id="template-topic" value="荷塘月色" aria-label="课题"></label>
+              <label class="field"><span class="label">教材版本</span><input class="input" id="template-textbook" value="部编版 · 八年级上册" aria-label="教材版本"></label>
+              <label class="field"><span class="label">建议时长</span><select class="select" id="template-duration" aria-label="建议时长"><option>20 分钟</option><option>15 分钟</option><option>10 分钟</option></select></label>
+              <label class="field"><span class="label">最长时长</span><select class="select" id="template-longest" aria-label="最长时长"><option>25 分钟</option><option>20 分钟</option><option>30 分钟</option></select></label>
+              <label class="field span-full"><span class="label">模板说明</span><textarea class="textarea" id="template-description" rows="3" aria-label="模板说明">针对课堂互动做一次短时练习，保留提问与追问空间。</textarea></label>
+            </div>
+          </div>
+        </section>
+
+        <section class="editor-section">
+          <div class="editor-section__head">
+            <span class="editor-section__num">02</span>
+            <div><h2>训练侧重</h2><p>选择 1—2 个关注维度；报告会优先给出相关建议，不改变评分权重。</p></div>
+          </div>
+          <div class="editor-section__body">
+            <div class="focus-grid">
+              <label class="check-row"><input type="checkbox" data-focus="教学设计" hidden><span class="check-box"><span data-icon="check"></span></span><span>教学设计</span></label>
+              <label class="check-row"><input type="checkbox" data-focus="语言表达" hidden><span class="check-box"><span data-icon="check"></span></span><span>语言表达</span></label>
+              <label class="check-row"><input type="checkbox" data-focus="课堂互动" checked hidden><span class="check-box"><span data-icon="check"></span></span><span>课堂互动</span></label>
+              <label class="check-row"><input type="checkbox" data-focus="板书 / PPT" hidden><span class="check-box"><span data-icon="check"></span></span><span>板书 / PPT</span></label>
+              <label class="check-row"><input type="checkbox" data-focus="时间管理" hidden><span class="check-box"><span data-icon="check"></span></span><span>时间管理</span></label>
+            </div>
+          </div>
+        </section>
+
+        <section class="editor-section">
+          <div class="editor-section__head">
+            <span class="editor-section__num">03</span>
+            <div><h2>虚拟学生</h2><p>训练时仍可继续调整；模板只保存默认参数。</p></div>
+          </div>
+          <div class="editor-section__body">
+            <div class="student-edit-list">
+              <div class="student-edit">
+                <span class="student-edit__avatar">周</span>
+                <label class="field"><span class="label">姓名</span><input class="input" value="周予安" aria-label="学生姓名"></label>
+                <label class="field"><span class="label">类型</span><select class="select" aria-label="学生类型"><option>活跃型</option><option>沉稳型</option><option>内向型</option></select></label>
+                <label class="field student-edit__metric"><span class="label">活跃</span><input class="input" value="82" aria-label="活跃度"></label>
+                <label class="field student-edit__metric"><span class="label">提问</span><input class="input" value="64" aria-label="提问率"></label>
+                <label class="field student-edit__metric"><span class="label">注意</span><input class="input" value="86" aria-label="注意力"></label>
+                <button class="student-edit__remove" type="button" aria-label="移除学生" data-toast="移除学生（原型演示）。"><span data-icon="x"></span></button>
+              </div>
+              <div class="student-edit">
+                <span class="student-edit__avatar">陈</span>
+                <label class="field"><span class="label">姓名</span><input class="input" value="陈一诺" aria-label="学生姓名"></label>
+                <label class="field"><span class="label">类型</span><select class="select" aria-label="学生类型"><option>沉稳型</option><option>活跃型</option><option>内向型</option></select></label>
+                <label class="field student-edit__metric"><span class="label">活跃</span><input class="input" value="52" aria-label="活跃度"></label>
+                <label class="field student-edit__metric"><span class="label">提问</span><input class="input" value="38" aria-label="提问率"></label>
+                <label class="field student-edit__metric"><span class="label">注意</span><input class="input" value="92" aria-label="注意力"></label>
+                <button class="student-edit__remove" type="button" aria-label="移除学生" data-toast="移除学生（原型演示）。"><span data-icon="x"></span></button>
+              </div>
+              <div class="student-edit">
+                <span class="student-edit__avatar">许</span>
+                <label class="field"><span class="label">姓名</span><input class="input" value="许知远" aria-label="学生姓名"></label>
+                <label class="field"><span class="label">类型</span><select class="select" aria-label="学生类型"><option>内向型</option><option>活跃型</option><option>沉稳型</option></select></label>
+                <label class="field student-edit__metric"><span class="label">活跃</span><input class="input" value="34" aria-label="活跃度"></label>
+                <label class="field student-edit__metric"><span class="label">提问</span><input class="input" value="22" aria-label="提问率"></label>
+                <label class="field student-edit__metric"><span class="label">注意</span><input class="input" value="48" aria-label="注意力"></label>
+                <button class="student-edit__remove" type="button" aria-label="移除学生" data-toast="移除学生（原型演示）。"><span data-icon="x"></span></button>
+              </div>
+            </div>
+            <div class="student-edit-foot">
+              <span>1—30 人；训练时可继续调整，不影响模板本身。</span>
+              <button class="btn btn--secondary btn--sm" type="button" data-toast="添加虚拟学生（原型演示）。"><span data-icon="plus"></span>添加学生</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="editor-section">
+          <div class="editor-section__head">
+            <span class="editor-section__num">04</span>
+            <div><h2>参考材料</h2><p>可选；仅用于本次训练的评测上下文，不对其他学生展示。</p></div>
+          </div>
+          <div class="editor-section__body">
+            <div class="upload-zone" data-toast="选择参考材料（原型演示）。">
+              <span data-icon="upload"></span>
+              <strong>上传参考材料</strong>
+              <span>支持 .txt / .md，≤ 20 MB；上传后由后端解析文本</span>
+            </div>
+            <div class="material-row">
+              <span data-icon="file"></span>
+              <div class="material-row__main"><strong>荷塘月色_教学设计.pdf</strong><span>12,400 字 · application/pdf · 已解析</span></div>
+              <button class="btn btn--ghost btn--xs" type="button" data-toast="移除材料（原型演示）。">移除</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside>
+        <section class="summary-card">
+          <div class="summary-card__head">
+            <p class="eyebrow eyebrow--plain">TEMPLATE SUMMARY</p>
+            <h2>模板摘要</h2>
+            <p id="summary-level">进阶 · 15—20 分钟</p>
+          </div>
+          <dl class="summary-list">
+            <div class="summary-row"><dt>模板名称</dt><dd id="summary-name">我的训练模板</dd></div>
+            <div class="summary-row"><dt>来源</dt><dd id="summary-source">自己创建</dd></div>
+            <div class="summary-row"><dt>课题</dt><dd id="summary-topic">荷塘月色</dd></div>
+            <div class="summary-row"><dt>档位</dt><dd id="summary-level-label">进阶</dd></div>
+            <div class="summary-row"><dt>时长</dt><dd id="summary-duration">建议 20 / 最长 25</dd></div>
+            <div class="summary-row"><dt>虚拟学生</dt><dd>3 名</dd></div>
+            <div class="summary-row"><dt>训练侧重</dt><dd id="summary-focus">课堂互动</dd></div>
+            <div class="summary-row"><dt>额度</dt><dd>2 / 30</dd></div>
+          </dl>
+          <div class="checklist">
+            <div class="check-item"><span data-icon="check-circle"></span><span>名称与课题完整</span></div>
+            <div class="check-item"><span data-icon="check-circle"></span><span>虚拟学生 3 / 30</span></div>
+            <div class="check-item"><span data-icon="check-circle"></span><span>可保存并用于训练</span></div>
+            <div class="check-item check-item--warn"><span data-icon="alert-triangle"></span><span>引用训练时可自由修改</span></div>
+          </div>
+          <div class="summary-card__foot">
+            <button class="btn btn--primary btn--block" type="button" data-toast="模板已保存（原型演示）。"><span data-icon="check"></span>保存模板</button>
+            <a class="btn btn--secondary btn--block" id="summary-save-config" href="training-config.html?mode=free"><span data-icon="play"></span>保存并去配置</a>
+            <p>保存后可在「我的模板」看到；训练配置引用时会带入当前配置。</p>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Delete template modal -->
+  <div class="overlay" data-overlay-for="delete-template-modal"></div>
+  <div class="modal" id="delete-template-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="delete-template-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="delete-template-title">删除我的模板</div>
+        <div class="drawer__sub">仅删除自己的模板；教师发布的原模板不受影响。</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="delete-template-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--danger">
+        <span data-icon="alert-triangle"></span>
+        <div>删除「<strong id="delete-template-name">该模板</strong>」后，模板会从「我的模板」移除；训练配置中不再出现。该模板关联的训练记录、录像 / 报告与参考材料会一并清理。此操作不可撤销。</div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="delete-template-modal">取消</button>
+      <a class="btn btn--danger-solid" href="student-training.html" data-close="delete-template-modal" data-toast="我的模板已删除（原型演示）。">删除模板</a>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+  <script>
+    const PRESETS = {
+      "mine-1": {
+        title: "编辑训练模板",
+        breadcrumb: "编辑训练模板",
+        state: "编辑中",
+        name: "荷塘月色（我的副本）",
+        topic: "荷塘月色",
+        textbook: "部编版 · 八年级上册",
+        level: "progressive",
+        duration: "20 分钟",
+        longest: "25 分钟",
+        description: "复制自王宁老师的模板，保留课堂互动重点，适合做一次 20 分钟的进阶练习。",
+        source: "复制自教师模板「荷塘月色」",
+        summarySource: "复制自教师",
+        focus: ["语言表达", "课堂互动"]
+      },
+      "mine-2": {
+        title: "编辑训练模板",
+        breadcrumb: "编辑训练模板",
+        state: "编辑中",
+        name: "全真模拟 · 我的配置",
+        topic: "教师资格证结构化面试",
+        textbook: "教师资格证考试大纲",
+        level: "mock_exam",
+        duration: "20 分钟",
+        longest: "20 分钟",
+        description: "按模拟考核节奏创建，固定 20 分钟，用于考前自测。",
+        source: "自己创建",
+        summarySource: "自己创建",
+        focus: ["课堂互动", "时间管理"]
+      }
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("id");
+    const source = params.get("source");
+    const from = params.get("from");
+    let preset = null;
+
+    if (id && PRESETS[id]) {
+      preset = PRESETS[id];
+    } else if (source === "copy" && from === "teacher-3") {
+      preset = {
+        title: "新建训练模板",
+        breadcrumb: "新建训练模板",
+        state: "未保存",
+        name: "教师资格证 · 全真模拟（我的副本）",
+        topic: "教师资格证结构化面试",
+        textbook: "教师资格证考试大纲",
+        level: "mock_exam",
+        duration: "20 分钟",
+        longest: "20 分钟",
+        description: "从教师模板复制，保留模拟考核节奏；可调整虚拟学生与训练侧重。",
+        source: "复制自教师模板「教师资格证 · 全真模拟」",
+        summarySource: "复制自教师",
+        focus: ["课堂互动", "时间管理"]
+      };
+    } else if (source === "copy") {
+      preset = {
+        title: "新建训练模板",
+        breadcrumb: "新建训练模板",
+        state: "未保存",
+        name: "荷塘月色（我的副本）",
+        topic: "荷塘月色",
+        textbook: "部编版 · 八年级上册",
+        level: "progressive",
+        duration: "20 分钟",
+        longest: "25 分钟",
+        description: "从教师模板复制，按自己的训练重点调整；不会影响原教师模板。",
+        source: "复制自教师模板「荷塘月色」",
+        summarySource: "复制自教师",
+        focus: ["语言表达", "课堂互动"]
+      };
+    } else if (source === "free") {
+      preset = {
+        title: "新建训练模板",
+        breadcrumb: "新建训练模板",
+        state: "未保存",
+        name: "自由训练 · 我的模板",
+        topic: "荷塘月色",
+        textbook: "部编版 · 八年级上册",
+        level: "progressive",
+        duration: "20 分钟",
+        longest: "25 分钟",
+        description: "从自由训练配置保存，之后可在训练配置中直接引用并继续修改。",
+        source: "由自由训练配置保存",
+        summarySource: "由自由训练保存",
+        focus: ["课堂互动"]
+      };
+    }
+
+    function selectedFocus() {
+      return Array.from(document.querySelectorAll("[data-focus]:checked")).map(function (input) {
+        return input.dataset.focus;
+      });
+    }
+
+    function updateSummary() {
+      const name = document.getElementById("template-name").value.trim() || "未命名模板";
+      const topic = document.getElementById("template-topic").value.trim() || "未填写";
+      const level = document.querySelector('[data-tabs="student-template-level"] [aria-selected="true"]').dataset.tab;
+      const duration = document.getElementById("template-duration").value;
+      const longest = document.getElementById("template-longest").value;
+      const focus = selectedFocus();
+      document.getElementById("summary-name").textContent = name;
+      document.getElementById("summary-topic").textContent = topic;
+      document.getElementById("summary-level-label").textContent = level === "mock_exam" ? "模拟考核" : "进阶";
+      document.getElementById("summary-level").textContent = level === "mock_exam" ? "模拟考核 · 固定 20 分钟" : "进阶 · 15—20 分钟";
+      document.getElementById("summary-duration").textContent = "建议 " + duration.replace(" 分钟", "") + " / 最长 " + longest.replace(" 分钟", "");
+      document.getElementById("summary-focus").textContent = focus.length ? focus.join(" / ") : "未选择";
+    }
+
+    function applyPreset(data) {
+      document.getElementById("editor-title").textContent = data.title;
+      document.getElementById("breadcrumb-current").textContent = data.breadcrumb;
+      document.getElementById("editor-state").textContent = data.state;
+      document.getElementById("template-name").value = data.name;
+      document.getElementById("template-topic").value = data.topic;
+      document.getElementById("template-textbook").value = data.textbook;
+      document.getElementById("template-duration").value = data.duration;
+      document.getElementById("template-longest").value = data.longest;
+      document.getElementById("template-description").value = data.description;
+      document.getElementById("template-source-text").textContent = data.source + " · 保存后可在「我的模板」继续编辑与引用。";
+      document.getElementById("summary-source").textContent = data.summarySource;
+      if (id) {
+        document.getElementById("save-and-config").href = "training-config.html?mode=free&template=" + encodeURIComponent(id);
+        document.getElementById("summary-save-config").href = "training-config.html?mode=free&template=" + encodeURIComponent(id);
+        document.getElementById("delete-template-button").hidden = false;
+        document.getElementById("delete-template-name").textContent = data.name;
+      }
+      document.querySelectorAll("[data-focus]").forEach(function (input) {
+        input.checked = data.focus.includes(input.dataset.focus);
+      });
+      window.PrototypeUI.selectTab("student-template-level", data.level);
+      updateSummary();
+    }
+
+    document.getElementById("template-name").addEventListener("input", updateSummary);
+    document.getElementById("template-topic").addEventListener("input", updateSummary);
+    document.getElementById("template-duration").addEventListener("change", updateSummary);
+    document.getElementById("template-longest").addEventListener("change", updateSummary);
+    document.querySelectorAll("[data-focus]").forEach(function (input) {
+      input.addEventListener("change", updateSummary);
+    });
+    document.querySelectorAll('[data-tabs="student-template-level"] [data-tab]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        if (button.dataset.tab === "mock_exam") {
+          document.getElementById("template-duration").value = "20 分钟";
+          document.getElementById("template-longest").value = "20 分钟";
+        }
+        window.PrototypeUI.selectTab("student-template-level", button.dataset.tab);
+        updateSummary();
+      });
+    });
+
+    if (preset) applyPreset(preset);
+    updateSummary();
+  </script>
+</body>
+</html>

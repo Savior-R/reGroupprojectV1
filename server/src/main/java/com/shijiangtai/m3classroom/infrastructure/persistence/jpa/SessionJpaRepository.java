@@ -41,4 +41,6 @@ public interface SessionJpaRepository extends JpaRepository<SessionEntity, UUID>
             ORDER BY s.id
             """, nativeQuery = true)
     List<SessionEntity> findExpiredTemporary(@Param("now") Instant now);
+    long countByTaskId(UUID taskId);
+
 }

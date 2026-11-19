@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>我的成绩 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .results-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .results-main,
+    .results-aside {
+      display: grid;
+      gap: 14px;
+    }
+
+    .results-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 11px 13px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      background: var(--paper-0);
+      color: var(--text-3);
+      font-size: 9.5px;
+      line-height: 1.6;
+    }
+
+    .results-note [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      margin-top: 1px;
+      color: var(--accent);
+    }
+
+    .course-result-card {
+      display: grid;
+      grid-template-columns: 208px minmax(0, 1fr);
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+      transition:
+        transform var(--dur-2) var(--ease),
+        box-shadow var(--dur-2) var(--ease);
+    }
+
+    .course-result-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-2);
+    }
+
+    .course-result-cover {
+      position: relative;
+      display: flex;
+      min-height: 184px;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+      padding: 18px 18px 16px;
+      background:
+        radial-gradient(240px 140px at 85% 0%, rgba(255, 255, 255, 0.1), transparent 70%),
+        linear-gradient(145deg, #245c4f, #163f36);
+      color: #f4f7f2;
+    }
+
+    .course-result-cover--gold {
+      background:
+        radial-gradient(240px 140px at 85% 0%, rgba(255, 255, 255, 0.12), transparent 70%),
+        linear-gradient(145deg, #8a6526, #5f441a);
+    }
+
+    .course-result-cover--blue {
+      background:
+        radial-gradient(240px 140px at 85% 0%, rgba(255, 255, 255, 0.12), transparent 70%),
+        linear-gradient(145deg, #3d6078, #263f52);
+    }
+
+    .course-result-cover::after {
+      position: absolute;
+      right: -26px;
+      bottom: -46px;
+      width: 130px;
+      height: 130px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 50%;
+      box-shadow: 0 0 0 16px rgba(255, 255, 255, 0.035);
+      content: "";
+    }
+
+    .course-result-cover__code {
+      position: relative;
+      z-index: 1;
+      color: rgba(244, 247, 242, 0.56);
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+      letter-spacing: 0.08em;
+    }
+
+    .course-result-cover h2 {
+      position: relative;
+      z-index: 1;
+      margin-top: 18px;
+      color: #f4f7f2;
+      font-size: 22px;
+      line-height: 1.25;
+    }
+
+    .course-result-cover__teacher {
+      margin-top: 4px;
+      color: rgba(244, 247, 242, 0.58);
+      font-size: 9.5px;
+    }
+
+    .course-result-cover__foot {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 20px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(244, 247, 242, 0.16);
+      color: rgba(244, 247, 242, 0.58);
+      font-size: 8.5px;
+    }
+
+    .course-result-body {
+      display: flex;
+      flex-direction: column;
+      padding: 17px 20px 15px;
+      min-width: 0;
+    }
+
+    .course-result-top {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .course-result-score-label {
+      display: block;
+      color: var(--text-3);
+      font-size: 8.5px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+    }
+
+    .course-result-score {
+      display: block;
+      margin-top: 3px;
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 34px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    .course-result-score small {
+      color: var(--text-3);
+      font-family: var(--font-sans);
+      font-size: 9px;
+      font-weight: 400;
+    }
+
+    .course-result-mini {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 9px 14px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .course-result-mini span {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .course-result-mini strong {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      font-weight: 500;
+    }
+
+    .course-result-progress {
+      margin-top: 12px;
+    }
+
+    .course-result-progress__head {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 5px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .course-result-progress .progress {
+      height: 5px;
+    }
+
+    .course-result-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: auto;
+      padding-top: 12px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .course-result-foot span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .course-result-foot [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      color: var(--accent);
+    }
+
+    .recent-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .recent-card .card-head {
+      padding: 16px 18px;
+    }
+
+    .recent-list {
+      display: grid;
+    }
+
+    .recent-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .recent-item:last-child {
+      border-bottom: 0;
+    }
+
+    .recent-item__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .recent-item__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .recent-item__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .recent-item__score {
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 20px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+
+    /* Aside */
+    .side-stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .side-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .side-card .card-head,
+    .side-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .weight-bar {
+      display: flex;
+      height: 14px;
+      overflow: hidden;
+      border-radius: var(--r-pill);
+      background: var(--paper-3);
+    }
+
+    .weight-bar__ai {
+      width: 70%;
+      background: var(--brand);
+    }
+
+    .weight-bar__teacher {
+      width: 30%;
+      background: var(--gold);
+    }
+
+    .weight-legend {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 10px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .weight-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .weight-legend i {
+      width: 7px;
+      height: 7px;
+      border-radius: 2px;
+      background: var(--brand);
+    }
+
+    .weight-legend span:last-child i {
+      background: var(--gold);
+    }
+
+    .trend {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      height: 88px;
+      margin-top: 12px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .trend__bar {
+      position: relative;
+      flex: 1;
+      min-width: 0;
+      border-radius: 3px 3px 0 0;
+      background: var(--brand-soft);
+    }
+
+    .trend__bar span {
+      position: absolute;
+      top: -16px;
+      left: 50%;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      transform: translateX(-50%);
+    }
+
+    .trend__bar em {
+      position: absolute;
+      bottom: -17px;
+      left: 50%;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      font-style: normal;
+      transform: translateX(-50%);
+    }
+
+    .trend__bar--current {
+      background: var(--brand);
+    }
+
+    .trend-note {
+      margin-top: 12px;
+      color: var(--text-3);
+      font-size: 9.5px;
+      line-height: 1.6;
+    }
+
+    .ability-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .ability-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 40px;
+      align-items: baseline;
+      gap: 10px;
+      padding: 3px 0;
+      border-bottom: 1px dotted var(--line);
+    }
+
+    .ability-row:last-child {
+      border-bottom: 0;
+    }
+
+    .ability-row span {
+      color: var(--text-2);
+      font-size: 9.5px;
+    }
+
+    .ability-row strong {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .ability-row .progress {
+      height: 4px;
+    }
+
+    .ability-row--weak strong {
+      color: var(--accent);
+    }
+
+    .next-step {
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      background: var(--paper-0);
+    }
+
+    .next-step strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .next-step p {
+      margin-top: 4px;
+      color: var(--text-3);
+      font-size: 9.5px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1180px) {
+      .results-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .results-aside {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 860px) {
+      .course-result-card {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .course-result-cover {
+        min-height: 130px;
+      }
+
+      .results-aside {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body data-role="student" data-nav="results">
+  <div data-app-header></div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">RESULTS / 我的成绩</p>
+        <h1 class="page-title">我的成绩</h1>
+        <p class="page-lead">按课程查看成绩；进入课程可以查看每个任务的 AI 分、教师分与最终分。只显示本人成绩，不含班级排名。</p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn--secondary" href="student-training.html"><span data-icon="sparkles"></span>去训练</a>
+        <a class="btn btn--secondary" href="student-tasks.html"><span data-icon="clipboard"></span>我的任务</a>
+      </div>
+    </header>
+
+    <div class="stat-strip" style="margin-bottom:22px">
+      <div class="stat"><div class="stat__label">在学课程</div><div class="stat__value">3</div><div class="stat__meta">2026 秋季学期</div></div>
+      <div class="stat"><div class="stat__label">已完成任务</div><div class="stat__value">11</div><div class="stat__meta">跨 3 门课程</div></div>
+      <div class="stat"><div class="stat__label">平均分</div><div class="stat__value stat__value--brand">84.2</div><div class="stat__meta">已完成任务</div></div>
+      <div class="stat"><div class="stat__label">待评分</div><div class="stat__value stat__value--accent">2</div><div class="stat__meta">1 个待 AI / 1 个待教师</div></div>
+    </div>
+
+    <div class="results-layout">
+      <div class="results-main">
+        <div class="results-note">
+          <span data-icon="info"></span>
+          <span>成绩按课程归档。点击「查看课程成绩」查看该课程每个任务的分数、报告与回放；未完成的提交不显示半成品分数。</span>
+        </div>
+
+        <article class="course-result-card">
+          <div class="course-result-cover">
+            <div>
+              <span class="course-result-cover__code">CHN 2401 · 2026 秋</span>
+              <h2>语文教学论</h2>
+              <p class="course-result-cover__teacher">王宁 / 李静 · 汉语言文学（师范）</p>
+            </div>
+            <div class="course-result-cover__foot"><span>课程平均分</span><strong>84.2</strong></div>
+          </div>
+          <div class="course-result-body">
+            <div class="course-result-top">
+              <div><span class="course-result-score-label">COURSE AVERAGE</span><span class="course-result-score">84.2 <small>/ 100</small></span></div>
+              <div class="course-result-mini"><span>AI <strong>83.5</strong></span><span>教师 <strong>85.0</strong></span><span>最高 <strong>90.1</strong></span></div>
+            </div>
+            <div class="course-result-progress">
+              <div class="course-result-progress__head"><span>任务完成</span><span>5 / 6 · 83%</span></div>
+              
+            </div>
+            <div class="course-result-foot">
+              <span><span data-icon="clock"></span>最近：荷塘月色 84.1 · 古诗二首 86.7</span>
+              <a class="btn btn--primary btn--sm" href="student-course-results.html?course=chinese">查看课程成绩 <span data-icon="arrow-right"></span></a>
+            </div>
+          </div>
+        </article>
+
+        <article class="course-result-card">
+          <div class="course-result-cover course-result-cover--gold">
+            <div>
+              <span class="course-result-cover__code">MICRO 2204 · 2026 秋</span>
+              <h2>微格教学实训</h2>
+              <p class="course-result-cover__teacher">李静 · 教师教育中心</p>
+            </div>
+            <div class="course-result-cover__foot"><span>课程平均分</span><strong>82.6</strong></div>
+          </div>
+          <div class="course-result-body">
+            <div class="course-result-top">
+              <div><span class="course-result-score-label">COURSE AVERAGE</span><span class="course-result-score" style="color:var(--gold)">82.6 <small>/ 100</small></span></div>
+              <div class="course-result-mini"><span>AI <strong>82.0</strong></span><span>教师 <strong>83.8</strong></span><span>最高 <strong>86.2</strong></span></div>
+            </div>
+            <div class="course-result-progress">
+              <div class="course-result-progress__head"><span>任务完成</span><span>3 / 4 · 75%</span></div>
+              
+            </div>
+            <div class="course-result-foot">
+              <span><span data-icon="clock"></span>最近：教师资格证面试 86.1 · 少年闰土 待教师</span>
+              <a class="btn btn--secondary btn--sm" href="student-course-results.html?course=micro">查看课程成绩 <span data-icon="arrow-right"></span></a>
+            </div>
+          </div>
+        </article>
+
+        <article class="course-result-card">
+          <div class="course-result-cover course-result-cover--blue">
+            <div>
+              <span class="course-result-cover__code">SPEAK 2102 · 2026 秋</span>
+              <h2>教师口语</h2>
+              <p class="course-result-cover__teacher">陈岚 · 汉语言文学（师范）</p>
+            </div>
+            <div class="course-result-cover__foot"><span>课程平均分</span><strong>88.5</strong></div>
+          </div>
+          <div class="course-result-body">
+            <div class="course-result-top">
+              <div><span class="course-result-score-label">COURSE AVERAGE</span><span class="course-result-score" style="color:var(--info)">88.5 <small>/ 100</small></span></div>
+              <div class="course-result-mini"><span>AI <strong>86.0</strong></span><span>教师 <strong>90.0</strong></span><span>最高 <strong>92.0</strong></span></div>
+            </div>
+            <div class="course-result-progress">
+              <div class="course-result-progress__head"><span>任务完成</span><span>3 / 3 · 100%</span></div>
+              
+            </div>
+            <div class="course-result-foot">
+              <span><span data-icon="check-circle"></span>全部任务已完成评分</span>
+              <a class="btn btn--secondary btn--sm" href="student-course-results.html?course=speak">查看课程成绩 <span data-icon="arrow-right"></span></a>
+            </div>
+          </div>
+        </article>
+
+        <div class="list-foot">
+          <span class="list-foot__info">共 3 门课程 · 显示 1—3</span>
+          <div class="pagination" aria-label="课程成绩分页">
+            <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+            <button class="pagination__btn is-active" type="button">1</button>
+            <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+          </div>
+        </div>
+
+        <section class="recent-card">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">最近任务成绩</h2><p class="card-sub">按提交时间排序 · 点击查看报告</p></div>
+            <a class="btn btn--ghost btn--sm" href="student-tasks.html">全部任务 <span data-icon="arrow-right"></span></a>
+          </div>
+          <div class="recent-list">
+            <div class="recent-item"><span class="avatar avatar--sm avatar--cinnabar">荷</span><div class="recent-item__main"><strong>荷塘月色</strong><span>语文教学论 · 11-14 提交 · 已完成</span></div><span class="recent-item__score">84.1</span><a class="btn btn--ghost btn--xs" href="report.html">报告</a></div>
+            <div class="recent-item"><span class="avatar avatar--sm avatar--gold">古</span><div class="recent-item__main"><strong>古诗二首 · 模拟考核</strong><span>语文教学论 · 11-14 提交 · 已完成</span></div><span class="recent-item__score">86.7</span><a class="btn btn--ghost btn--xs" href="report.html">报告</a></div>
+            <div class="recent-item"><span class="avatar avatar--sm avatar--blue">口</span><div class="recent-item__main"><strong>教师口语 · 朗读训练</strong><span>教师口语 · 11-12 提交 · 已完成</span></div><span class="recent-item__score">88.8</span><a class="btn btn--ghost btn--xs" href="report.html">报告</a></div>
+          </div>
+          <div class="list-foot">
+            <span class="list-foot__info">共 3 条最近成绩 · 显示 1—3</span>
+            <div class="pagination" aria-label="最近成绩分页">
+              <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+              <button class="pagination__btn is-active" type="button">1</button>
+              <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="results-aside">
+        <section class="side-card">
+          <div class="card-head"><div class="card-head__main"><h2 class="card-title">成绩构成</h2><p class="card-sub">任务级权重</p></div></div>
+          <div class="card-body">
+            <div class="weight-bar"><div class="weight-bar__ai"></div><div class="weight-bar__teacher"></div></div>
+            <div class="weight-legend"><span><i></i>AI 70%</span><span><i></i>教师 30%</span></div>
+            <p class="xs faint" style="margin-top:12px;line-height:1.65">权重由教师在任务评分配置中确定；AI 与教师都完成后才生成最终分。</p>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main"><h2 class="card-title">最近趋势</h2><p class="card-sub">最近 4 次最终分</p></div>
+            <span class="badge badge--success">+4.6</span>
+          </div>
+          <div class="card-body">
+            <div class="trend">
+              <div class="trend__bar" style="height:56%"><span>78.2</span><em>10-28</em></div>
+              <div class="trend__bar" style="height:72%"><span>84.1</span><em>11-08</em></div>
+              <div class="trend__bar" style="height:66%"><span>81.4</span><em>11-12</em></div>
+              <div class="trend__bar trend__bar--current" style="height:88%"><span>88.8</span><em>11-14</em></div>
+            </div>
+            <p class="trend-note">趋势按最终分绘制；未完成评分的任务不计入。</p>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head"><div class="card-head__main"><h2 class="card-title">能力画像</h2><p class="card-sub">最近 3 次评测平均</p></div></div>
+          <div class="card-body">
+            <div class="ability-list">
+              <div class="ability-row"><span>教学内容</span><strong>85.4</strong></div>
+              <div class="ability-row"><span>教学表达</span><strong>81.2</strong></div>
+              <div class="ability-row ability-row--weak"><span>课堂互动</span><strong>78.6</strong></div>
+              <div class="ability-row"><span>板书 / PPT</span><strong>84.0</strong></div>
+              <div class="ability-row"><span>时间管理</span><strong>82.1</strong></div>
+            </div>
+            <div class="next-step" style="margin-top:14px">
+              <strong>下一步：课堂互动</strong>
+              <p>在自由训练中加练「提问—等待—追问」，完成后对比本次报告。</p>
+              <a class="btn btn--ghost btn--xs" href="student-training.html" style="margin-top:7px">去训练 <span data-icon="arrow-right"></span></a>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <script src="assets/site.js"></script>
+</body>
+</html>

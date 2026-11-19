@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElCard, ElMessage, ElMessageBox, ElTag } from 'element-plus'
+import ReplayPage from '../replay/ReplayPage.vue'
 import { ApiError } from '../../types/api'
 import { getTrainingSession, selectTrainingRecord } from './api'
 import { formatDuration, levelLabel } from './format'
@@ -111,15 +112,7 @@ onMounted(load)
           </ElTag>
         </div>
 
-        <div class="replay-shell">
-          <div class="replay-placeholder">
-            <h2>回放 A · 屏幕主画面 + 摄像头小窗 + 事件流</h2>
-            <p>
-              训练回放复用 05B 布局；M3 训练 session 的回放读取开放后在此挂载。
-              当前可先完成选中与评测。
-            </p>
-          </div>
-        </div>
+        <ReplayPage :session-id="sessionId" />
       </ElCard>
 
       <ElCard shadow="never" class="actions-card">

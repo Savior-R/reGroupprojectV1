@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>训练配置 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .training-config-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 330px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .training-config-main {
+      display: grid;
+      gap: 16px;
+    }
+
+    .config-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .config-card__head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .config-card__head h2 {
+      font-size: 20px;
+    }
+
+    .config-card__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .config-card__body {
+      padding: 20px 22px;
+    }
+
+    .mode-switch {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .mode-switch .segmented {
+      background: var(--paper-0);
+    }
+
+    .mode-switch span {
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .template-summary {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      padding: 16px;
+      border-radius: var(--r-md);
+      background:
+        linear-gradient(135deg, rgba(42, 103, 88, 0.08), transparent 60%),
+        var(--paper-0);
+      border: 1px solid var(--line);
+    }
+
+    .template-summary__mark {
+      display: grid;
+      width: 48px;
+      height: 48px;
+      flex: none;
+      place-items: center;
+      border-radius: var(--r-sm);
+      background: var(--brand);
+      color: var(--on-brand);
+      font-family: var(--font-serif);
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .template-summary__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .template-summary__main h3 {
+      font-size: 20px;
+    }
+
+    .template-summary__main p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .template-summary__side {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .config-meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .config-meta span {
+      display: block;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .config-meta strong {
+      display: block;
+      margin-top: 3px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 500;
+    }
+
+    .config-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      margin-top: 14px;
+      padding: 10px 12px;
+      border-left: 3px solid var(--accent);
+      border-radius: 2px;
+      background: var(--accent-soft);
+      color: var(--text-2);
+      font-size: 9.5px;
+      line-height: 1.6;
+    }
+
+    .config-note [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      margin-top: 1px;
+      color: var(--accent);
+    }
+
+    .free-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .free-actions span {
+      color: var(--text-3);
+      font-size: 9.5px;
+      line-height: 1.55;
+    }
+
+    .free-template-bar {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--brand);
+      border-radius: var(--r-sm);
+      background: var(--brand-soft);
+      color: var(--text-2);
+      font-size: 9.5px;
+      line-height: 1.6;
+    }
+
+    .free-template-bar > [data-icon] svg {
+      width: 14px;
+      height: 14px;
+      flex: none;
+      margin-top: 1px;
+      color: var(--brand);
+    }
+
+    .free-template-bar__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .free-template-bar__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .free-template-bar__main span {
+      display: block;
+      margin-top: 2px;
+    }
+
+    .free-template-bar .btn {
+      flex: none;
+    }
+
+    .modal--wide {
+      width: min(700px, 94vw);
+    }
+
+    .template-picker__search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .template-picker__search .input-affix {
+      flex: 1;
+      min-width: 240px;
+    }
+
+    .picker-scope {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .picker-scope .chip {
+      border: 1px solid var(--line);
+      cursor: pointer;
+    }
+
+    .picker-scope .chip.is-active {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .template-picker__list {
+      display: grid;
+      gap: 6px;
+      max-height: 320px;
+      margin-top: 12px;
+      padding: 4px;
+      overflow-y: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      background: var(--paper-0);
+    }
+
+    .template-pick {
+      display: grid;
+      grid-template-columns: 17px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid transparent;
+      border-radius: var(--r-sm);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .template-pick:hover {
+      background: var(--brand-wash);
+    }
+
+    .template-pick.is-selected {
+      border-color: var(--brand);
+      background: var(--brand-soft);
+    }
+
+    .template-pick .radio-dot {
+      width: 15px;
+      height: 15px;
+    }
+
+    .template-pick.is-selected .radio-dot {
+      border-color: var(--brand);
+    }
+
+    .template-pick.is-selected .radio-dot::after {
+      transform: scale(1);
+    }
+
+    .template-pick__main {
+      min-width: 0;
+    }
+
+    .template-pick__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .template-pick__main span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .template-pick__side {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      color: var(--text-3);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .template-pick__side strong {
+      color: var(--text-2);
+      font-weight: 500;
+    }
+
+    .template-picker__empty {
+      margin-top: 12px;
+      padding: 18px;
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--r-sm);
+      color: var(--text-3);
+      font-size: 10px;
+      text-align: center;
+    }
+
+    .template-picker__foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .student-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .student-config-card {
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-md);
+      background: var(--paper-0);
+    }
+
+    .student-config-card__head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .student-config-card__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .student-config-card__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .student-config-card__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .student-config-card__fields {
+      display: grid;
+      gap: 9px;
+      margin-top: 10px;
+    }
+
+    .slider-row {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) 30px;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .slider-row label {
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .slider-row input[type="range"] {
+      width: 100%;
+      height: 3px;
+      appearance: none;
+      border-radius: var(--r-pill);
+      background: var(--paper-3);
+      outline: none;
+    }
+
+    .slider-row input[type="range"]::-webkit-slider-thumb {
+      width: 12px;
+      height: 12px;
+      appearance: none;
+      border: 2px solid var(--surface);
+      border-radius: 50%;
+      background: var(--brand);
+      box-shadow: 0 0 0 1px var(--brand);
+      cursor: pointer;
+    }
+
+    .slider-row input[type="range"]::-moz-range-thumb {
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--surface);
+      border-radius: 50%;
+      background: var(--brand);
+      box-shadow: 0 0 0 1px var(--brand);
+      cursor: pointer;
+    }
+
+    .slider-row output {
+      color: var(--text-2);
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+      text-align: right;
+    }
+
+    .student-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .rule-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .rule-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      color: var(--text-2);
+      font-size: 10px;
+      line-height: 1.6;
+    }
+
+    .rule-item [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      margin-top: 1px;
+      color: var(--brand);
+    }
+
+    .free-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .free-level {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .free-level span {
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    /* Aside */
+    .start-card {
+      position: sticky;
+      top: 30px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-2);
+    }
+
+    .start-card::before {
+      display: block;
+      height: 4px;
+      background: linear-gradient(90deg, var(--brand), var(--gold));
+      content: "";
+    }
+
+    .start-card__head {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .start-card__head .eyebrow {
+      color: var(--accent);
+    }
+
+    .start-card__head h2 {
+      margin-top: 6px;
+      font-size: 22px;
+    }
+
+    .start-card__head p {
+      margin-top: 3px;
+      color: var(--text-3);
+      font-size: 10px;
+    }
+
+    .start-list {
+      display: grid;
+      padding: 6px 20px;
+    }
+
+    .start-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 10.5px;
+    }
+
+    .start-row:last-child {
+      border-bottom: 0;
+    }
+
+    .start-row dt {
+      color: var(--text-3);
+    }
+
+    .start-row dd {
+      margin: 0;
+      color: var(--text);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .start-checks {
+      display: grid;
+      gap: 7px;
+      padding: 14px 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .start-checks .check-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      color: var(--text-2);
+      font-size: 9.5px;
+      line-height: 1.5;
+    }
+
+    .start-checks [data-icon] svg {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      margin-top: 1px;
+      color: var(--success);
+    }
+
+    .start-card__foot {
+      padding: 14px 20px 18px;
+      border-top: 1px solid var(--line);
+      background: var(--paper-0);
+    }
+
+    .start-card__foot p {
+      margin-top: 8px;
+      color: var(--text-3);
+      font-size: 8.5px;
+      line-height: 1.55;
+      text-align: center;
+    }
+
+    @media (max-width: 1180px) {
+      .training-config-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .start-card {
+        position: static;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .student-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .config-meta {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .config-card__head {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body data-role="student" data-nav="training">
+
+  <div data-app-header></div>
+
+  <div class="context-bar">
+    <div class="context-bar__inner">
+      <div class="breadcrumb">
+        <a href="student-training.html">训练</a>
+        <span class="breadcrumb__sep">/</span>
+        <span id="breadcrumb-template">荷塘月色（我的副本）</span>
+        <span class="breadcrumb__sep">/</span>
+        <span class="breadcrumb__current">配置</span>
+      </div>
+      <div class="context-tabs">
+        <a class="context-tab" href="student-training.html">训练首页</a>
+        <a class="context-tab is-active" href="training-config.html">训练配置</a>
+        <a class="context-tab" href="student-training.html#records">训练记录</a>
+      </div>
+    </div>
+  </div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">TRAINING CONFIG / 训练配置</p>
+        <h1 class="page-title">训练配置</h1>
+        <p class="page-lead">确认训练内容与虚拟学生后开始。进入课堂后会请求摄像头、麦克风和共享窗口权限，并开始录制。</p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn--secondary" href="student-training.html"><span data-icon="arrow-left"></span>返回训练</a>
+      </div>
+    </header>
+
+    <div class="training-config-layout">
+      <div class="training-config-main">
+        <div class="mode-switch">
+          <div class="segmented" data-tabs="training-mode" role="tablist" aria-label="训练方式">
+            <button type="button" role="tab" aria-selected="true" data-tab="template">使用模板</button>
+            <button type="button" role="tab" aria-selected="false" data-tab="free">自由训练</button>
+          </div>
+          <span id="mode-hint">模板训练：时长与权重由模板固定，只调整虚拟学生。</span>
+        </div>
+
+        <div data-panel-group="training-mode">
+          <div data-panel="template">
+            <section class="config-card">
+              <div class="config-card__head">
+                <div><h2>模板信息</h2><p>来自我的模板或教师发布；模板训练沿用配置，只调整虚拟学生。</p></div>
+                <div class="row" style="gap:8px;align-items:center">
+                  <span class="badge badge--success" id="template-level-badge">进阶</span>
+                  <button class="btn btn--secondary btn--sm" type="button" data-open="template-picker-modal" data-picker-intent="template"><span data-icon="layers"></span>更换模板</button>
+                </div>
+              </div>
+              <div class="config-card__body">
+                <div class="template-summary">
+                  <span class="template-summary__mark" id="template-mark">荷</span>
+                  <div class="template-summary__main">
+                    <h3 id="template-name">荷塘月色（我的副本）</h3>
+                    <p id="template-meta">我的模板 · 复制自 王宁 · 进阶 · 20 分钟 · 3 名虚拟学生</p>
+                  </div>
+                  <div class="template-summary__side"><span class="chip chip--muted">三路录制</span><span class="chip chip--muted">可调整学生</span></div>
+                </div>
+                <div class="config-meta">
+                  <div><span>训练档位</span><strong id="config-level">进阶</strong></div>
+                  <div><span>建议 / 最长</span><strong id="config-time">20 / 25 分钟</strong></div>
+                  <div><span>虚拟学生</span><strong id="config-students">3 名</strong></div>
+                  <div><span>录制</span><strong>摄像头 / 屏幕 / 麦克风</strong></div>
+                </div>
+                <div class="config-note"><span data-icon="info"></span><span>模板训练不展示参考材料与评分权重；如需修改配置，请到「自由训练」引用此模板，带入后可自由调整。</span></div>
+              </div>
+            </section>
+          </div>
+
+          <div data-panel="free" hidden>
+            <section class="config-card">
+              <div class="config-card__head">
+                <div><h2>自由训练设置</h2><p>空白开始，或引用我的模板带入配置；带入后所有字段可自由修改。</p></div>
+                <button class="btn btn--secondary btn--sm" type="button" data-open="template-picker-modal" data-picker-intent="free"><span data-icon="layers"></span>引用模板填写配置</button>
+              </div>
+              <div class="config-card__body">
+                <div class="free-template-bar" id="free-template-bar" hidden>
+                  <span data-icon="layers"></span>
+                  <div class="free-template-bar__main">
+                    <strong id="free-template-name">已引用模板</strong>
+                    <span>已带入课题、档位、时长与虚拟学生；以下配置均可自由修改，不会改动原模板。</span>
+                  </div>
+                  <button class="btn btn--ghost btn--xs" type="button" id="clear-free-template">清除引用</button>
+                </div>
+                <div class="free-grid">
+                  <div class="free-level">
+                    <div class="segmented" data-tabs="free-level" role="tablist" aria-label="自由训练档位">
+                      <button type="button" role="tab" aria-selected="true" data-tab="progressive">进阶</button>
+                      <button type="button" role="tab" aria-selected="false" data-tab="mock_exam">模拟考核</button>
+                    </div>
+                    <span>进阶 15—20 分钟；模拟考核固定 20 分钟。</span>
+                  </div>
+                  <div class="form-grid">
+                    <label class="field"><span class="label">课题（可选）</span><input class="input" id="free-topic" placeholder="例如：荷塘月色" aria-label="课题"></label>
+                    <label class="field"><span class="label">建议时长</span><select class="select" id="free-duration" aria-label="建议时长"><option>20 分钟</option><option>15 分钟</option><option>10 分钟</option></select></label>
+                    <label class="field"><span class="label">最长时长</span><select class="select" id="free-longest" aria-label="最长时长"><option>25 分钟</option><option>20 分钟</option><option>30 分钟</option></select></label>
+                    <label class="field"><span class="label">训练侧重</span><select class="select" id="free-focus" aria-label="训练侧重"><option>课堂互动</option><option>教学设计</option><option>语言表达</option><option>板书 / PPT</option><option>时间管理</option></select></label>
+                  </div>
+                  <div class="upload-zone" data-toast="选择参考材料（原型演示）。"><span data-icon="upload"></span><strong>上传参考材料（可选）</strong><span>支持 .txt / .md，≤ 20 MB；仅用于评测</span></div>
+                  <div class="free-actions">
+                    <span>想复用这次配置？保存为模板后，下次可在「我的模板」直接引用。</span>
+                    <a class="btn btn--ghost btn--sm" href="student-template-editor.html?source=free"><span data-icon="check"></span>存为我的模板</a>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <section class="config-card">
+          <div class="config-card__head">
+            <div><h2>虚拟学生</h2><p>人数 1—30；本次训练可调整参数，不影响模板本身。</p></div>
+            <span class="badge">3 名</span>
+          </div>
+          <div class="config-card__body">
+            <div class="student-grid">
+              <article class="student-config-card" data-student-card>
+                <div class="student-config-card__head">
+                  <span class="avatar avatar--sm avatar--cinnabar" data-student-avatar>周</span>
+                  <div class="student-config-card__main"><strong data-student-name>周予安</strong><span data-student-type>活跃型 · 提问率 64%</span></div>
+                  <button class="btn btn--ghost btn--xs" type="button" data-toast="编辑学生个性文本（原型演示）。">编辑</button>
+                </div>
+                <div class="student-config-card__fields">
+                  <div class="slider-row"><label>活跃</label><input type="range" min="0" max="100" value="82" data-student-slider data-metric="active" aria-label="周予安活跃度"><output>82</output></div>
+                  <div class="slider-row"><label>提问</label><input type="range" min="0" max="100" value="64" data-student-slider data-metric="question" aria-label="周予安提问率"><output>64</output></div>
+                  <div class="slider-row"><label>注意</label><input type="range" min="0" max="100" value="86" data-student-slider data-metric="attention" aria-label="周予安注意力"><output>86</output></div>
+                  <div class="slider-row"><label>纪律</label><input type="range" min="0" max="100" value="74" data-student-slider data-metric="discipline" aria-label="周予安纪律"><output>74</output></div>
+                </div>
+              </article>
+
+              <article class="student-config-card" data-student-card>
+                <div class="student-config-card__head">
+                  <span class="avatar avatar--sm avatar--gold" data-student-avatar>陈</span>
+                  <div class="student-config-card__main"><strong data-student-name>陈一诺</strong><span data-student-type>沉稳型 · 正确率 82%</span></div>
+                  <button class="btn btn--ghost btn--xs" type="button" data-toast="编辑学生个性文本（原型演示）。">编辑</button>
+                </div>
+                <div class="student-config-card__fields">
+                  <div class="slider-row"><label>活跃</label><input type="range" min="0" max="100" value="52" data-student-slider data-metric="active" aria-label="陈一诺活跃度"><output>52</output></div>
+                  <div class="slider-row"><label>提问</label><input type="range" min="0" max="100" value="38" data-student-slider data-metric="question" aria-label="陈一诺提问率"><output>38</output></div>
+                  <div class="slider-row"><label>注意</label><input type="range" min="0" max="100" value="92" data-student-slider data-metric="attention" aria-label="陈一诺注意力"><output>92</output></div>
+                  <div class="slider-row"><label>纪律</label><input type="range" min="0" max="100" value="88" data-student-slider data-metric="discipline" aria-label="陈一诺纪律"><output>88</output></div>
+                </div>
+              </article>
+
+              <article class="student-config-card" data-student-card>
+                <div class="student-config-card__head">
+                  <span class="avatar avatar--sm avatar--blue" data-student-avatar>许</span>
+                  <div class="student-config-card__main"><strong data-student-name>许知远</strong><span data-student-type>内向型 · 注意 48%</span></div>
+                  <button class="btn btn--ghost btn--xs" type="button" data-toast="编辑学生个性文本（原型演示）。">编辑</button>
+                </div>
+                <div class="student-config-card__fields">
+                  <div class="slider-row"><label>活跃</label><input type="range" min="0" max="100" value="34" data-student-slider data-metric="active" aria-label="许知远活跃度"><output>34</output></div>
+                  <div class="slider-row"><label>提问</label><input type="range" min="0" max="100" value="22" data-student-slider data-metric="question" aria-label="许知远提问率"><output>22</output></div>
+                  <div class="slider-row"><label>注意</label><input type="range" min="0" max="100" value="48" data-student-slider data-metric="attention" aria-label="许知远注意力"><output>48</output></div>
+                  <div class="slider-row"><label>纪律</label><input type="range" min="0" max="100" value="66" data-student-slider data-metric="discipline" aria-label="许知远纪律"><output>66</output></div>
+                </div>
+              </article>
+            </div>
+            <div class="student-toolbar">
+              <span>当前 3 / 30 人 · 参数以百分比显示</span>
+              <button class="btn btn--secondary btn--sm" type="button" data-toast="添加虚拟学生（原型演示）。"><span data-icon="plus"></span>添加学生</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="config-card">
+          <div class="config-card__head">
+            <div><h2>训练规则</h2><p>开始前请确认。</p></div>
+          </div>
+          <div class="config-card__body">
+            <div class="rule-list">
+              <div class="rule-item"><span data-icon="camera"></span><span>本次训练会录制摄像头、屏幕与麦克风；开始后不可暂停。</span></div>
+              <div class="rule-item"><span data-icon="clock"></span><span>进阶建议 15—20 分钟；模拟考核固定 20 分钟，到点自动结束。</span></div>
+              <div class="rule-item"><span data-icon="shield"></span><span>训练录像仅本人可见；教师 / 管理员不可查看。保留记录后可生成报告。</span></div>
+              <div class="rule-item"><span data-icon="refresh"></span><span>刷新或关闭页面会丢失本次录制；请保持网络稳定。</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside>
+        <section class="start-card">
+          <div class="start-card__head">
+            <p class="eyebrow eyebrow--plain">READY TO START</p>
+            <h2>开始训练</h2>
+            <p id="start-mode-label">模板训练 · 进阶 · 荷塘月色</p>
+          </div>
+          <dl class="start-list">
+            <div class="start-row"><dt>来源</dt><dd id="start-source">我的模板</dd></div>
+            <div class="start-row"><dt>档位</dt><dd id="start-level">进阶</dd></div>
+            <div class="start-row"><dt>时长</dt><dd id="start-duration">20 分钟</dd></div>
+            <div class="start-row"><dt>虚拟学生</dt><dd id="start-students">3 名</dd></div>
+            <div class="start-row"><dt>录制</dt><dd>三路录制</dd></div>
+            <div class="start-row"><dt>保留</dt><dd>训练记录 1 个月</dd></div>
+          </dl>
+          <div class="start-checks">
+            <div class="check-item"><span data-icon="check-circle"></span><span>摄像头 / 麦克风已就绪</span></div>
+            <div class="check-item"><span data-icon="check-circle"></span><span>已了解录制与保留规则</span></div>
+            <div class="check-item"><span data-icon="check-circle"></span><span>虚拟学生参数可调整</span></div>
+          </div>
+          <div class="start-card__foot">
+            <a class="btn btn--primary btn--lg btn--block" href="classroom.html"><span data-icon="play"></span>开始训练</a>
+            <p>点击后会请求设备权限，并开始三路录制</p>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Template picker -->
+  <div class="overlay" data-overlay-for="template-picker-modal"></div>
+  <div class="modal modal--wide" id="template-picker-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="template-picker-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="template-picker-title">选择模板</div>
+        <div class="drawer__sub" id="template-picker-sub">我的模板包含自己创建与从教师模板复制的全部模板</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="template-picker-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="template-picker__search">
+        <label class="input-affix">
+          <span data-icon="search"></span>
+          <input class="input" type="search" id="template-picker-search" placeholder="搜索模板名称 / 课题 / 来源" aria-label="搜索我的模板">
+        </label>
+        <div class="picker-scope" role="group" aria-label="模板来源筛选">
+          <button class="chip is-active" type="button" data-picker-scope="all">全部</button>
+          <button class="chip" type="button" data-picker-scope="copied">复制的</button>
+          <button class="chip" type="button" data-picker-scope="created">创建的</button>
+        </div>
+      </div>
+      <div class="template-picker__list" id="template-picker-list" role="listbox" aria-label="我的模板列表">
+        <button class="template-pick" type="button" role="option" aria-selected="false" data-template-pick data-template-id="mine-1" data-scope="copied" data-keywords="荷塘月色 我的副本 复制 王宁 语文教学论 进阶">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <span class="template-pick__main"><strong>荷塘月色（我的副本）</strong><span>我的模板 · 复制自 王宁 · 进阶 · 20 分钟 · 3 名虚拟学生</span></span>
+          <span class="template-pick__side"><strong>复制的</strong><span>更新 11-15</span></span>
+        </button>
+        <button class="template-pick" type="button" role="option" aria-selected="false" data-template-pick data-template-id="mine-2" data-scope="created" data-keywords="全真模拟 我的配置 创建 微格教学实训 模拟考核">
+          <span class="radio-dot" aria-hidden="true"></span>
+          <span class="template-pick__main"><strong>全真模拟 · 我的配置</strong><span>我的模板 · 自己创建 · 模拟考核 · 20 分钟 · 3 名虚拟学生</span></span>
+          <span class="template-pick__side"><strong>创建的</strong><span>更新 11-13</span></span>
+        </button>
+      </div>
+      <div class="template-picker__empty" id="template-picker-empty" hidden>没有匹配的模板；请调整搜索词或来源筛选。</div>
+      <div class="template-picker__foot">
+        <span class="pagination__info" id="template-picker-info">共 2 个我的模板 · 显示 1—2</span>
+        <div class="pagination" aria-label="我的模板分页">
+          <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+          <button class="pagination__btn is-active" type="button">1</button>
+          <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+        </div>
+      </div>
+      <div class="lazy-foot">已加载全部 2 个我的模板</div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="template-picker-modal">取消</button>
+      <button class="btn btn--primary" type="button" id="apply-template-pick" disabled><span data-icon="check"></span>使用此模板</button>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const mode = new URLSearchParams(window.location.search).get("mode");
+      if (mode !== "free") return;
+      document.querySelectorAll('[data-tabs="training-mode"] [data-tab]').forEach(function (button) {
+        button.setAttribute("aria-selected", String(button.dataset.tab === "free"));
+      });
+      document.querySelectorAll('[data-panel-group="training-mode"] [data-panel]').forEach(function (panel) {
+        panel.hidden = panel.dataset.panel !== "free";
+      });
+    })();
+  </script>
+  <script src="assets/site.js"></script>
+  <script>
+    const DEFAULT_STUDENTS = [
+      { name: "周予安", typeLabel: "活跃型 · 提问率 64%", active: 82, question: 64, attention: 86, discipline: 74 },
+      { name: "陈一诺", typeLabel: "沉稳型 · 正确率 82%", active: 52, question: 38, attention: 92, discipline: 88 },
+      { name: "许知远", typeLabel: "内向型 · 注意 48%", active: 34, question: 22, attention: 48, discipline: 66 }
+    ];
+
+    const TEMPLATES = {
+      "mine-1": {
+        id: "mine-1",
+        name: "荷塘月色（我的副本）",
+        mark: "荷",
+        scope: "copied",
+        scopeLabel: "复制的",
+        level: "progressive",
+        duration: "20 分钟",
+        longest: "25 分钟",
+        students: 3,
+        topic: "荷塘月色",
+        focus: "语言表达",
+        meta: "我的模板 · 复制自 王宁 · 进阶 · 20 分钟 · 3 名虚拟学生",
+        studentsData: DEFAULT_STUDENTS
+      },
+      "mine-2": {
+        id: "mine-2",
+        name: "全真模拟 · 我的配置",
+        mark: "全",
+        scope: "created",
+        scopeLabel: "创建的",
+        level: "mock_exam",
+        duration: "20 分钟",
+        longest: "20 分钟",
+        students: 3,
+        topic: "教师资格证结构化面试",
+        focus: "课堂互动",
+        meta: "我的模板 · 自己创建 · 模拟考核 · 20 分钟 · 3 名虚拟学生",
+        studentsData: [
+          { name: "周予安", typeLabel: "活跃型 · 提问率 82%", active: 68, question: 82, attention: 74, discipline: 70 },
+          { name: "陈一诺", typeLabel: "沉稳型 · 正确率 76%", active: 44, question: 30, attention: 88, discipline: 84 },
+          { name: "许知远", typeLabel: "内向型 · 注意 42%", active: 28, question: 18, attention: 42, discipline: 62 }
+        ]
+      }
+    };
+
+    const METRIC_LABELS = { active: "活跃度", question: "提问率", attention: "注意力", discipline: "纪律" };
+    let currentMode = "template";
+    let freeLevel = "progressive";
+    let activeTemplateId = "mine-1";
+    let activeFreeTemplateId = null;
+    let pickerIntent = "template";
+    let pickerScope = "all";
+    let selectedPick = null;
+
+    function levelLabel(level) {
+      return level === "mock_exam" ? "模拟考核" : "进阶";
+    }
+
+    function renderStudents(students) {
+      document.querySelectorAll("[data-student-card]").forEach(function (card, index) {
+        const student = students[index];
+        if (!student) return;
+        card.querySelector("[data-student-avatar]").textContent = student.name.charAt(0);
+        card.querySelector("[data-student-name]").textContent = student.name;
+        card.querySelector("[data-student-type]").textContent = student.typeLabel;
+        card.querySelectorAll("[data-student-slider]").forEach(function (input) {
+          const key = input.dataset.metric;
+          if (student[key] == null) return;
+          input.value = student[key];
+          input.parentElement.querySelector("output").textContent = student[key];
+          input.setAttribute("aria-label", student.name + METRIC_LABELS[key]);
+        });
+      });
+    }
+
+    function updateStudentOutputs() {
+      document.querySelectorAll("[data-student-slider]").forEach(function (input) {
+        const output = input.parentElement.querySelector("output");
+        input.addEventListener("input", function () {
+          output.textContent = input.value;
+        });
+      });
+    }
+
+    function applyTemplateMode(id, silent) {
+      const template = TEMPLATES[id];
+      if (!template) return;
+      activeTemplateId = id;
+      document.getElementById("template-mark").textContent = template.mark;
+      document.getElementById("template-name").textContent = template.name;
+      document.getElementById("template-meta").textContent = template.meta;
+      document.getElementById("template-level-badge").textContent = levelLabel(template.level);
+      document.getElementById("breadcrumb-template").textContent = template.name;
+      document.getElementById("config-level").textContent = levelLabel(template.level);
+      document.getElementById("config-time").textContent = template.duration.replace(" 分钟", "") + " / " + template.longest;
+      document.getElementById("config-students").textContent = template.students + " 名";
+      document.getElementById("start-mode-label").textContent = "模板训练 · " + levelLabel(template.level) + " · " + template.name;
+      document.getElementById("start-source").textContent = "我的模板 · " + template.scopeLabel;
+      document.getElementById("start-level").textContent = levelLabel(template.level);
+      document.getElementById("start-duration").textContent = template.duration;
+      document.getElementById("start-students").textContent = template.students + " 名";
+      renderStudents(template.studentsData);
+      if (!silent) window.PrototypeUI.toast("已切换到「" + template.name + "」。");
+    }
+
+    function applyFreeTemplate(id, silent) {
+      const template = TEMPLATES[id];
+      if (!template) return;
+      activeFreeTemplateId = id;
+      document.getElementById("free-template-bar").hidden = false;
+      document.getElementById("breadcrumb-template").textContent = "自由训练 · " + template.name;
+      document.getElementById("free-template-name").textContent = "已引用：" + template.name;
+      document.getElementById("free-topic").value = template.topic;
+      if (Array.from(document.getElementById("free-duration").options).some(function (option) { return option.value === template.duration; })) {
+        document.getElementById("free-duration").value = template.duration;
+      }
+      if (Array.from(document.getElementById("free-longest").options).some(function (option) { return option.value === template.longest; })) {
+        document.getElementById("free-longest").value = template.longest;
+      }
+      document.getElementById("free-focus").value = template.focus;
+      window.PrototypeUI.selectTab("free-level", template.level);
+      freeLevel = template.level;
+      renderStudents(template.studentsData);
+      updateFreeLevel(template.level);
+      document.getElementById("start-source").textContent = "我的模板 · " + template.name;
+      document.getElementById("start-students").textContent = template.students + " 名";
+      document.getElementById("start-duration").textContent = template.duration;
+      document.getElementById("start-mode-label").textContent = "自由训练 · " + levelLabel(template.level) + " · " + template.topic;
+      if (!silent) window.PrototypeUI.toast("已带入「" + template.name + "」的配置，可自由修改。");
+    }
+
+    function clearFreeTemplate() {
+      activeFreeTemplateId = null;
+      document.getElementById("breadcrumb-template").textContent = "自由训练";
+      document.getElementById("free-template-bar").hidden = true;
+      document.getElementById("free-topic").value = "";
+      document.getElementById("free-duration").value = "20 分钟";
+      document.getElementById("free-longest").value = "25 分钟";
+      document.getElementById("free-focus").value = "课堂互动";
+      window.PrototypeUI.selectTab("free-level", "progressive");
+      freeLevel = "progressive";
+      renderStudents(DEFAULT_STUDENTS);
+      updateFreeLevel("progressive");
+      document.getElementById("start-source").textContent = "自由配置";
+      document.getElementById("start-students").textContent = "3 名";
+      window.PrototypeUI.toast("已清除模板引用，可空白配置。");
+    }
+
+    function updateFreeLevel(level) {
+      freeLevel = level;
+      if (currentMode !== "free") return;
+      const isMock = level === "mock_exam";
+      const topic = document.getElementById("free-topic").value.trim();
+      document.getElementById("start-level").textContent = levelLabel(level);
+      document.getElementById("start-duration").textContent = isMock
+        ? "20 分钟"
+        : (activeFreeTemplateId && TEMPLATES[activeFreeTemplateId].level === level
+          ? TEMPLATES[activeFreeTemplateId].duration
+          : "15—20 分钟");
+      document.getElementById("start-mode-label").textContent = "自由训练 · " + levelLabel(level) + " · " + (topic || "未命名课题");
+      document.getElementById("start-source").textContent = activeFreeTemplateId
+        ? "我的模板 · " + TEMPLATES[activeFreeTemplateId].name
+        : "自由配置";
+      document.getElementById("start-students").textContent = "3 名";
+    }
+
+    function updateModeUi(mode) {
+      currentMode = mode;
+      const isFree = mode === "free";
+      document.getElementById("mode-hint").textContent = isFree
+        ? "自由训练：可空白开始，也可引用我的模板带入配置，带入后所有字段可修改。"
+        : "模板训练：沿用模板配置，只调整虚拟学生；需要改配置时用自由训练引用模板。";
+      if (isFree) {
+        updateFreeLevel(freeLevel);
+      } else {
+        applyTemplateMode(activeTemplateId, true);
+      }
+    }
+
+    function filterPicker() {
+      const keyword = document.getElementById("template-picker-search").value.trim().toLowerCase();
+      let visible = 0;
+      document.querySelectorAll("[data-template-pick]").forEach(function (row) {
+        const matchesScope = pickerScope === "all" || row.dataset.scope === pickerScope;
+        const matchesKeyword = !keyword || row.dataset.keywords.toLowerCase().includes(keyword);
+        const match = matchesScope && matchesKeyword;
+        row.hidden = !match;
+        if (match) visible += 1;
+      });
+      if (selectedPick && selectedPick.hidden) {
+        selectedPick.classList.remove("is-selected");
+        selectedPick.setAttribute("aria-selected", "false");
+        selectedPick = null;
+        document.getElementById("apply-template-pick").disabled = true;
+      }
+      document.getElementById("template-picker-empty").hidden = visible > 0;
+      document.getElementById("template-picker-info").textContent = visible > 0
+        ? "共 " + visible + " 个我的模板 · 显示 1—" + visible
+        : "没有匹配的模板";
+    }
+
+    updateStudentOutputs();
+
+    document.querySelectorAll('[data-tabs="training-mode"] [data-tab]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        updateModeUi(button.dataset.tab);
+      });
+    });
+
+    document.querySelectorAll('[data-tabs="free-level"] [data-tab]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        updateFreeLevel(button.dataset.tab);
+      });
+    });
+
+    document.getElementById("free-topic").addEventListener("input", function () {
+      if (currentMode === "free") updateFreeLevel(freeLevel);
+    });
+
+    document.getElementById("free-duration").addEventListener("change", function () {
+      if (currentMode === "free" && freeLevel !== "mock_exam") {
+        document.getElementById("start-duration").textContent = this.value;
+      }
+    });
+
+    document.getElementById("clear-free-template").addEventListener("click", clearFreeTemplate);
+
+    document.querySelectorAll('[data-open="template-picker-modal"]').forEach(function (button) {
+      button.addEventListener("click", function () {
+        pickerIntent = button.dataset.pickerIntent || currentMode;
+        document.getElementById("template-picker-title").textContent = pickerIntent === "free" ? "引用模板填写配置" : "更换模板";
+        document.getElementById("template-picker-sub").textContent = pickerIntent === "free"
+          ? "选择我的模板带入课题、档位、时长与虚拟学生；带入后所有配置可自由修改"
+          : "从自己创建或复制保存的模板中选择；模板训练只调整虚拟学生";
+        document.getElementById("apply-template-pick").innerHTML = '<span data-icon="check"></span>' + (pickerIntent === "free" ? "带入配置" : "使用此模板");
+        window.PrototypeUI.hydrateIcons(document.getElementById("apply-template-pick"));
+
+        pickerScope = "all";
+        document.getElementById("template-picker-search").value = "";
+        document.querySelectorAll("[data-picker-scope]").forEach(function (item) {
+          item.classList.toggle("is-active", item.dataset.pickerScope === "all");
+        });
+
+        const currentId = pickerIntent === "free" ? activeFreeTemplateId : activeTemplateId;
+        selectedPick = null;
+        document.querySelectorAll("[data-template-pick]").forEach(function (row) {
+          const match = row.dataset.templateId === currentId;
+          row.classList.toggle("is-selected", match);
+          row.setAttribute("aria-selected", String(match));
+          if (match) selectedPick = row;
+        });
+        document.getElementById("apply-template-pick").disabled = !selectedPick;
+        filterPicker();
+      });
+    });
+
+    document.querySelectorAll("[data-picker-scope]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        pickerScope = button.dataset.pickerScope;
+        document.querySelectorAll("[data-picker-scope]").forEach(function (item) {
+          item.classList.toggle("is-active", item === button);
+        });
+        filterPicker();
+      });
+    });
+
+    document.getElementById("template-picker-search").addEventListener("input", filterPicker);
+
+    document.querySelectorAll("[data-template-pick]").forEach(function (row) {
+      row.addEventListener("click", function () {
+        document.querySelectorAll("[data-template-pick]").forEach(function (item) {
+          item.classList.remove("is-selected");
+          item.setAttribute("aria-selected", "false");
+        });
+        row.classList.add("is-selected");
+        row.setAttribute("aria-selected", "true");
+        selectedPick = row;
+        document.getElementById("apply-template-pick").disabled = false;
+      });
+    });
+
+    document.getElementById("apply-template-pick").addEventListener("click", function () {
+      if (!selectedPick) return;
+      const id = selectedPick.dataset.templateId;
+      if (pickerIntent === "free") {
+        applyFreeTemplate(id, false);
+      } else {
+        applyTemplateMode(id, false);
+      }
+      window.PrototypeUI.closeLayer("template-picker-modal");
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const initialMode = params.get("mode") === "free" ? "free" : "template";
+    updateModeUi(initialMode);
+    const initialTemplate = params.get("template");
+    if (initialTemplate && TEMPLATES[initialTemplate]) {
+      if (initialMode === "free") {
+        applyFreeTemplate(initialTemplate, true);
+      } else {
+        applyTemplateMode(initialTemplate, true);
+      }
+    } else if (initialMode === "free") {
+      document.getElementById("start-source").textContent = "自由配置";
+      document.getElementById("breadcrumb-template").textContent = "自由训练";
+    }
+  </script>
+</body>
+</html>

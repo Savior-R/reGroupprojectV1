@@ -57,13 +57,13 @@ function goBack(): void {
 
 .report-page__title {
   margin: 0;
-  color: #e5e7eb;
+  color: var(--m1-text-primary);
   font-size: 24px;
 }
 
 .report-page__hint {
   margin: 6px 0 0;
-  color: #94a3b8;
+  color: var(--m1-text-secondary);
   font-size: 13px;
 }
 </style>

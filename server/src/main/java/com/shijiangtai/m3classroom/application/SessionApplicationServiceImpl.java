@@ -160,8 +160,7 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
     }
 
     private static void requireCreatable(Task task, TaskId taskId) {
-        if (task.status() == TaskStatus.DRAFT) {
-            // Drafts are invisible to students.
+        if (task.status() == TaskStatus.DELETED) {
             throw notFound("任务不存在", "task_id", taskId.value());
         }
         if (task.status() == TaskStatus.CLOSED) {
@@ -322,7 +321,9 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
     private static boolean isFinished(SessionStatus status) {
         return status == SessionStatus.ENDED
                 || status == SessionStatus.REVIEWING
-                || status == SessionStatus.SUBMITTED;
+                || status == SessionStatus.SUBMITTED
+                || status == SessionStatus.SELECTED
+                || status == SessionStatus.EVALUATED;
     }
 
     private static void requireOk(CommandResult result) {
@@ -344,7 +345,7 @@ public class SessionApplicationServiceImpl implements SessionApplicationService 
                 .orElseGet(() -> eventStore.maxSeq(session.id()));
         return new SessionView(
                 session.id().value(),
-                session.taskId().value(),
+                session.taskId() == null ? null : session.taskId().value(),
                 session.courseId() == null ? null : session.courseId().value(),
                 session.type().wireValue(),
                 session.mode().wireValue(),

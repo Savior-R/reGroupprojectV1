@@ -18,9 +18,9 @@ export function getEvaluationBySubmission(submissionId: string): Promise<Evaluat
     .then((response) => response.data)
 }
 
-export function getEvaluationByTrainingRecord(recordId: string): Promise<EvaluationView> {
+export function getEvaluationByTrainingRecord(recordId: string): Promise<ReportView> {
   return apiClient
-    .get<EvaluationView>(`/training/records/${encodeURIComponent(recordId)}/evaluation`)
+    .get<ReportView>(`/training/records/${encodeURIComponent(recordId)}/evaluation`)
     .then((response) => response.data)
 }
 

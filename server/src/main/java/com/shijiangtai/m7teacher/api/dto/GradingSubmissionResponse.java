@@ -41,6 +41,7 @@ public record GradingSubmissionResponse(
             String className,
             UUID classIdSnapshot,
             String studentStatus,
+            UUID sessionId,
             String sessionStatus,
             Instant submittedAt,
             AiScoreView ai,
@@ -50,8 +51,8 @@ public record GradingSubmissionResponse(
         static Item from(GradingSubmissionRow row) {
             return new Item(row.submissionId(), row.studentAccountId(), row.studentName(),
                     row.classId(), row.className(), row.classIdSnapshot(), row.studentStatus(),
-                    row.sessionStatus(), row.submittedAt(), row.ai(), row.teacherScore(),
-                    row.finalScore());
+                    row.sessionId(), row.sessionStatus(), row.submittedAt(), row.ai(),
+                    row.teacherScore(), row.finalScore());
         }
     }
 }

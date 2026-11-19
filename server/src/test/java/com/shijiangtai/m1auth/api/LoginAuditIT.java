@@ -1,6 +1,7 @@
 package com.shijiangtai.m1auth.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -69,6 +70,7 @@ class LoginAuditIT extends PostgresIntegrationTest {
                 .andExpect(status().isOk());
 
         Map<String, Object> event = latestByAccount(accountId);
+        assertThat(event.get("event_type")).isEqualTo("login");
         assertThat(event.get("method")).isEqualTo("password");
         assertThat(event.get("success")).isEqualTo(true);
         assertThat((String) event.get("ip")).contains("127.0.0.1");
@@ -88,6 +90,7 @@ class LoginAuditIT extends PostgresIntegrationTest {
                 .andExpect(status().isUnauthorized());
 
         Map<String, Object> event = latestByUserAgent(marker);
+        assertThat(event.get("event_type")).isEqualTo("login");
         assertThat(event.get("method")).isEqualTo("password");
         assertThat(event.get("success")).isEqualTo(false);
         // 失败事件不带 account_id：FR-M1-11「不泄露账号存在性」
@@ -112,6 +115,7 @@ class LoginAuditIT extends PostgresIntegrationTest {
                 .andExpect(status().isOk());
 
         Map<String, Object> event = latestByAccount(accountId);
+        assertThat(event.get("event_type")).isEqualTo("login");
         assertThat(event.get("method")).isEqualTo("email");
         assertThat(event.get("success")).isEqualTo(true);
         assertThat(event.get("user_agent")).isEqualTo("junit-audit-email-ok");
@@ -135,9 +139,60 @@ class LoginAuditIT extends PostgresIntegrationTest {
                 .andExpect(status().isUnauthorized());
 
         Map<String, Object> event = latestByUserAgent(marker);
+        assertThat(event.get("event_type")).isEqualTo("login");
         assertThat(event.get("method")).isEqualTo("email");
         assertThat(event.get("success")).isEqualTo(false);
         assertThat(event.get("account_id")).isNull();
+    }
+
+    @Test
+    void emailBindSuccessWritesBindAuditEvent() throws Exception {
+        String username = uniqueName("审计绑定");
+        String accountId = registerAndGetAccountId(username);
+        String token = loginAndGetToken(username);
+        String email = uniqueEmail();
+        String code = requestBindCode(email, token);
+        String marker = "junit-audit-bind-ok-" + UUID.randomUUID();
+
+        mockMvc.perform(post("/api/v1/auth/email/bind")
+                        .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", marker)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email": "%s", "code": "%s", "current_password": "%s"}
+                                """.formatted(email, code, PASSWORD)))
+                .andExpect(status().isNoContent());
+
+        Map<String, Object> event = latestByUserAgent(marker);
+        assertThat(event.get("event_type")).isEqualTo("bind");
+        assertThat(event.get("method")).isEqualTo("email");
+        assertThat(event.get("success")).isEqualTo(true);
+        assertThat(event.get("account_id")).isEqualTo(UUID.fromString(accountId));
+    }
+
+    @Test
+    void emailUnbindFailureWritesUnbindAuditEvent() throws Exception {
+        String username = uniqueName("审计解绑");
+        String accountId = registerAndGetAccountId(username);
+        String email = uniqueEmail();
+        seedVerifiedEmail(username, email);
+        String token = loginAndGetToken(username);
+        String marker = "junit-audit-unbind-fail-" + UUID.randomUUID();
+
+        mockMvc.perform(delete("/api/v1/auth/email")
+                        .header("Authorization", "Bearer " + token)
+                        .header("User-Agent", marker)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"current_password": "WrongPass1!"}
+                                """))
+                .andExpect(status().isUnauthorized());
+
+        Map<String, Object> event = latestByUserAgent(marker);
+        assertThat(event.get("event_type")).isEqualTo("unbind");
+        assertThat(event.get("method")).isEqualTo("email");
+        assertThat(event.get("success")).isEqualTo(false);
+        assertThat(event.get("account_id")).isEqualTo(UUID.fromString(accountId));
     }
 
     @Test
@@ -148,7 +203,8 @@ class LoginAuditIT extends PostgresIntegrationTest {
                 """, Map.of(), String.class);
 
         assertThat(columns)
-                .contains("method", "provider", "success", "ip", "user_agent", "created_at")
+                .contains("event_type", "method", "provider", "success", "ip", "user_agent",
+                        "created_at")
                 .doesNotContain(
                         "token", "jwt", "code", "code_hash", "access_token",
                         "refresh_token", "secret", "password", "password_hash");
@@ -206,9 +262,30 @@ class LoginAuditIT extends PostgresIntegrationTest {
                 .orElseThrow(() -> new AssertionError("未收到验证码邮件: " + email));
     }
 
+    private String requestBindCode(String email, String token) throws Exception {
+        mockMvc.perform(post("/api/v1/auth/email/bind/code")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email": "%s", "purpose": "bind"}
+                                """.formatted(email)))
+                .andExpect(status().isAccepted());
+        return mockMail.lastCodeTo(email)
+                .orElseThrow(() -> new AssertionError("未收到验证码邮件: " + email));
+    }
+
+    private String loginAndGetToken(String username) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginBody(username, PASSWORD)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return JsonPath.read(result.getResponse().getContentAsString(), "$.token");
+    }
+
     private Map<String, Object> latestByAccount(String accountId) {
         return jdbc.queryForMap("""
-                select method, provider, success, account_id, host(ip) as ip, user_agent
+                select event_type, method, provider, success, account_id, host(ip) as ip, user_agent
                 from m1_auth.auth_login_events
                 where account_id = :accountId
                 order by created_at desc, id desc
@@ -219,7 +296,7 @@ class LoginAuditIT extends PostgresIntegrationTest {
     /** 失败事件没有 account_id，用唯一的 User-Agent 定位。 */
     private Map<String, Object> latestByUserAgent(String userAgent) {
         return jdbc.queryForMap("""
-                select method, provider, success, account_id, host(ip) as ip, user_agent
+                select event_type, method, provider, success, account_id, host(ip) as ip, user_agent
                 from m1_auth.auth_login_events
                 where user_agent = :ua
                 order by created_at desc, id desc

@@ -92,15 +92,19 @@ public class OAuthController {
     /** 登录后绑定微信：需当前密码 + 扫码得到的 registration_ticket。 */
     @PostMapping("/bind")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void bind(@Valid @RequestBody BindWechatRequest request) {
+    public void bind(
+            @Valid @RequestBody BindWechatRequest request, HttpServletRequest http) {
         oauth.bindWechat(
-                principals.require(), request.ticket(), request.currentPassword());
+                principals.require(), request.ticket(), request.currentPassword(),
+                AuthController.clientIp(http), http.getHeader("User-Agent"));
     }
 
     @DeleteMapping
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void unbind(@Valid @RequestBody UnbindRequest request) {
-        oauth.unbindWechat(principals.require(), request.currentPassword());
+    public void unbind(@Valid @RequestBody UnbindRequest request, HttpServletRequest http) {
+        oauth.unbindWechat(
+                principals.require(), request.currentPassword(),
+                AuthController.clientIp(http), http.getHeader("User-Agent"));
     }
 
     /** 绑定请求：ticket + 当前密码。 */

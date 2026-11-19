@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>课堂舞台 · 荷塘月色 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .stage-bar__progress {
+      position: absolute;
+      right: 0;
+      bottom: -1px;
+      left: 0;
+      height: 2px;
+      background: rgba(233, 238, 233, 0.06);
+    }
+
+    .stage-bar__progress i {
+      display: block;
+      width: 43%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--stage-amber), #f0cd8c);
+    }
+
+    .stage-bar {
+      position: relative;
+    }
+
+    .room-screen {
+      position: relative;
+      display: flex;
+      width: calc(100% - 44px);
+      max-width: 1080px;
+      aspect-ratio: 16 / 9;
+      max-height: calc(100% - 36px);
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-md);
+      background:
+        radial-gradient(ellipse at 50% 0%, rgba(224, 164, 74, 0.08), transparent 60%),
+        linear-gradient(160deg, #12221d, #09130f);
+      box-shadow: 0 40px 100px -40px rgba(0, 0, 0, 0.9);
+    }
+
+    .room-screen::after {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(233, 238, 233, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(233, 238, 233, 0.025) 1px, transparent 1px);
+      background-size: 46px 46px;
+      content: "";
+      pointer-events: none;
+    }
+
+    .room-screen__label {
+      position: absolute;
+      top: 14px;
+      left: 16px;
+      z-index: 2;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-pill);
+      background: rgba(7, 16, 14, 0.66);
+      color: var(--stage-muted);
+      font-size: 9px;
+    }
+
+    .room-screen__label [data-icon] svg {
+      width: 11px;
+      height: 11px;
+      color: var(--stage-amber);
+    }
+
+    .slide {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      height: 100%;
+      flex-direction: column;
+      padding: 7% 8% 8%;
+    }
+
+    .slide__eyebrow {
+      color: var(--stage-amber);
+      font-family: var(--font-mono);
+      font-size: clamp(7px, 0.8vw, 10px);
+      letter-spacing: 0.18em;
+    }
+
+    .slide h1 {
+      margin-top: 2.2%;
+      color: #f3f0e7;
+      font-size: clamp(28px, 4.6vw, 64px);
+      font-weight: 600;
+      line-height: 1.08;
+      letter-spacing: 0.04em;
+    }
+
+    .slide h1 span {
+      display: block;
+      margin-top: 1%;
+      color: rgba(243, 240, 231, 0.45);
+      font-size: 0.32em;
+      font-family: var(--font-sans);
+      font-weight: 400;
+      letter-spacing: 0.18em;
+    }
+
+    .slide__rule {
+      width: 8%;
+      height: 2px;
+      margin-top: 3%;
+      background: var(--stage-red);
+    }
+
+    .slide__outline {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 2.4%;
+      margin-top: auto;
+    }
+
+    .slide__item {
+      padding-top: 8px;
+      border-top: 1px solid rgba(243, 240, 231, 0.16);
+    }
+
+    .slide__item strong {
+      display: block;
+      color: rgba(243, 240, 231, 0.82);
+      font-family: var(--font-serif);
+      font-size: clamp(9px, 1.05vw, 14px);
+      font-weight: 600;
+    }
+
+    .slide__item span {
+      display: block;
+      margin-top: 4px;
+      color: rgba(243, 240, 231, 0.38);
+      font-size: clamp(7px, 0.72vw, 10px);
+      line-height: 1.5;
+    }
+
+    .slide__chalk {
+      position: absolute;
+      right: 8%;
+      bottom: 18%;
+      width: 20%;
+      height: 28%;
+      border: 1px solid rgba(243, 240, 231, 0.12);
+      border-radius: 2px;
+      opacity: 0.65;
+    }
+
+    .slide__chalk::before,
+    .slide__chalk::after {
+      position: absolute;
+      left: 12%;
+      width: 76%;
+      height: 1px;
+      background: rgba(243, 240, 231, 0.18);
+      content: "";
+    }
+
+    .slide__chalk::before { top: 30%; box-shadow: 0 10px 0 rgba(243, 240, 231, 0.12), 0 20px 0 rgba(243, 240, 231, 0.09); }
+    .slide__chalk::after { top: 70%; width: 52%; }
+
+    .camera-pip {
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      z-index: 3;
+      width: clamp(150px, 18vw, 228px);
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 1px solid var(--stage-line-strong);
+      border-radius: var(--r-sm);
+      background:
+        radial-gradient(ellipse at 50% 30%, rgba(224, 164, 74, 0.12), transparent 55%),
+        var(--stage-2);
+      box-shadow: var(--shadow-stage);
+    }
+
+    .camera-pip__figure {
+      position: absolute;
+      top: 20%;
+      left: 50%;
+      width: 28%;
+      height: 34%;
+      border: 1px solid rgba(233, 238, 233, 0.26);
+      border-radius: 50%;
+      background: rgba(233, 238, 233, 0.08);
+      transform: translateX(-50%);
+    }
+
+    .camera-pip__figure::after {
+      position: absolute;
+      top: 108%;
+      left: 50%;
+      width: 190%;
+      height: 120%;
+      border: 1px solid rgba(233, 238, 233, 0.18);
+      border-radius: 50% 50% 8px 8px;
+      background: rgba(233, 238, 233, 0.055);
+      content: "";
+      transform: translateX(-50%);
+    }
+
+    .camera-pip__label {
+      position: absolute;
+      bottom: 6px;
+      left: 7px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--stage-muted);
+      font-size: 7.5px;
+    }
+
+    .camera-pip__label::before {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--stage-green);
+      content: "";
+    }
+
+    .stage-caption {
+      position: absolute;
+      bottom: 18px;
+      left: 16px;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-pill);
+      background: rgba(7, 16, 14, 0.72);
+      color: var(--stage-muted);
+      font-size: 9.5px;
+    }
+
+    .stage-caption strong {
+      color: var(--stage-text);
+      font-weight: 500;
+    }
+
+    .stage-caption [data-icon] svg {
+      width: 12px;
+      height: 12px;
+      color: var(--stage-amber);
+    }
+
+    /* Aside students */
+    .student-card {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-md);
+      background: var(--stage-2);
+      color: var(--stage-text);
+      text-align: left;
+      transition:
+        border-color var(--dur-1) var(--ease),
+        background var(--dur-1) var(--ease),
+        transform var(--dur-1) var(--ease);
+    }
+
+    .student-card + .student-card {
+      margin-top: 7px;
+    }
+
+    .student-card:hover {
+      border-color: var(--stage-line-strong);
+      background: var(--stage-3);
+    }
+
+    .student-card.is-selected {
+      border-color: var(--stage-amber);
+      background: rgba(224, 164, 74, 0.09);
+      box-shadow: inset 0 0 0 1px rgba(224, 164, 74, 0.24);
+    }
+
+    .student-card__top {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .student-card__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .student-card__name {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--stage-text);
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+
+    .student-card__meta {
+      margin-top: 1px;
+      color: var(--stage-faint);
+      font-size: 8.5px;
+    }
+
+    .student-card__status {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--stage-green);
+      font-size: 8px;
+      white-space: nowrap;
+    }
+
+    .student-card__status::before {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+    }
+
+    .student-card__status--hand {
+      color: var(--stage-amber);
+    }
+
+    .student-card__status--off {
+      color: var(--stage-faint);
+    }
+
+    .student-meters {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px 10px;
+      margin-top: 9px;
+      padding-top: 8px;
+      border-top: 1px solid var(--stage-line);
+    }
+
+    .student-meter {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .student-meter span {
+      color: var(--stage-faint);
+      font-size: 7.5px;
+    }
+
+    .student-meter strong {
+      color: var(--stage-green);
+      font-family: var(--font-mono);
+      font-size: 8px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+    }
+
+    .student-meter--gold strong {
+      color: var(--stage-amber);
+    }
+
+    /* Dialogue */
+    .dialogue-live {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 10px;
+      border: 1px solid var(--stage-line);
+      border-radius: var(--r-sm);
+      background: var(--stage-2);
+      color: var(--stage-muted);
+      font-size: 8.5px;
+    }
+
+    .dialogue-live::before {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--stage-red);
+      content: "";
+      animation: livePulse 1.6s ease-in-out infinite;
+    }
+
+    .dialogue-line {
+      display: flex;
+      gap: 8px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--stage-line);
+    }
+
+    .dialogue-line:last-child {
+      border-bottom: 0;
+    }
+
+    .dialogue-line__body {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .dialogue-line__head {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      color: var(--stage-muted);
+      font-size: 8px;
+    }
+
+    .dialogue-line__head strong {
+      color: var(--stage-text);
+      font-size: 9.5px;
+      font-weight: 600;
+    }
+
+    .dialogue-line__text {
+      margin-top: 3px;
+      color: var(--stage-muted);
+      font-size: 9.5px;
+      line-height: 1.6;
+    }
+
+    .dialogue-line--teacher .dialogue-line__text {
+      color: rgba(233, 238, 233, 0.8);
+    }
+
+    .dialogue-line--student .dialogue-line__head strong {
+      color: var(--stage-amber);
+    }
+
+    .dialogue-line--system .dialogue-line__text {
+      color: var(--stage-faint);
+      font-style: italic;
+    }
+
+    .dialogue-line .avatar {
+      width: 24px;
+      height: 24px;
+      font-size: 9px;
+      background: var(--stage-3);
+      color: var(--stage-muted);
+    }
+
+    .dialogue-line--student .avatar {
+      background: rgba(224, 164, 74, 0.14);
+      color: var(--stage-amber);
+    }
+
+    .side-dialogue {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--stage-line);
+    }
+
+    .side-dialogue__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--stage-muted);
+      font-size: 9px;
+    }
+
+    .side-dialogue__head strong {
+      color: var(--stage-text);
+      font-family: var(--font-serif);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .side-dialogue .dialogue-line {
+      padding: 7px 0;
+    }
+
+    .side-dialogue .dialogue-line__text {
+      font-size: 9px;
+    }
+
+    .stage-dock__selected {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--stage-faint);
+      font-size: 9px;
+      white-space: nowrap;
+    }
+
+    .stage-dock__selected strong {
+      color: var(--stage-amber);
+      font-weight: 500;
+    }
+
+    @media (max-width: 1100px) {
+      .stage-main {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .stage-aside {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body class="stage">
+  <div class="stage-shell">
+    <header class="stage-bar">
+      <a class="stage-bar__back" href="student-task-detail.html"><span data-icon="arrow-left"></span>返回</a>
+      <div class="stage-bar__brand">
+        <span class="seal seal--sm" aria-hidden="true">三</span>
+        <span>三尺讲台</span>
+      </div>
+      <div class="stage-title">
+        荷塘月色 · 自由试讲
+        <span class="stage-title__sub">语文教学论 / 王宁</span>
+      </div>
+      <div class="stage-meta">
+        <span class="stage-meta__item stage-meta__item--ok"><span data-icon="wifi"></span>WS 已连接</span>
+        <span class="stage-meta__item stage-meta__item--live"><span data-icon="circle"></span>REC 12:48</span>
+        <span class="stage-meta__item mono">08:42 / 20:00</span>
+      </div>
+      <div class="stage-bar__actions">
+        <button class="btn btn--ghost btn--sm" type="button" data-toast="切换布局：共享窗口 / 摄像头主画面（原型演示）。"><span data-icon="grid"></span>布局</button>
+        <button class="btn btn--danger btn--sm" type="button" data-open="end-session-modal"><span data-icon="x"></span>结束试讲</button>
+      </div>
+      <div class="stage-bar__progress" aria-hidden="true"><i></i></div>
+    </header>
+
+    <div class="stage-main">
+      <div class="stage-workspace">
+        <section class="stage-panel stage-panel--stage" aria-label="课堂主画面">
+          <div class="room-screen">
+            <span class="room-screen__label"><span data-icon="monitor"></span>共享窗口 · 课件</span>
+            <div class="slide">
+              <p class="slide__eyebrow">部编版 · 八年级上册 · 第一课时</p>
+              <h1>荷塘月色<span>朱自清 / 1927</span></h1>
+              <div class="slide__rule"></div>
+              <div class="slide__outline">
+                <div class="slide__item"><strong>01 · 导入</strong><span>月下荷塘的初读感受</span></div>
+                <div class="slide__item"><strong>02 · 新授</strong><span>通感与叠词的表达效果</span></div>
+                <div class="slide__item"><strong>03 · 练习</strong><span>仿写一段月下景物</span></div>
+              </div>
+              <div class="slide__chalk" aria-hidden="true"></div>
+            </div>
+            <div class="camera-pip" aria-label="摄像头小窗">
+              <div class="camera-pip__figure" aria-hidden="true"></div>
+              <span class="camera-pip__label">摄像头 · 预览</span>
+            </div>
+          </div>
+          <div class="stage-caption"><span data-icon="mic"></span><strong>正在讲解</strong> · 导入环节 02:14</div>
+        </section>
+
+        <footer class="stage-dock">
+          <div class="stage-dock__group">
+            <button class="btn btn--primary btn--sm" type="button" data-toast="已向全班发起提问（原型演示）。"><span data-icon="message"></span>提问全班</button>
+            <button class="btn btn--secondary btn--sm" type="button" data-toast="已点名：周予安（原型演示）。"><span data-icon="hand"></span>点名回答</button>
+            <button class="btn btn--ghost btn--sm" type="button" data-toast="已提醒走神学生（原型演示）。"><span data-icon="alert-triangle"></span>提醒纪律</button>
+            <button class="btn btn--ghost btn--sm" type="button" data-toast="结束问答（原型演示）。">结束问答</button>
+          </div>
+          <span class="stage-dock__selected">已选：<strong id="selected-student">周予安</strong></span>
+          <div class="stage-dock__status">
+            <span class="device-pill device-pill--ok"><span data-icon="mic"></span><span class="mic-level" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span></span>
+            <span class="device-pill device-pill--ok"><span data-icon="camera"></span>摄像头</span>
+            <span class="device-pill device-pill--ok"><span data-icon="monitor"></span>屏幕</span>
+            <span class="badge badge--live">三路录制中</span>
+          </div>
+          <button class="btn btn--danger btn--sm" type="button" data-open="end-session-modal">结束试讲</button>
+        </footer>
+      </div>
+
+      <aside class="stage-aside">
+        <div class="stage-panel" style="display:flex;min-height:0;flex:1;flex-direction:column">
+          <div class="stage-tabs" data-tabs="classroom-aside" role="tablist" aria-label="课堂侧栏">
+            <button class="stage-tab is-active" type="button" role="tab" aria-selected="true" data-tab="students">虚拟学生 <span class="count" style="background:var(--stage-3);color:var(--stage-muted)">3</span></button>
+            <button class="stage-tab" type="button" role="tab" aria-selected="false" data-tab="dialogue">课堂对话 <span class="count" style="background:var(--stage-3);color:var(--stage-muted)">6</span></button>
+          </div>
+          <div class="stage-aside__body" data-panel-group="classroom-aside">
+            <div data-panel="students">
+              <div class="row" style="justify-content:space-between;margin-bottom:10px">
+                <span class="xs" style="color:var(--stage-muted)">点击学生可点名 / 查看状态</span>
+                <span class="badge badge--warning">1 人举手</span>
+              </div>
+
+              <button class="student-card is-selected" type="button" data-student-card data-student-name="周予安">
+                <div class="student-card__top">
+                  <span class="avatar avatar--sm avatar--cinnabar">周</span>
+                  <div class="student-card__main">
+                    <div class="student-card__name">周予安 <span class="badge badge--plain" style="height:16px;padding:0 5px;font-size:8px;background:rgba(224,164,74,.14);color:var(--stage-amber)">举手</span></div>
+                    <div class="student-card__meta">活跃型 · 提问率 64%</div>
+                  </div>
+                  <span class="student-card__status student-card__status--hand">等待点名</span>
+                </div>
+                <div class="student-meters">
+                  <div class="student-meter"><span>专注</span><strong>86%</strong></div>
+                  <div class="student-meter student-meter--gold"><span>活跃</span><strong>78%</strong></div>
+                </div>
+              </button>
+
+              <button class="student-card" type="button" data-student-card data-student-name="陈一诺">
+                <div class="student-card__top">
+                  <span class="avatar avatar--sm avatar--gold">陈</span>
+                  <div class="student-card__main">
+                    <div class="student-card__name">陈一诺</div>
+                    <div class="student-card__meta">沉稳型 · 正确率 82%</div>
+                  </div>
+                  <span class="student-card__status">专注</span>
+                </div>
+                <div class="student-meters">
+                  <div class="student-meter"><span>专注</span><strong>92%</strong></div>
+                  <div class="student-meter student-meter--gold"><span>活跃</span><strong>52%</strong></div>
+                </div>
+              </button>
+
+              <button class="student-card" type="button" data-student-card data-student-name="许知远">
+                <div class="student-card__top">
+                  <span class="avatar avatar--sm avatar--blue">许</span>
+                  <div class="student-card__main">
+                    <div class="student-card__name">许知远</div>
+                    <div class="student-card__meta">内向型 · 注意 48%</div>
+                  </div>
+                  <span class="student-card__status student-card__status--off">走神</span>
+                </div>
+                <div class="student-meters">
+                  <div class="student-meter"><span>专注</span><strong>48%</strong></div>
+                  <div class="student-meter student-meter--gold"><span>活跃</span><strong>34%</strong></div>
+                </div>
+              </button>
+
+              <div class="alert alert--note" style="margin-top:12px;padding:9px 10px;border-left-color:var(--stage-amber);background:rgba(224,164,74,.08)">
+                <span data-icon="info"></span>
+                <div><span style="font-size:8.5px;line-height:1.55">纪律与互动事件会写入课堂时间线，回看时可定位。</span></div>
+              </div>
+
+              <div class="side-dialogue">
+                <div class="side-dialogue__head"><strong>最近对话</strong><button class="btn btn--ghost btn--xs" type="button" data-goto-tab="dialogue">全部 <span data-icon="arrow-right"></span></button></div>
+                <div class="dialogue-line dialogue-line--teacher">
+                  <span class="avatar avatar--sm">师</span>
+                  <div class="dialogue-line__body"><div class="dialogue-line__head"><strong>教师</strong><span>02:10</span></div><p class="dialogue-line__text">“泻”字如果换成“流”，感觉有什么不同？</p></div>
+                </div>
+                <div class="dialogue-line dialogue-line--student">
+                  <span class="avatar avatar--sm">周</span>
+                  <div class="dialogue-line__body"><div class="dialogue-line__head"><strong>周予安</strong><span>02:14</span></div><p class="dialogue-line__text">“泻”更有月光像水一样倾下来的感觉。</p></div>
+                </div>
+              </div>
+            </div>
+
+            <div data-panel="dialogue" hidden>
+              <div class="dialogue-live">实时转写中 · 仅本人与课程老师组可见</div>
+              <div style="margin-top:8px">
+                <div class="dialogue-line dialogue-line--teacher">
+                  <span class="avatar avatar--sm">师</span>
+                  <div class="dialogue-line__body">
+                    <div class="dialogue-line__head"><strong>教师</strong><span>02:10</span></div>
+                    <p class="dialogue-line__text">同学们，我们先看这一段。“泻”字如果换成“流”，感觉有什么不同？</p>
+                  </div>
+                </div>
+                <div class="dialogue-line dialogue-line--student">
+                  <span class="avatar avatar--sm">周</span>
+                  <div class="dialogue-line__body">
+                    <div class="dialogue-line__head"><strong>周予安</strong><span>02:14</span></div>
+                    <p class="dialogue-line__text">老师，我觉得“泻”更有月光像水一样倾下来的感觉。</p>
+                  </div>
+                </div>
+                <div class="dialogue-line dialogue-line--teacher">
+                  <span class="avatar avatar--sm">师</span>
+                  <div class="dialogue-line__body">
+                    <div class="dialogue-line__head"><strong>教师</strong><span>02:22</span></div>
+                    <p class="dialogue-line__text">很好。那叠词“曲曲折折”“田田”又带来了什么节奏？</p>
+                  </div>
+                </div>
+                <div class="dialogue-line dialogue-line--system">
+                  <span class="avatar avatar--sm">系</span>
+                  <div class="dialogue-line__body">
+                    <div class="dialogue-line__head"><strong>课堂事件</strong><span>02:31</span></div>
+                    <p class="dialogue-line__text">系统识别到 1 名学生举手；已计入课堂互动事件。</p>
+                  </div>
+                </div>
+                <div class="dialogue-line dialogue-line--student">
+                  <span class="avatar avatar--sm">陈</span>
+                  <div class="dialogue-line__body">
+                    <div class="dialogue-line__head"><strong>陈一诺</strong><span>02:38</span></div>
+                    <p class="dialogue-line__text">叠词让画面更慢，也更有层次。</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- End session modal -->
+  <div class="overlay" data-overlay-for="end-session-modal"></div>
+  <div class="modal" id="end-session-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="end-session-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="end-session-title">结束本次试讲？</div>
+        <div class="drawer__sub">已录制 12:48 · 三路录制正常</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="end-session-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="alert alert--warning">
+        <span data-icon="alert-triangle"></span>
+        <div><div class="alert__title">结束后将停止录制</div><span>系统会完成最后一片上传并进入回看页。提交前仍可删除并重做；提交后本次回放只读。</span></div>
+      </div>
+      <div class="row" style="margin-top:16px;color:var(--stage-muted);font-size:10px">
+        <span class="device-pill device-pill--ok"><span data-icon="camera"></span>摄像头已上传</span>
+        <span class="device-pill device-pill--ok"><span data-icon="monitor"></span>屏幕已上传</span>
+        <span class="device-pill device-pill--ok"><span data-icon="mic"></span>麦克风已上传</span>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="end-session-modal">继续试讲</button>
+      <a class="btn btn--primary" href="review.html"><span data-icon="check"></span>结束并回看</a>
+    </div>
+  </div>
+
+  <script src="assets/site.js"></script>
+  <script>
+    document.querySelectorAll("[data-student-card]").forEach(function (card) {
+      card.addEventListener("click", function () {
+        document.querySelectorAll("[data-student-card]").forEach(function (item) {
+          item.classList.remove("is-selected");
+        });
+        card.classList.add("is-selected");
+        document.getElementById("selected-student").textContent = card.dataset.studentName;
+      });
+    });
+
+    document.querySelectorAll("[data-goto-tab]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        window.PrototypeUI.selectTab("classroom-aside", button.dataset.gotoTab);
+      });
+    });
+  </script>
+</body>
+</html>

@@ -89,6 +89,7 @@ export interface GradingRow {
   class_name: string
   class_id_snapshot: string | null
   student_status: 'active' | 'left' | 'removed'
+  session_id: string | null
   session_status: string
   submitted_at: string | null
   ai: AiScoreView | null
@@ -262,6 +263,7 @@ export interface StudentResultList {
 export interface StudentResultDetail {
   submission_id: string
   task_id: string
+  session_id: string
   task_title: string
   course_name: string
   submitted_at: string

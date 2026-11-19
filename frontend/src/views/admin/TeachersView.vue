@@ -8,7 +8,6 @@ import {
   updateTeacherMajors,
 } from '../../api/auth'
 import type { MajorView, TeacherRow } from '../../api/auth'
-import AdminShell from './AdminShell.vue'
 
 /**
  * 教师管理（FR-M1-08 / FR-M1-12 / 03 §3.9 /admin/teachers）：
@@ -70,8 +69,7 @@ onMounted(reload)
 </script>
 
 <template>
-  <AdminShell>
-    <div class="teachers-page">
+  <div class="teachers-page">
     <h2>教师管理</h2>
     <p class="tip">
       仅可修改本校教师的专业范围与管理权限；教师本人不能修改自己的资料。
@@ -130,8 +128,7 @@ onMounted(reload)
         <el-button type="primary" @click="save">保存</el-button>
       </template>
     </el-dialog>
-    </div>
-  </AdminShell>
+  </div>
 </template>
 
 <style scoped>

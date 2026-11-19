@@ -1,6 +1,7 @@
 package com.shijiangtai.m4eval.application;
 
 import com.shijiangtai.m4eval.application.port.DimensionScoreRepository;
+import com.shijiangtai.m4eval.application.port.EvaluationInputQuery;
 import com.shijiangtai.m4eval.application.port.EvaluationInputSnapshotRepository;
 import com.shijiangtai.m4eval.application.port.EvaluationIssueRepository;
 import com.shijiangtai.m4eval.application.port.EvaluationRepository;
@@ -13,6 +14,7 @@ import com.shijiangtai.m4eval.domain.EvaluationException;
 import com.shijiangtai.m4eval.domain.EvaluationIssue;
 import com.shijiangtai.m4eval.domain.EvaluationStatus;
 import com.shijiangtai.m4eval.domain.InputSnapshot;
+import com.shijiangtai.shared.application.ClockProvider;
 import com.shijiangtai.shared.application.CurrentUser;
 import java.util.Comparator;
 import java.util.List;
@@ -36,14 +38,18 @@ public class EvaluationReportQueryService {
     private final DimensionScoreRepository dimensionScoreRepository;
     private final EvaluationIssueRepository issueRepository;
     private final EvaluationInputSnapshotRepository snapshotRepository;
+    private final EvaluationInputQuery inputQuery;
     private final EvaluationAccessPolicy accessPolicy;
+    private final ClockProvider clock;
 
     public EvaluationReportQueryService(
             EvaluationRepository evaluationRepository,
             DimensionScoreRepository dimensionScoreRepository,
             EvaluationIssueRepository issueRepository,
             EvaluationInputSnapshotRepository snapshotRepository,
-            EvaluationAccessPolicy accessPolicy) {
+            EvaluationInputQuery inputQuery,
+            EvaluationAccessPolicy accessPolicy,
+            ClockProvider clock) {
         this.evaluationRepository = Objects.requireNonNull(
                 evaluationRepository, "evaluationRepository");
         this.dimensionScoreRepository = Objects.requireNonNull(
@@ -51,13 +57,51 @@ public class EvaluationReportQueryService {
         this.issueRepository = Objects.requireNonNull(issueRepository, "issueRepository");
         this.snapshotRepository = Objects.requireNonNull(
                 snapshotRepository, "snapshotRepository");
+        this.inputQuery = Objects.requireNonNull(inputQuery, "inputQuery");
         this.accessPolicy = Objects.requireNonNull(accessPolicy, "accessPolicy");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     @Transactional(readOnly = true)
     public ReportView report(CurrentUser user, UUID evaluationId) {
         Evaluation evaluation = requireReadable(user, evaluationId);
         requireReady(evaluation);
+        return buildReport(evaluation);
+    }
+
+    /**
+     * 训练记录入口：{@code GET /training/records/{record_id}/evaluation}。
+     *
+     * <p>训练报告仅本人可见，由 {@link EvaluationAccessPolicy} 统一校验；M6 复用本方法，
+     * 不再自行读取 {@code m4_eval.*} 组装报告。
+     */
+    @Transactional(readOnly = true)
+    public ReportView reportByTrainingRecord(CurrentUser user, UUID trainingRecordId) {
+        Evaluation evaluation = evaluationRepository
+                .findBySource(Evaluation.SOURCE_TRAINING_RECORD, trainingRecordId)
+                .orElseThrow(() -> new EvaluationException(
+                        EvaluationErrorCode.EVALUATION_NOT_FOUND, "评测不存在"));
+        accessPolicy.requireRead(user, evaluation);
+        requireActiveTrainingRecord(trainingRecordId);
+        requireReady(evaluation);
+        return buildReport(evaluation);
+    }
+
+    /** 与 08 §10.6 一致：训练记录过期 / 删除后返回 404，不泄露报告内容。 */
+    private void requireActiveTrainingRecord(UUID trainingRecordId) {
+        EvaluationInputQuery.TrainingContext record = inputQuery
+                .findTrainingRecord(trainingRecordId)
+                .orElseThrow(() -> new EvaluationException(
+                        EvaluationErrorCode.EVALUATION_NOT_FOUND, "评测不存在"));
+        boolean active = "selected".equals(record.status()) || "evaluated".equals(record.status());
+        if (!active || record.expiresAt() == null || !record.expiresAt().isAfter(clock.now())) {
+            throw new EvaluationException(
+                    EvaluationErrorCode.EVALUATION_NOT_FOUND, "评测不存在");
+        }
+    }
+
+    private ReportView buildReport(Evaluation evaluation) {
+        UUID evaluationId = evaluation.id();
         List<DimensionScore> scores = dimensionScoreRepository.findByEvaluationId(evaluationId);
         List<IssueView> suggestions = issueRepository.findByEvaluationId(evaluationId).stream()
                 .filter(EvaluationIssue::isSuggestion)

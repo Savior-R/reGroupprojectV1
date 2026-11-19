@@ -354,11 +354,11 @@ class SubmissionServiceTest {
     }
 
     private TaskId createPublishedTask() {
-        Task task = Task.createDraft(
+        Task task = Task.create(
                 new TaskId(UUID.randomUUID()), COURSE, TEACHER, freeDraft(), NOW);
         TaskSnapshot snapshot = new TaskSnapshotFactory().create(
                 task, course(), List.of(), NOW);
-        task.publish(snapshot, NOW);
+        task.publishInitial(snapshot, null, NOW);
         tasks.save(task);
         assignments.saveAll(List.of(new TaskAssignment(
                 UUID.randomUUID(), task.id(), STUDENT, CLASS, NOW,

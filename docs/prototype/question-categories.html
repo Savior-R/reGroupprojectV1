@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>类别管理 · 结构化面试题库 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .category-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .category-main {
+      display: grid;
+      gap: 16px;
+    }
+
+    .category-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .category-toolbar .input {
+      max-width: 280px;
+    }
+
+    .category-toolbar .select {
+      width: 140px;
+    }
+
+    .category-toolbar__spacer {
+      flex: 1;
+    }
+
+    .category-name {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+
+    .category-name__mark {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: none;
+      place-items: center;
+      border-radius: var(--r-xs);
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .category-name strong {
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .category-name span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    .aside-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .aside-card .card-head,
+    .aside-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .note-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .note-list span {
+      color: var(--text-3);
+      font-size: 9px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1180px) {
+      .category-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+    }
+  </style>
+</head>
+<body data-role="teacher" data-nav="question-bank">
+  <div data-app-header></div>
+
+  <div class="context-bar">
+    <div class="context-bar__inner">
+      <div class="breadcrumb">
+        <a href="question-bank.html">结构化面试题库</a>
+        <span class="breadcrumb__sep">/</span>
+        <span class="breadcrumb__current">类别管理</span>
+      </div>
+      <div class="context-tabs">
+        <a class="context-tab" href="question-bank.html">题目列表</a>
+        <a class="context-tab is-active" href="question-categories.html">类别管理</a>
+      </div>
+    </div>
+  </div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">CATEGORY / 类别管理</p>
+        <h1 class="page-title">类别管理</h1>
+        <p class="page-lead">本校题库的类别仓库。类别用于题目筛选与任务选题；停用类别不会删除历史题目。</p>
+      </div>
+      <div class="head-actions">
+        <a class="btn btn--secondary" href="question-bank.html"><span data-icon="arrow-left"></span>返回题库</a>
+        <button class="btn btn--primary" type="button" data-open="category-editor-drawer"><span data-icon="plus"></span>新增类别</button>
+      </div>
+    </header>
+
+    <div class="stat-strip" style="margin-bottom:22px">
+      <div class="stat"><div class="stat__label">类别</div><div class="stat__value">6</div><div class="stat__meta">本校题库</div></div>
+      <div class="stat"><div class="stat__label">启用</div><div class="stat__value" style="color:var(--success)">5</div><div class="stat__meta">可用于选题</div></div>
+      <div class="stat"><div class="stat__label">停用</div><div class="stat__value">1</div><div class="stat__meta">保留历史引用</div></div>
+      <div class="stat"><div class="stat__label">题目</div><div class="stat__value stat__value--brand">128</div><div class="stat__meta">全部类别合计</div></div>
+    </div>
+
+    <div class="category-layout">
+      <div class="category-main">
+        <div class="card">
+          <div class="category-toolbar">
+            <label class="input-affix">
+              <span data-icon="search"></span>
+              <input class="input" type="search" id="category-search" placeholder="搜索类别名称" aria-label="搜索类别">
+            </label>
+            <select class="select" id="category-status" aria-label="类别状态"><option value="">全部状态</option><option value="active">启用</option><option value="inactive">停用</option></select>
+            <span class="category-toolbar__spacer"></span>
+            <span class="xs faint">按排序值升序 · 共 6 个类别</span>
+          </div>
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>类别</th><th class="num">排序</th><th class="num">题目</th><th>状态</th><th>更新时间</th><th class="actions">操作</th></tr></thead>
+              <tbody>
+                <tr data-category-row data-status="active"><td><div class="category-name"><span class="category-name__mark">教</span><div><strong>教育理念</strong><span>教育观 · 学生观 · 教师观</span></div></div></td><td class="num">1</td><td class="num">32</td><td><span class="badge badge--success">启用</span></td><td class="xs faint">2026-11-12</td><td class="actions"><button class="btn btn--secondary btn--xs" type="button" data-open="category-editor-drawer">编辑</button><button class="btn btn--ghost btn--xs" type="button" data-toast="停用类别需要二次确认（原型演示）。">停用</button></td></tr>
+                <tr data-category-row data-status="active"><td><div class="category-name"><span class="category-name__mark">班</span><div><strong>班级管理</strong><span>纪律 · 班风 · 家校沟通</span></div></div></td><td class="num">2</td><td class="num">28</td><td><span class="badge badge--success">启用</span></td><td class="xs faint">2026-11-12</td><td class="actions"><button class="btn btn--secondary btn--xs" type="button" data-open="category-editor-drawer">编辑</button><button class="btn btn--ghost btn--xs" type="button" data-toast="停用类别需要二次确认（原型演示）。">停用</button></td></tr>
+                <tr data-category-row data-status="active"><td><div class="category-name"><span class="category-name__mark">应</span><div><strong>应急应变</strong><span>课堂突发 · 安全事件</span></div></div></td><td class="num">3</td><td class="num">24</td><td><span class="badge badge--success">启用</span></td><td class="xs faint">2026-11-10</td><td class="actions"><button class="btn btn--secondary btn--xs" type="button" data-open="category-editor-drawer">编辑</button><button class="btn btn--ghost btn--xs" type="button" data-toast="停用类别需要二次确认（原型演示）。">停用</button></td></tr>
+                <tr data-category-row data-status="active"><td><div class="category-name"><span class="category-name__mark">职</span><div><strong>职业认知</strong><span>教师职业 · 教育法规</span></div></div></td><td class="num">4</td><td class="num">20</td><td><span class="badge badge--success">启用</span></td><td class="xs faint">2026-11-08</td><td class="actions"><button class="btn btn--secondary btn--xs" type="button" data-open="category-editor-drawer">编辑</button><button class="btn btn--ghost btn--xs" type="button" data-toast="停用类别需要二次确认（原型演示）。">停用</button></td></tr>
+                <tr data-category-row data-status="active"><td><div class="category-name"><span class="category-name__mark">教</span><div><strong>教学实施</strong><span>教学设计 · 课堂组织</span></div></div></td><td class="num">5</td><td class="num">14</td><td><span class="badge badge--success">启用</span></td><td class="xs faint">2026-11-06</td><td class="actions"><button class="btn btn--secondary btn--xs" type="button" data-open="category-editor-drawer">编辑</button><button class="btn btn--ghost btn--xs" type="button" data-toast="停用类别需要二次确认（原型演示）。">停用</button></td></tr>
+                <tr class="row-muted" data-category-row data-status="inactive"><td><div class="category-name"><span class="category-name__mark">人</span><div><strong>人际沟通</strong><span>师生 · 同事 · 家长沟通</span></div></div></td><td class="num">6</td><td class="num">10</td><td><span class="badge">停用</span></td><td class="xs faint">2026-10-30</td><td class="actions"><button class="btn btn--ghost btn--xs" type="button" data-toast="启用类别（原型演示）。">启用</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="list-foot">
+            <span class="list-foot__info" id="category-list-info">共 6 个类别 · 显示 1—6</span>
+            <div class="pagination" aria-label="类别分页">
+              <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+              <button class="pagination__btn is-active" type="button">1</button>
+              <button class="pagination__btn" type="button" data-toast="第 2 页（原型演示）。">2</button>
+              <button class="pagination__btn" type="button" data-toast="下一页（原型演示）。" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="aside-card">
+        <div class="card-head"><div class="card-head__main"><h2 class="card-title">类别说明</h2><p class="card-sub">题库仓库规则</p></div></div>
+        <div class="card-body">
+          <div class="note-list">
+            <span>· 类别排序值决定题库筛选与选题抽屉的显示顺序。</span>
+            <span>· 停用类别不会删除历史题目，也不能在新任务中被选题。</span>
+            <span>· 每道题必须属于一个类别；类别名称在本校题库内唯一。</span>
+            <span>· 类别列表使用分页；题目引用使用搜索 + 分页列表。</span>
+          </div>
+          <a class="btn btn--secondary btn--block btn--sm" href="question-bank.html" style="margin-top:12px">返回题目列表</a>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Category editor drawer -->
+  <div class="overlay" data-overlay-for="category-editor-drawer"></div>
+  <aside class="drawer" id="category-editor-drawer" aria-hidden="true" aria-labelledby="category-editor-title">
+    <div class="drawer__head">
+      <div>
+        <div class="drawer__title" id="category-editor-title">编辑类别</div>
+        <div class="drawer__sub">本校题库 · 类别名称唯一</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="category-editor-drawer" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="drawer__body">
+      <label class="field"><span class="label">类别名称 <span class="req">*</span></span><input class="input" value="教育理念" aria-label="类别名称"></label>
+      <label class="field" style="margin-top:14px"><span class="label">排序值</span><input class="input" type="number" value="1" min="1" aria-label="排序值"><span class="field-hint">数值越小越靠前；建议按 10 递增。</span></label>
+      <div class="alert alert--info" style="margin-top:16px"><span data-icon="info"></span><div><span>停用类别不会影响已发布任务中的题目快照。</span></div></div>
+    </div>
+    <div class="drawer__foot">
+      <button class="btn btn--secondary" type="button" data-close="category-editor-drawer">取消</button>
+      <button class="btn btn--primary" type="button" data-close="category-editor-drawer" data-toast="类别已保存（原型演示）。">保存</button>
+    </div>
+  </aside>
+
+  <script src="assets/site.js"></script>
+  <script>
+    const categoryRows = Array.from(document.querySelectorAll("[data-category-row]"));
+    const categorySearch = document.getElementById("category-search");
+    const categoryStatus = document.getElementById("category-status");
+    const categoryInfo = document.getElementById("category-list-info");
+
+    function filterCategories() {
+      const keyword = categorySearch.value.trim().toLowerCase();
+      const status = categoryStatus.value;
+      let visible = 0;
+      categoryRows.forEach(function (row) {
+        const matchText = !keyword || row.textContent.toLowerCase().includes(keyword);
+        const matchStatus = !status || row.dataset.status === status;
+        row.hidden = !(matchText && matchStatus);
+        if (!row.hidden) visible += 1;
+      });
+      categoryInfo.textContent = visible > 0 ? "共 " + visible + " 个类别 · 显示 1—" + visible : "没有匹配的类别";
+    }
+
+    categorySearch.addEventListener("input", filterCategories);
+    categoryStatus.addEventListener("change", filterCategories);
+  </script>
+</body>
+</html>

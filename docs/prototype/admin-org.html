@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学校与组织 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    .org-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .org-main {
+      display: grid;
+      gap: 16px;
+    }
+
+    .org-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .org-card__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .org-card__head h2 {
+      font-size: 19px;
+    }
+
+    .org-card__head p {
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 9.5px;
+    }
+
+    .org-card__actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .modal--org {
+      width: min(560px, 94vw);
+    }
+
+    .modal-form {
+      display: grid;
+      gap: 14px;
+    }
+
+    .modal-form .alert {
+      margin-top: 2px;
+    }
+
+    .org-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .org-name__mark {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: none;
+      place-items: center;
+      border-radius: var(--r-xs);
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-family: var(--font-serif);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .org-name strong {
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* Aside */
+    .side-stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .side-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow-1);
+    }
+
+    .side-card .card-head,
+    .side-card .card-body {
+      padding: 16px 18px;
+    }
+
+    .school-mark {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 18px;
+      background:
+        linear-gradient(135deg, rgba(42, 103, 88, 0.08), transparent 65%),
+        var(--surface);
+    }
+
+    .school-mark__seal {
+      display: grid;
+      width: 44px;
+      height: 44px;
+      flex: none;
+      place-items: center;
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      color: var(--accent);
+      font-family: var(--font-serif);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      transform: rotate(-3deg);
+    }
+
+    .school-mark__main strong {
+      display: block;
+      color: var(--text);
+      font-family: var(--font-serif);
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .school-mark__main span {
+      display: block;
+      margin-top: 2px;
+      color: var(--text-3);
+      font-size: 9px;
+    }
+
+    .school-meta {
+      display: grid;
+      gap: 0;
+      padding: 4px 18px 12px;
+    }
+
+    .school-meta__row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 10px;
+    }
+
+    .school-meta__row:last-child {
+      border-bottom: 0;
+    }
+
+    .school-meta__row dt {
+      color: var(--text-3);
+    }
+
+    .school-meta__row dd {
+      margin: 0;
+      color: var(--text);
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .import-zone {
+      display: flex;
+      min-height: 112px;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      margin: 14px 18px 0;
+      padding: 14px;
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--r-md);
+      background: var(--paper-0);
+      color: var(--text-3);
+      text-align: center;
+      cursor: pointer;
+    }
+
+    .import-zone:hover {
+      border-color: var(--brand);
+      background: var(--brand-wash);
+    }
+
+    .import-zone [data-icon] svg {
+      width: 20px;
+      height: 20px;
+      color: var(--text-3);
+    }
+
+    .import-zone strong {
+      color: var(--text-2);
+      font-size: 10.5px;
+      font-weight: 600;
+    }
+
+    .import-zone span {
+      font-size: 9px;
+    }
+
+    .import-history {
+      display: grid;
+      gap: 0;
+      padding: 6px 18px 14px;
+    }
+
+    .import-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .import-item:last-child {
+      border-bottom: 0;
+    }
+
+    .import-item [data-icon] svg {
+      width: 14px;
+      height: 14px;
+      color: var(--success);
+    }
+
+    .import-item__main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .import-item__main strong {
+      display: block;
+      color: var(--text);
+      font-size: 9.5px;
+      font-weight: 600;
+    }
+
+    .import-item__main span {
+      display: block;
+      margin-top: 1px;
+      color: var(--text-3);
+      font-size: 8.5px;
+    }
+
+    @media (max-width: 1180px) {
+      .org-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .side-stack {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .side-stack {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body data-role="admin" data-nav="admin-org">
+  <div data-app-header></div>
+
+  <main class="page">
+    <header class="page-head">
+      <div class="page-head__main">
+        <p class="eyebrow">ORGANIZATION / 学校与组织</p>
+        <h1 class="page-title">学校与组织</h1>
+        <p class="page-lead">当前学校：华中师范大学。专业与班级停用后不再出现在注册选项，已有学生关系保留。</p>
+      </div>
+      <div class="head-actions">
+        <button class="btn btn--secondary" type="button" data-toast="下载导入模板（原型演示）。"><span data-icon="download"></span>下载模板</button>
+        <button class="btn btn--primary" type="button" data-toast="导入组织 CSV / Excel（原型演示）。"><span data-icon="upload"></span>导入组织</button>
+      </div>
+    </header>
+
+    <div class="stat-strip" style="margin-bottom:22px">
+      <div class="stat"><div class="stat__label">专业</div><div class="stat__value">6</div><div class="stat__meta">启用 5 · 停用 1</div></div>
+      <div class="stat"><div class="stat__label">班级</div><div class="stat__value">24</div><div class="stat__meta">覆盖 2022—2025 级</div></div>
+      <div class="stat"><div class="stat__label">教师</div><div class="stat__value">18</div><div class="stat__meta">含 2 名管理员</div></div>
+      <div class="stat"><div class="stat__label">学生</div><div class="stat__value">326</div><div class="stat__meta">已绑定班级</div></div>
+    </div>
+
+    <div class="org-layout">
+      <div class="org-main">
+        <section class="org-card">
+          <div class="org-card__head">
+            <div>
+              <h2>专业</h2>
+              <p>停用后不再出现在注册选项；已有课程/教师关系保留。</p>
+            </div>
+            <div class="org-card__actions">
+              <button class="btn btn--ghost btn--sm" type="button" data-toast="下载专业模板（原型演示）。">下载模板</button>
+              <button class="btn btn--secondary btn--sm" type="button" data-toast="导入专业（原型演示）。"><span data-icon="upload"></span>导入</button>
+              <button class="btn btn--primary btn--sm" type="button" data-open="major-modal"><span data-icon="plus"></span>新增专业</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table table--compact">
+              <thead><tr><th>专业</th><th class="num">学生</th><th class="num">班级</th><th>状态</th><th class="actions">操作</th></tr></thead>
+              <tbody>
+                <tr><td><div class="org-name"><span class="org-name__mark">语</span><strong>汉语言文学（师范）</strong></div></td><td class="num">128</td><td class="num">8</td><td><span class="badge badge--success">启用</span></td><td class="actions"><a href="#" data-open="major-modal" data-major-name="汉语言文学（师范）" data-major-code="MAJ-01" data-major-status="active">编辑</a><a href="#" data-toast="停用专业（原型演示）。">停用</a></td></tr>
+                <tr><td><div class="org-name"><span class="org-name__mark">数</span><strong>数学与应用数学（师范）</strong></div></td><td class="num">92</td><td class="num">6</td><td><span class="badge badge--success">启用</span></td><td class="actions"><a href="#" data-open="major-modal" data-major-name="数学与应用数学（师范）" data-major-code="MAJ-02" data-major-status="active">编辑</a><a href="#" data-toast="停用专业（原型演示）。">停用</a></td></tr>
+                <tr><td><div class="org-name"><span class="org-name__mark">英</span><strong>英语（师范）</strong></div></td><td class="num">71</td><td class="num">5</td><td><span class="badge badge--success">启用</span></td><td class="actions"><a href="#" data-open="major-modal" data-major-name="英语（师范）" data-major-code="MAJ-03" data-major-status="active">编辑</a><a href="#" data-toast="停用专业（原型演示）。">停用</a></td></tr>
+                <tr class="row-muted"><td><div class="org-name"><span class="org-name__mark">思</span><strong>思想政治教育（师范）</strong></div></td><td class="num">35</td><td class="num">5</td><td><span class="badge">停用</span></td><td class="actions"><a href="#" data-open="major-modal" data-major-name="思想政治教育（师范）" data-major-code="MAJ-04" data-major-status="inactive">编辑</a><a href="#" data-toast="启用专业（原型演示）。">启用</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="list-foot">
+            <span class="list-foot__info">共 6 个专业 · 显示 1—4</span>
+            <div class="pagination" aria-label="专业分页">
+              <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+              <button class="pagination__btn is-active" type="button">1</button>
+              <button class="pagination__btn" type="button">2</button>
+              <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="org-card">
+          <div class="org-card__head">
+            <div>
+              <h2>班级</h2>
+              <p>班级必须属于专业与年级；学生注册时按学校 / 专业 / 年级匹配。</p>
+            </div>
+            <div class="org-card__actions">
+              <button class="btn btn--ghost btn--sm" type="button" data-toast="下载班级模板（原型演示）。">下载模板</button>
+              <button class="btn btn--secondary btn--sm" type="button" data-toast="导入班级（原型演示）。"><span data-icon="upload"></span>导入</button>
+              <button class="btn btn--primary btn--sm" type="button" data-open="class-modal"><span data-icon="plus"></span>新增班级</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="table table--compact">
+              <thead><tr><th>班级</th><th>专业</th><th class="num">年级</th><th class="num">学生</th><th>状态</th><th class="actions">操作</th></tr></thead>
+              <tbody>
+                <tr><td class="strong">语文2401</td><td>汉语言文学（师范）</td><td class="num">2024</td><td class="num">32</td><td><span class="badge badge--success">启用</span></td><td class="actions"><a href="#" data-open="class-modal" data-class-name="语文2401" data-class-major="汉语言文学（师范）" data-class-year="2024" data-class-code="CLS-2401" data-class-status="active">编辑</a><a href="#" data-toast="停用班级（原型演示）。">停用</a></td></tr>
+                <tr><td class="strong">语文2402</td><td>汉语言文学（师范）</td><td class="num">2024</td><td class="num">30</td><td><span class="badge badge--success">启用</span></td><td class="actions"><a href="#" data-open="class-modal" data-class-name="语文2402" data-class-major="汉语言文学（师范）" data-class-year="2024" data-class-code="CLS-2402" data-class-status="active">编辑</a><a href="#" data-toast="停用班级（原型演示）。">停用</a></td></tr>
+                <tr><td class="strong">数学2401</td><td>数学与应用数学（师范）</td><td class="num">2024</td><td class="num">28</td><td><span class="badge badge--success">启用</span></td><td class="actions"><a href="#" data-open="class-modal" data-class-name="数学2401" data-class-major="数学与应用数学（师范）" data-class-year="2024" data-class-code="CLS-2403" data-class-status="active">编辑</a><a href="#" data-toast="停用班级（原型演示）。">停用</a></td></tr>
+                <tr><td class="strong">英语2301</td><td>英语（师范）</td><td class="num">2023</td><td class="num">26</td><td><span class="badge badge--success">启用</span></td><td class="actions"><a href="#" data-open="class-modal" data-class-name="英语2301" data-class-major="英语（师范）" data-class-year="2023" data-class-code="CLS-2301" data-class-status="active">编辑</a><a href="#" data-toast="停用班级（原型演示）。">停用</a></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="list-foot">
+            <span class="list-foot__info">共 24 个班级 · 显示 1—4</span>
+            <div class="pagination" aria-label="班级分页">
+              <button class="pagination__btn" type="button" disabled aria-label="上一页">‹</button>
+              <button class="pagination__btn is-active" type="button">1</button>
+              <button class="pagination__btn" type="button">2</button>
+              <button class="pagination__btn" type="button">3</button>
+              <span class="pagination__info">…</span>
+              <button class="pagination__btn" type="button">6</button>
+              <button class="pagination__btn" type="button" aria-label="下一页">›</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="side-stack">
+        <section class="side-card">
+          <div class="school-mark">
+            <span class="school-mark__seal">华中</span>
+            <div class="school-mark__main"><strong>华中师范大学</strong><span>管理员 · 陈明 · 2026-09-01 创建</span></div>
+          </div>
+          <dl class="school-meta">
+            <div class="school-meta__row"><dt>学校 ID</dt><dd class="mono">SCH-0001</dd></div>
+            <div class="school-meta__row"><dt>管理员</dt><dd>陈明</dd></div>
+            <div class="school-meta__row"><dt>教师</dt><dd>18 人</dd></div>
+            <div class="school-meta__row"><dt>学生</dt><dd>326 人</dd></div>
+          </dl>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">导入组织</h2>
+              <p class="card-sub">CSV / XLSX · 整批校验</p>
+            </div>
+          </div>
+          <div class="import-zone" data-toast="选择 CSV / Excel 文件（原型演示）。">
+            <span data-icon="upload"></span>
+            <strong>拖拽文件到这里</strong>
+            <span>支持专业 / 班级模板，≤ 10 MB</span>
+          </div>
+          <div class="import-history">
+            <div class="import-item"><span data-icon="check-circle"></span><div class="import-item__main"><strong>2026-11-10 专业导入</strong><span>新增 2 条 · 更新 1 条</span></div></div>
+            <div class="import-item"><span data-icon="check-circle"></span><div class="import-item__main"><strong>2026-11-08 班级导入</strong><span>新增 4 条 · 0 错误</span></div></div>
+            <button class="btn btn--ghost btn--sm btn--block" type="button" data-open="import-error-modal" style="margin-top:8px">查看上次导入错误</button>
+          </div>
+        </section>
+
+        <section class="side-card">
+          <div class="card-head">
+            <div class="card-head__main">
+              <h2 class="card-title">操作提示</h2>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="xs faint" style="display:grid;gap:7px">
+              <span>· 停用专业 / 班级不会删除历史关系。</span>
+              <span>· 导入整批校验，任意一行失败则整批不写入。</span>
+              <span>· 只维护组织数据；管理员不参与任务与评测。</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Major modal -->
+  <div class="overlay" data-overlay-for="major-modal"></div>
+  <div class="modal modal--org" id="major-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="major-modal-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="major-modal-title">新增专业</div>
+        <div class="drawer__sub">专业名称与代码在本校范围内唯一</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="major-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="modal-form">
+        <div class="form-grid">
+          <label class="field span-2"><span class="label">专业名称 <span class="req">*</span></span><input class="input" id="major-name" placeholder="例如：汉语言文学（师范）" aria-label="专业名称"></label>
+          <label class="field"><span class="label">专业代码</span><input class="input" id="major-code" placeholder="例如：MAJ-01" aria-label="专业代码"></label>
+          <label class="field"><span class="label">状态</span><select class="select" id="major-status" aria-label="专业状态"><option value="active">启用</option><option value="inactive">停用</option></select></label>
+        </div>
+        <div class="alert alert--info">
+          <span data-icon="info"></span>
+          <div>停用专业后，它不再出现在注册选项；已有学生、课程与教师关系保留。编辑在窗口中完成。</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="major-modal">取消</button>
+      <button class="btn btn--primary" type="button" data-close="major-modal" data-toast="专业已保存（原型演示）。"><span data-icon="check"></span>保存专业</button>
+    </div>
+  </div>
+
+  <!-- Class modal -->
+  <div class="overlay" data-overlay-for="class-modal"></div>
+  <div class="modal modal--org" id="class-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="class-modal-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="class-modal-title">新增班级</div>
+        <div class="drawer__sub">班级必须属于启用中的专业与年级</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="class-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="modal-form">
+        <div class="form-grid">
+          <label class="field span-2"><span class="label">班级名称 <span class="req">*</span></span><input class="input" id="class-name" placeholder="例如：语文2401" aria-label="班级名称"></label>
+          <label class="field span-2"><span class="label">所属专业 <span class="req">*</span></span><select class="select" id="class-major" aria-label="所属专业"><option>汉语言文学（师范）</option><option>数学与应用数学（师范）</option><option>英语（师范）</option><option>思想政治教育（师范）</option></select></label>
+          <label class="field"><span class="label">年级 <span class="req">*</span></span><select class="select" id="class-year" aria-label="年级"><option>2025</option><option>2024</option><option>2023</option><option>2022</option></select></label>
+          <label class="field"><span class="label">班级代码</span><input class="input" id="class-code" placeholder="例如：CLS-2401" aria-label="班级代码"></label>
+          <label class="field span-2"><span class="label">状态</span><select class="select" id="class-status" aria-label="班级状态"><option value="active">启用</option><option value="inactive">停用</option></select></label>
+        </div>
+        <div class="alert alert--info">
+          <span data-icon="info"></span>
+          <div>班级停用后不再出现在注册与选课匹配中；已有学生关系保留。</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal__foot">
+      <button class="btn btn--secondary" type="button" data-close="class-modal">取消</button>
+      <button class="btn btn--primary" type="button" data-close="class-modal" data-toast="班级已保存（原型演示）。"><span data-icon="check"></span>保存班级</button>
+    </div>
+  </div>
+
+  <!-- Import error modal -->
+  <div class="overlay" data-overlay-for="import-error-modal"></div>
+  <div class="modal" id="import-error-modal" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="import-error-title">
+    <div class="modal__head">
+      <div>
+        <div class="drawer__title" id="import-error-title">上次导入错误</div>
+        <div class="drawer__sub">整批未写入 · 修正后重新上传</div>
+      </div>
+      <button class="icon-btn" type="button" data-close="import-error-modal" aria-label="关闭"><span data-icon="x"></span></button>
+    </div>
+    <div class="modal__body">
+      <div class="table-wrap">
+        <table class="table table--compact">
+          <thead><tr><th>行号</th><th>列</th><th>问题</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">12</td><td>专业</td><td>专业不存在或已停用</td></tr>
+            <tr><td class="mono">18</td><td>班级</td><td>班级不属于所选专业 / 年级</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal__foot"><button class="btn btn--primary" type="button" data-close="import-error-modal">关闭</button></div>
+  </div>
+
+  <script src="assets/site.js"></script>
+  <script>
+    document.querySelectorAll('[data-open="major-modal"]').forEach(function (button) {
+      button.addEventListener("click", function (event) {
+        if (button.tagName === "A") event.preventDefault();
+        const editing = Boolean(button.dataset.majorName);
+        document.getElementById("major-modal-title").textContent = editing ? "编辑专业" : "新增专业";
+        document.getElementById("major-name").value = button.dataset.majorName || "";
+        document.getElementById("major-code").value = button.dataset.majorCode || "";
+        document.getElementById("major-status").value = button.dataset.majorStatus || "active";
+      });
+    });
+
+    document.querySelectorAll('[data-open="class-modal"]').forEach(function (button) {
+      button.addEventListener("click", function (event) {
+        if (button.tagName === "A") event.preventDefault();
+        const editing = Boolean(button.dataset.className);
+        document.getElementById("class-modal-title").textContent = editing ? "编辑班级" : "新增班级";
+        document.getElementById("class-name").value = button.dataset.className || "";
+        document.getElementById("class-major").value = button.dataset.classMajor || "汉语言文学（师范）";
+        document.getElementById("class-year").value = button.dataset.classYear || "2024";
+        document.getElementById("class-code").value = button.dataset.classCode || "";
+        document.getElementById("class-status").value = button.dataset.classStatus || "active";
+      });
+    });
+  </script>
+</body>
+</html>

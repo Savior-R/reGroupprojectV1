@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登录 · 三尺讲台</title>
+  <link rel="stylesheet" href="assets/tokens.css">
+  <link rel="stylesheet" href="assets/site.css">
+  <style>
+    body {
+      background: var(--paper-1);
+    }
+
+    .auth-page {
+      display: grid;
+      min-height: 100vh;
+      grid-template-columns: minmax(0, 1.08fr) minmax(460px, 0.92fr);
+    }
+
+    /* ---------- Brand panel ---------- */
+    .auth-brand {
+      position: relative;
+      display: flex;
+      min-height: 100vh;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+      padding: 48px 56px 42px;
+      background:
+        radial-gradient(900px 600px at 82% 12%, rgba(224, 164, 74, 0.11), transparent 62%),
+        radial-gradient(700px 500px at 0% 100%, rgba(42, 103, 88, 0.3), transparent 65%),
+        linear-gradient(150deg, #143f35 0%, #0e2f28 52%, #0a231e 100%);
+      color: #eef3ee;
+    }
+
+    .auth-brand::before {
+      position: absolute;
+      inset: 0;
+      background-image:
+        repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 5px),
+        radial-gradient(circle at 15% 20%, rgba(255, 255, 255, 0.04), transparent 40%);
+      content: "";
+      pointer-events: none;
+    }
+
+    .auth-brand::after {
+      position: absolute;
+      right: -80px;
+      bottom: -130px;
+      width: 460px;
+      height: 460px;
+      border: 1px solid rgba(238, 243, 238, 0.1);
+      border-radius: 50%;
+      box-shadow:
+        0 0 0 38px rgba(238, 243, 238, 0.03),
+        0 0 0 78px rgba(238, 243, 238, 0.02);
+      content: "";
+      pointer-events: none;
+    }
+
+    .auth-brand__top {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .auth-brand .brand {
+      color: #eef3ee;
+    }
+
+    .auth-brand .brand:hover {
+      color: #eef3ee;
+    }
+
+    .auth-brand .brand__name {
+      font-size: 19px;
+    }
+
+    .auth-brand .brand__sub {
+      color: rgba(238, 243, 238, 0.48);
+    }
+
+    .auth-brand .seal {
+      background: var(--cinnabar-600);
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 248, 244, 0.32),
+        inset 0 0 0 4px rgba(255, 248, 244, 0.08);
+    }
+
+    .auth-brand__meta {
+      color: rgba(238, 243, 238, 0.46);
+      font-family: var(--font-mono);
+      font-size: 9px;
+      letter-spacing: 0.12em;
+    }
+
+    .auth-brand__body {
+      position: relative;
+      z-index: 1;
+      max-width: 560px;
+      padding: 44px 0 36px;
+    }
+
+    .auth-brand__eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: rgba(238, 243, 238, 0.6);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .auth-brand__eyebrow::before {
+      width: 22px;
+      height: 1px;
+      background: rgba(238, 243, 238, 0.4);
+      content: "";
+    }
+
+    .auth-brand h1 {
+      margin-top: 22px;
+      color: #f5f7f2;
+      font-size: clamp(44px, 4.4vw, 66px);
+      font-weight: 600;
+      line-height: 1.24;
+      letter-spacing: 0.01em;
+    }
+
+    .auth-brand h1 em {
+      color: #e6b45d;
+      font-style: normal;
+    }
+
+    .auth-brand__rule {
+      width: 54px;
+      height: 2px;
+      margin: 28px 0 24px;
+      background: var(--cinnabar-500);
+    }
+
+    .auth-brand__lead {
+      max-width: 34em;
+      color: rgba(238, 243, 238, 0.66);
+      font-size: 13.5px;
+      line-height: 1.9;
+    }
+
+    .auth-brand__points {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 22px;
+      margin-top: 30px;
+    }
+
+    .auth-brand__point {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: rgba(238, 243, 238, 0.72);
+      font-size: 11px;
+    }
+
+    .auth-brand__point [data-icon] svg {
+      width: 14px;
+      height: 14px;
+      color: #e6b45d;
+    }
+
+    .auth-brand__foot {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      padding-top: 24px;
+      border-top: 1px solid rgba(238, 243, 238, 0.13);
+      color: rgba(238, 243, 238, 0.4);
+      font-size: 10px;
+      letter-spacing: 0.04em;
+    }
+
+    .auth-brand__foot strong {
+      display: block;
+      color: rgba(238, 243, 238, 0.72);
+      font-family: var(--font-serif);
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+    }
+
+    /* ---------- Form panel ---------- */
+    .auth-form {
+      display: flex;
+      min-height: 100vh;
+      flex-direction: column;
+      justify-content: center;
+      padding: 48px 56px;
+    }
+
+    .auth-form__inner {
+      width: 100%;
+      max-width: 420px;
+      margin: 0 auto;
+    }
+
+    .auth-form__head {
+      margin-bottom: 26px;
+    }
+
+    .auth-form__head h1 {
+      margin-top: 10px;
+      font-size: 36px;
+      letter-spacing: 0.01em;
+    }
+
+    .auth-form__head p {
+      margin-top: 8px;
+      color: var(--text-2);
+      font-size: 12.5px;
+      line-height: 1.65;
+    }
+
+    .auth-tabs {
+      margin-bottom: 22px;
+    }
+
+    .auth-form .field + .field {
+      margin-top: 16px;
+    }
+
+    .auth-form__row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 14px 0 20px;
+    }
+
+    .auth-form__link {
+      color: var(--text-3);
+      font-size: 11.5px;
+    }
+
+    .auth-form__link:hover {
+      color: var(--accent);
+    }
+
+    .auth-form__hint {
+      margin-top: 12px;
+      color: var(--text-3);
+      font-size: 11px;
+      line-height: 1.65;
+    }
+
+    .auth-form__foot {
+      margin-top: 24px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--text-3);
+      font-size: 11.5px;
+      text-align: center;
+    }
+
+    .auth-form__foot a {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .auth-demo {
+      margin-top: 20px;
+      padding: 12px 14px;
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--r-md);
+      background: rgba(255, 253, 248, 0.55);
+    }
+
+    .auth-demo__label {
+      color: var(--text-3);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .auth-demo__links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .auth-demo__links a {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-pill);
+      background: var(--surface);
+      color: var(--text-2);
+      font-size: 10.5px;
+    }
+
+    .auth-demo__links a:hover {
+      border-color: var(--brand);
+      color: var(--brand);
+    }
+
+    .auth-demo__links [data-icon] svg {
+      width: 11px;
+      height: 11px;
+    }
+
+    /* Password / code affix */
+    .password-wrap {
+      position: relative;
+      display: block;
+    }
+
+    .password-wrap .input {
+      padding-right: 42px;
+    }
+
+    .password-wrap .icon-btn {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 36px;
+      height: 36px;
+    }
+
+    .code-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .code-row .input {
+      flex: 1;
+    }
+
+    /* WeChat tab */
+    .qr-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 8px 0 4px;
+    }
+
+    .qr-frame {
+      position: relative;
+      display: grid;
+      width: 184px;
+      height: 184px;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      background: var(--surface);
+    }
+
+    .qr-frame::before,
+    .qr-frame::after {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-color: var(--accent);
+      border-style: solid;
+      content: "";
+    }
+
+    .qr-frame::before {
+      top: -1px;
+      left: -1px;
+      border-width: 2px 0 0 2px;
+    }
+
+    .qr-frame::after {
+      right: -1px;
+      bottom: -1px;
+      border-width: 0 2px 2px 0;
+    }
+
+    .qr-pattern {
+      width: 136px;
+      height: 136px;
+      background-image:
+        linear-gradient(90deg, var(--ink-900) 50%, transparent 50%),
+        linear-gradient(0deg, var(--ink-900) 50%, transparent 50%),
+        radial-gradient(circle at 20% 20%, var(--ink-900) 0 8px, transparent 8px),
+        radial-gradient(circle at 80% 80%, var(--ink-900) 0 8px, transparent 8px);
+      background-size: 12px 12px, 12px 12px, 100% 100%, 100% 100%;
+      opacity: 0.82;
+      mask-image: radial-gradient(circle at 50% 50%, #000 0 62%, transparent 62%);
+    }
+
+    .qr-scan {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      width: 28px;
+      height: 28px;
+      border: 2px solid var(--surface);
+      border-radius: 4px;
+      background: var(--brand);
+      color: var(--on-brand);
+      display: grid;
+      place-items: center;
+      font-family: var(--font-serif);
+      font-size: 13px;
+    }
+
+    .qr-hint {
+      color: var(--text-3);
+      font-size: 11px;
+      text-align: center;
+    }
+
+    .qr-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--warning);
+      font-size: 10.5px;
+    }
+
+    .qr-status::before {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+      animation: livePulse 1.6s ease-in-out infinite;
+    }
+
+    .auth-top-link {
+      position: absolute;
+      top: 24px;
+      right: 28px;
+      z-index: 2;
+      color: var(--text-3);
+      font-size: 10.5px;
+    }
+
+    .auth-top-link:hover {
+      color: var(--accent);
+    }
+
+    @media (max-width: 1080px) {
+      .auth-page {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .auth-brand {
+        min-height: 300px;
+        padding: 30px 32px;
+      }
+
+      .auth-brand__body {
+        padding: 26px 0 20px;
+      }
+
+      .auth-brand h1 {
+        font-size: 42px;
+      }
+
+      .auth-brand__lead,
+      .auth-brand__points,
+      .auth-brand__foot {
+        display: none;
+      }
+
+      .auth-form {
+        min-height: auto;
+        padding: 36px 24px 56px;
+      }
+
+      .auth-top-link {
+        top: 18px;
+        right: 18px;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .auth-brand {
+        min-height: 220px;
+      }
+
+      .auth-brand h1 {
+        font-size: 34px;
+      }
+
+      .auth-brand__meta {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="auth-top-link" href="index.html">← 返回原型说明</a>
+
+  <main class="auth-page">
+    <section class="auth-brand" aria-label="产品介绍">
+      <div class="auth-brand__top">
+        <a class="brand" href="index.html" aria-label="三尺讲台">
+          <span class="seal" aria-hidden="true">三</span>
+          <span class="brand__text">
+            <span class="brand__name">三尺讲台</span>
+            <span class="brand__sub">TEACHING STUDIO</span>
+          </span>
+        </a>
+        <span class="auth-brand__meta">EST. 2026 · 师范生教学训练</span>
+      </div>
+
+      <div class="auth-brand__body">
+        <p class="auth-brand__eyebrow">AI 虚拟试讲 · 多维度评测</p>
+        <h1>讲台三分钟，<br><em>功夫在课外。</em></h1>
+        <div class="auth-brand__rule"></div>
+        <p class="auth-brand__lead">
+          面向师范生的课堂试讲训练与考核平台。录课、复盘、AI 评分与教师点评，在一处完成。
+          不是模拟一个“假课堂”，而是把每一次练习都变成可以回看的证据。
+        </p>
+        <div class="auth-brand__points">
+          <span class="auth-brand__point"><span data-icon="users"></span>虚拟学生 · 真实课堂互动</span>
+          <span class="auth-brand__point"><span data-icon="camera"></span>三路录制 · 完整回看</span>
+          <span class="auth-brand__point"><span data-icon="sparkles"></span>AI 五维评测 · 可执行建议</span>
+        </div>
+      </div>
+
+      <div class="auth-brand__foot">
+        <div>
+          <strong>三尺讲台</strong>
+          教学设计 · 课堂训练 · 教学评测
+        </div>
+        <span>PROTOTYPE V1.5 / 2026.11</span>
+      </div>
+    </section>
+
+    <section class="auth-form" aria-labelledby="login-title">
+      <div class="auth-form__inner">
+        <header class="auth-form__head">
+          <p class="eyebrow">WELCOME BACK</p>
+          <h1 id="login-title">登录</h1>
+          <p>使用用户名密码、邮箱验证码或微信扫码进入讲台。</p>
+        </header>
+
+        <div class="tabs-line auth-tabs" data-tabs="login-method" role="tablist" aria-label="登录方式">
+          <button type="button" role="tab" aria-selected="true" data-tab="password">密码登录</button>
+          <button type="button" role="tab" aria-selected="false" data-tab="email">邮箱验证码</button>
+          <button type="button" role="tab" aria-selected="false" data-tab="wechat">微信扫码</button>
+        </div>
+
+        <div data-panel-group="login-method">
+          <div data-panel="password">
+            <label class="field">
+              <span class="label">用户名（真实姓名）</span>
+              <input class="input" type="text" autocomplete="username" placeholder="请输入用户名" value="student.a01">
+            </label>
+            <label class="field">
+              <span class="label">密码</span>
+              <span class="password-wrap">
+                <input class="input" type="password" autocomplete="current-password" placeholder="8—64 位" value="Demo1234!">
+                <button class="icon-btn" type="button" aria-label="显示密码" data-toast="原型演示：密码可见性切换。"><span data-icon="eye"></span></button>
+              </span>
+            </label>
+            <div class="auth-form__row">
+              <label class="check-row">
+                <input type="checkbox" hidden>
+                <span class="check-box"><span data-icon="check"></span></span>
+                <span>保持登录</span>
+              </label>
+              <span class="auth-form__link" title="本轮暂不支持找回密码">忘记密码暂不支持</span>
+            </div>
+            <a class="btn btn--primary btn--lg btn--block" href="student-home.html">
+              <span data-icon="arrow-right"></span>进入讲台
+            </a>
+            <p class="auth-form__hint">登录后按账号类型进入对应首页；原型中可直接使用下方角色入口。</p>
+          </div>
+
+          <div data-panel="email" hidden>
+            <label class="field">
+              <span class="label">已验证邮箱</span>
+              <input class="input" type="email" autocomplete="email" placeholder="user@example.com" value="lin.xiaoyu@example.edu.cn">
+            </label>
+            <label class="field">
+              <span class="label">验证码</span>
+              <span class="code-row">
+                <input class="input" type="text" inputmode="numeric" maxlength="6" placeholder="6 位数字">
+                <button class="btn btn--secondary" type="button" data-toast="验证码已发送，5 分钟内有效（原型演示）。">发送验证码</button>
+              </span>
+              <span class="field-hint">仅已绑定并验证的邮箱可登录；未绑定的请先用密码登录后绑定。</span>
+            </label>
+            <a class="btn btn--primary btn--lg btn--block" href="student-home.html" style="margin-top:20px">
+              <span data-icon="mail"></span>使用邮箱登录
+            </a>
+          </div>
+
+          <div data-panel="wechat" hidden>
+            <div class="qr-box">
+              <div class="qr-frame" aria-label="微信登录二维码（原型占位）">
+                <div class="qr-pattern" aria-hidden="true"></div>
+                <span class="qr-scan" aria-hidden="true">三</span>
+              </div>
+              <span class="qr-status">等待扫码 · 4:32 后过期</span>
+              <p class="qr-hint">使用微信扫码登录。未绑定微信将进入引导注册。</p>
+              <button class="btn btn--ghost btn--sm" type="button" data-toast="二维码已刷新（原型演示）。"><span data-icon="refresh"></span>刷新二维码</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="auth-form__foot">
+          还没有账号？<a href="register.html">去注册</a>
+        </div>
+
+        <div class="auth-demo">
+          <div class="auth-demo__label">Prototype quick entry / 原型快捷入口</div>
+          <div class="auth-demo__links">
+            <a href="student-home.html"><span data-icon="graduation"></span>学生 · 林小雨</a>
+            <a href="courses.html?role=teacher"><span data-icon="podium"></span>教师 · 王宁</a>
+            <a href="admin-org.html"><span data-icon="shield"></span>管理员 · 陈明</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="assets/site.js"></script>
+</body>
+</html>

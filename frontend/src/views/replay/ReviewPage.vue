@@ -46,6 +46,8 @@ const STREAM_STATUS_LABELS: Record<RecordingStreamView['status'] | 'missing', st
 }
 
 const SESSION_STATUS_LABELS: Record<SessionStatus, string> = {
+  selected: '训练已保留',
+  evaluated: '训练已评测',
   preparing: '准备中',
   in_progress: '进行中',
   ended: '已结束',
@@ -505,6 +507,9 @@ onBeforeUnmount(() => {
           <span class="review-page__readonly-text">
             回放为只读，提交件可在课程结束前查看。
           </span>
+          <ElButton type="primary" plain size="small" @click="router.push('/student/results')">
+            查看成绩
+          </ElButton>
         </div>
 
         <footer v-else class="review-page__actions">
