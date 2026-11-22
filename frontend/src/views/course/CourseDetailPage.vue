@@ -5,15 +5,27 @@ import {
   ElAlert,
   ElButton,
   ElCard,
+  ElDatePicker,
   ElDescriptions,
   ElDescriptionsItem,
+  ElDialog,
+  ElForm,
+  ElFormItem,
+  ElInput,
   ElMessage,
   ElMessageBox,
   ElTag,
 } from 'element-plus'
 import { useAuthStore } from '../../stores/auth'
 import { ApiError } from '../../types/api'
-import { archiveCourse, getCourse, joinCourse, leaveCourse, restoreCourse } from '../../api/courses'
+import {
+  archiveCourse,
+  getCourse,
+  joinCourse,
+  leaveCourse,
+  restoreCourse,
+  updateCourse,
+} from '../../api/courses'
 import type { CourseDetailView } from '../../api/courses'
 
 /** 课程详情：课程信息 + 成员入口 + 归档 / 恢复（管理员）+ 加入 / 退出（学生）。 */
@@ -27,7 +39,40 @@ const loading = ref(true)
 const errorMessage = ref('')
 
 const isAdmin = computed(() => auth.accountType === 'ADMIN')
+const isTeacher = computed(() => auth.accountType === 'TEACHER')
 const courseId = computed(() => String(route.params.courseId ?? ''))
+
+const editVisible = ref(false)
+const editForm = ref<{ name: string; endAt: string | null }>({ name: '', endAt: null })
+
+function openEdit(): void {
+  if (!course.value) {
+    return
+  }
+  editForm.value = {
+    name: course.value.name,
+    endAt: course.value.end_at ? new Date(course.value.end_at).toISOString().slice(0, 19) : null,
+  }
+  editVisible.value = true
+}
+
+async function saveEdit(): Promise<void> {
+  if (!editForm.value.name.trim()) {
+    ElMessage.error('课程名称不能为空')
+    return
+  }
+  try {
+    await updateCourse(courseId.value, {
+      name: editForm.value.name.trim(),
+      end_at: editForm.value.endAt ? new Date(editForm.value.endAt).toISOString() : null,
+    })
+    ElMessage.success('课程已更新')
+    editVisible.value = false
+    await load()
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '课程更新失败')
+  }
+}
 
 function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString() : '—'
@@ -120,8 +165,9 @@ onMounted(load)
           </div>
           <div class="course-detail__actions">
             <ElButton @click="router.push('/courses')">返回列表</ElButton>
+            <ElButton v-if="course?.can_manage" @click="openEdit">编辑课程</ElButton>
             <ElButton
-              v-if="course?.can_manage"
+              v-if="isTeacher && course?.can_manage"
               type="primary"
               plain
               @click="router.push(`/teacher/courses/${courseId}/tasks`)"
@@ -161,6 +207,27 @@ onMounted(load)
         <ElDescriptionsItem label="归档时间">{{ formatDate(course.archived_at) }}</ElDescriptionsItem>
       </ElDescriptions>
     </ElCard>
+
+    <ElDialog v-model="editVisible" title="编辑课程" width="520px">
+      <ElForm :model="editForm" label-width="90px">
+        <ElFormItem label="课程名称" required>
+          <ElInput v-model="editForm.name" maxlength="150" show-word-limit />
+        </ElFormItem>
+        <ElFormItem label="结束日期">
+          <ElDatePicker
+            v-model="editForm.endAt"
+            type="datetime"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            placeholder="留空表示不设置"
+            style="width: 100%"
+          />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="editVisible = false">取消</ElButton>
+        <ElButton type="primary" @click="saveEdit">保存</ElButton>
+      </template>
+    </ElDialog>
   </div>
 </template>
 

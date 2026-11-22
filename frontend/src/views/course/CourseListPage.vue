@@ -244,7 +244,13 @@ onMounted(load)
               >
                 加入课程
               </ElButton>
-              <ElButton v-else-if="course.joined" size="small" @click="leave(course)">退出课程</ElButton>
+              <ElButton
+                v-else-if="course.joined && course.status === 'active' && !course.ended"
+                size="small"
+                @click="leave(course)"
+              >
+                退出课程
+              </ElButton>
             </div>
           </ElCard>
         </div>

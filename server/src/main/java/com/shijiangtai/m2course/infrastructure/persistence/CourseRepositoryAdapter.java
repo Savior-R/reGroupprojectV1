@@ -177,7 +177,7 @@ public class CourseRepositoryAdapter implements CourseRepository {
         }
         Map<UUID, Set<MajorId>> majors = loadMajors(ids);
         Map<UUID, List<CourseTeacher>> teachers = loadTeachers(ids);
-        return rows.stream()
+        Map<UUID, Course> byId = rows.stream()
                 .map(row -> Course.restore(
                         new CourseId(row.id()),
                         new SchoolId(row.schoolId()),
@@ -190,6 +190,11 @@ public class CourseRepositoryAdapter implements CourseRepository {
                         row.updatedAt(),
                         majors.getOrDefault(row.id(), Set.of()),
                         teachers.getOrDefault(row.id(), List.of())))
+                .collect(Collectors.toMap(course -> course.id().value(), course -> course));
+        // IN 查询不保证顺序，按分页查询的 id 顺序重排，保证列表顺序稳定。
+        return ids.stream()
+                .map(byId::get)
+                .filter(java.util.Objects::nonNull)
                 .toList();
     }
 
