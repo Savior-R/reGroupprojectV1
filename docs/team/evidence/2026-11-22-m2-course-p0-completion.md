@@ -11,10 +11,21 @@
 | 后端主代码编译 | `gradle compileJava --no-daemon`（JDK 21，Gradle 9.7.1） | ✅ BUILD SUCCESSFUL |
 | 后端测试编译 | `gradle compileTestJava --no-daemon` | ✅ BUILD SUCCESSFUL |
 | 前端类型检查 + 生产构建 | `npm run build`（vue-tsc -b && vite build，Node 22） | ✅ 成功 |
-| 模块集成测试（M2-T01—T09） | 需真实 PostgreSQL + Redis | ⏸ 未执行：本机无 PostgreSQL / Redis 服务，按提示词 §7 属「测试后置」 |
+| 模块全量测试 | `gradle test --tests "com.shijiangtai.m2course.*"`（JDK 21 / 真实 PostgreSQL 16.4） | ✅ 55 tests，0 failures / 0 errors / 0 skipped |
 
-> 说明：本机未安装 Docker / PostgreSQL / Redis，IT（`CourseControllerIT` / `*RepositoryIT`）依赖真实库，
-> 本阶段未运行，不做「测试通过」结论。
+测试类明细（`build/test-results/test/TEST-*.xml`）：
+
+| 测试类 | 用例数 | 结果 |
+|---|---|---|
+| `M2ArchitectureTest` | 4 | ✅ |
+| `CourseTest`（领域） | 6 | ✅ |
+| `M2ContractTest`（错误码 / 端点） | 7 | ✅ |
+| `CourseControllerIT`（API + 真实 PG） | 27 | ✅ |
+| `CourseRepositoryIT` | 7 | ✅ |
+| `CourseMemberRepositoryIT` | 4 | ✅ |
+
+> 说明：本机初始无 Docker / PostgreSQL / Redis；本次临时搭建便携 PostgreSQL 16.4（`localhost:5432/shijiangtai`，账号 `shijiangtai`）
+> 后运行真实库测试，M2 全量 55 条全部通过。Redis 未运行，M2 用例未依赖 Redis 连接。
 
 ## 2. 本次修复（后端）
 
@@ -51,7 +62,8 @@
 
 ## 6. 未完成 / 后置项
 
-- **测试执行后置**：M2-T01—T09 的 IT / 契约 / E2E 未在本阶段运行（缺 PostgreSQL / Redis / Docker）。
+- **E2E / 契约跨模块测试后置**：M2-T01—T09 的 UT / IT 已在本机真实 PG 上全量通过（见 §1）；
+  Playwright E2E 与跨模块契约（M2 ↔ M1/M3/M6/M7）由 Score/QA Owner 后续补齐。
 - **低优先级差距**（来自契约审查，未改）：
   - `course_majors(major_id)` 等 3 个索引在 01 与 12 文档间不一致，迁移未建；
   - 学生名单为内存分页（当前页筛选）；
