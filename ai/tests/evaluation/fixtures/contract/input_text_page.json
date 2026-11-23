@@ -1,0 +1,63 @@
+{
+  "items": [
+    {
+      "id": "66666666-6666-6666-6666-666666666601",
+      "speaker_type": "teacher",
+      "speaker_ref": null,
+      "source": "asr",
+      "kind": "utterance",
+      "text": "同学们，今天我们学习分数的初步认识。",
+      "start_ms": 0,
+      "end_ms": 20000,
+      "at_ms": 0,
+      "confidence": 0.95,
+      "model_version": "asr-v1",
+      "prompt_version": null
+    },
+    {
+      "id": "66666666-6666-6666-6666-666666666602",
+      "speaker_type": "teacher",
+      "speaker_ref": null,
+      "source": "asr",
+      "kind": "utterance",
+      "text": "把一个饼平均分成两份，每份就是它的二分之一。",
+      "start_ms": 120000,
+      "end_ms": 150000,
+      "at_ms": 120000,
+      "confidence": 0.94,
+      "model_version": "asr-v1",
+      "prompt_version": null
+    },
+    {
+      "id": "66666666-6666-6666-6666-666666666603",
+      "speaker_type": "student",
+      "speaker_ref": "44444444-4444-4444-4444-444444444401",
+      "source": "asr",
+      "kind": "utterance",
+      "text": "老师，为什么要平均分？",
+      "start_ms": 200000,
+      "end_ms": 205000,
+      "at_ms": 200000,
+      "confidence": 0.9,
+      "model_version": "asr-v1",
+      "prompt_version": null
+    },
+    {
+      "id": "66666666-6666-6666-6666-666666666604",
+      "speaker_type": "teacher",
+      "speaker_ref": null,
+      "source": "asr",
+      "kind": "utterance",
+      "text": "这个问题很好，因为不平均分每份就不一样大。",
+      "start_ms": 260000,
+      "end_ms": 280000,
+      "at_ms": 260000,
+      "confidence": 0.93,
+      "model_version": "asr-v1",
+      "prompt_version": null
+    }
+  ],
+  "total": 4,
+  "page": 0,
+  "size": 500
+}

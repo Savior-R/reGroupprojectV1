@@ -1,0 +1,82 @@
+{
+  "job_id": "44444444-4444-4444-4444-444444444444",
+  "attempt": 2,
+  "status": "completed",
+  "model_version": "deepseek-flash",
+  "prompt_version": "m4-eval-v1",
+  "rubric_version": "m4-rubric-v1",
+  "dimensions": [
+    {
+      "dimension": "content",
+      "score": 85.0,
+      "sub_scores": {
+        "accuracy": 88.0,
+        "logic": 82.0,
+        "key_points": 85.0,
+        "terminology": 86.0,
+        "completeness": 84.0
+      },
+      "sub_confidences": {
+        "accuracy": 0.86,
+        "logic": 0.82,
+        "key_points": 0.85,
+        "terminology": 0.9,
+        "completeness": 0.84
+      },
+      "confidence": 0.86
+    },
+    {
+      "dimension": "expression",
+      "score": 80.0,
+      "sub_scores": {
+        "speech_rate": 85.0,
+        "pause": 78.0,
+        "filler": 82.0,
+        "volume": 88.0,
+        "fluency": 80.0
+      },
+      "sub_confidences": {
+        "speech_rate": 0.8,
+        "pause": 0.8,
+        "filler": 0.8,
+        "volume": 0.8,
+        "fluency": 0.8
+      },
+      "confidence": 0.8
+    }
+  ],
+  "issues": [
+    {
+      "dimension": "content",
+      "start_ms": 12000,
+      "end_ms": 18000,
+      "severity": "medium",
+      "evidence": "该段讲解缺少与参考材料对应的关键结论。",
+      "suggestion": "补充关键结论，并用一句话总结与目标的联系。",
+      "is_suggestion": false,
+      "suggestion_rank": null
+    },
+    {
+      "dimension": "content",
+      "start_ms": 12000,
+      "end_ms": 18000,
+      "severity": "medium",
+      "evidence": "该段讲解缺少与参考材料对应的关键结论。",
+      "suggestion": "补充关键结论，并用一句话总结与目标的联系。",
+      "is_suggestion": true,
+      "suggestion_rank": 1
+    }
+  ],
+  "warnings": ["REFERENCE_MISSING"],
+  "partial_reasons": [],
+  "input_flags": {
+    "transcript_complete": true,
+    "audio_complete": true,
+    "frames_complete": true,
+    "events_complete": true,
+    "reference_complete": false,
+    "answer_points_complete": true,
+    "missing": ["REFERENCE_MISSING"]
+  },
+  "token_usage": {"prompt": 12000, "completion": 1800}
+}

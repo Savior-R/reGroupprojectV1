@@ -1,0 +1,7 @@
+{
+  "job_id": "44444444-4444-4444-4444-444444444444",
+  "attempt": 2,
+  "error_code": "AI_TIMEOUT",
+  "error_message": "evaluation job exceeded 90s",
+  "partial_reasons": ["DIMENSION_TIMEOUT"]
+}
