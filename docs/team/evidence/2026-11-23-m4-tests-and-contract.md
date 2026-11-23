@@ -4,7 +4,7 @@
 > 依据：`docs/team/prompts/03-ai-m4.md`、`docs/design/06-M4-AI评测与反馈.md`、`docs/design/10-测试与验收.md` §6.7
 > 执行人：AI Owner（当前使用者）
 > 环境：Windows 11 + Git Bash；JDK 25.0.1 + Gradle 9.5.0（临时 init script 覆盖 toolchain 21，未改 `build.gradle.kts`）；Python 3.13.15（`ai/.venv`）；Node 24 / npm 11；**无 Docker、无 PostgreSQL / Redis / MinIO 运行中**。
-> 结论：补齐 M4 Java 应用层、Python worker、前端报告页测试，并修复四处契约偏差。M4 Java **88 条**、Python **53 条**、前端报告页 **16 条**（全量 159 条）通过；前端生产构建通过。**PostgreSQL / Redis / MinIO IT、真实 Provider、真实浏览器 E2E 与真实模型性能仍未执行，本文不声称全链路验收通过。**
+> 结论：补齐 M4 Java 应用层、Python worker、前端报告页测试，并修复四处契约偏差。M4 Java **100 条**、Python **53 条**、前端报告页 **16 条**（全量 159 条）通过；前端生产构建通过。**PostgreSQL / Redis / MinIO IT、真实 Provider、真实浏览器 E2E 与真实模型性能仍未执行，本文不声称全链路验收通过。**
 
 ## 1. 分支与提交
 
@@ -15,6 +15,7 @@
 | `99f9dee` | `test(m4-web)` 报告页状态、雷达图、文案与定位跳转 |
 | `b74914d` | `fix(m4)` 缺失参考材料 / 面试答案要点的结果校验与置信度契约 |
 | `656ee6b` | `fix(m4)` 输入清单严格按快照录像 ID 过滤，补充 manifest / 分页用例 |
+| `70f23f0` | `test(m4-api)` 回调 DTO、服务令牌、错误码映射契约用例 |
 
 ## 2. 新增覆盖
 
@@ -31,6 +32,9 @@
 | `EvaluationReportQueryServiceTest` | completed 报告 / 雷达、partial 缺失维度与无总分、pending 409、failed 422、建议 3—5 与排序、issues 排序、训练过期 / 删除 404、无权限 | M4-T05 / T09 |
 | `EvaluationResultValidatorTest` | 缺失 accuracy 可接受、空子项与未知子项拒绝 | M4-T04 / T05 |
 | `EvaluationInputServiceTest` | manifest 配置 / counts / flags、仅快照录像、迟到上传不进入、未完成流排除、分页上限 | M4-T02 |
+| `InternalEvaluationControllerTest` | start / result / fail DTO 转换、Idempotency-Key、缺字段拒绝 | M4-T03 / G6 |
+| `M4ServiceTokenFilterTest` | 服务令牌 fail-closed、空配置拒绝 | M4-T03 / T09 |
+| `M4ExceptionHandlerTest` | 404 / 409 / 422 / 502 / 503 映射与 trace_id | G6 |
 
 ### 2.2 Python（`ai/tests/evaluation/**`）
 
@@ -61,8 +65,8 @@
 
 | 项 | 命令 | 结果 |
 |---|---|---|
-| Java M4 | `gradle test --tests "com.shijiangtai.m4eval.*"` | **88 passed / 0 failed** |
-| Java 全量 | `gradle test` | 947 tests，255 failed：均为其他模块 Spring 上下文 / 外部依赖不可用（无 PostgreSQL / Redis / MinIO）；**M4 88 条全部通过** |
+| Java M4 | `gradle test --tests "com.shijiangtai.m4eval.*"` | **100 passed / 0 failed** |
+| Java 全量 | `gradle test` | 947 tests，255 failed：均为其他模块 Spring 上下文 / 外部依赖不可用（无 PostgreSQL / Redis / MinIO）；**M4 100 条全部通过** |
 | Python M4 | `.venv/Scripts/python -m pytest tests/evaluation` | **53 passed** |
 | 前端报告页 | `npx vitest run src/views/report` | **16 passed** |
 | 前端全量 | `npx vitest run` | **21 files / 159 tests passed** |
