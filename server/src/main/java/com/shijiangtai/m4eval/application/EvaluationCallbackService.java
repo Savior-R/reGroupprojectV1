@@ -114,7 +114,11 @@ public class EvaluationCallbackService {
             String message = "worker returned no dimension scores";
             dimensionScoreRepository.replaceAll(evaluation.id(), List.of());
             issueRepository.replaceAll(evaluation.id(), List.of());
-            evaluation.fail(EvaluationErrorCode.EVALUATION_INVALID_RESULT.name(), message, now);
+            evaluation.fail(
+                    EvaluationErrorCode.EVALUATION_INVALID_RESULT.name(),
+                    message,
+                    command.partialReasons(),
+                    now);
             job.markTerminal(EvaluationJobStatus.FAILED, message, now);
         } else {
             dimensionScoreRepository.replaceAll(evaluation.id(), dimensions);
@@ -149,6 +153,7 @@ public class EvaluationCallbackService {
                             ? EvaluationErrorCode.AI_SERVICE_UNAVAILABLE.name()
                             : command.errorCode(),
                     command.errorMessage(),
+                    reasons,
                     now);
             job.markTerminal(
                     EvaluationJobStatus.FAILED,

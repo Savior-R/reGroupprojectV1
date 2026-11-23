@@ -223,6 +223,12 @@ public final class Evaluation {
     }
 
     public void fail(String errorCode, String errorMessage, Instant now) {
+        fail(errorCode, errorMessage, List.of(), now);
+    }
+
+    /** Failed terminal also records why no usable result was produced (06 §9.4). */
+    public void fail(
+            String errorCode, String errorMessage, List<String> reasons, Instant now) {
         if (status.terminal()) {
             return;
         }
@@ -230,6 +236,7 @@ public final class Evaluation {
         this.totalScore = null;
         this.errorCode = errorCode;
         this.errorMessage = errorMessage;
+        this.partialReasons = new ArrayList<>(reasons == null ? List.of() : reasons);
         this.completedAt = now;
         this.updatedAt = now;
         if (startedAt == null) {

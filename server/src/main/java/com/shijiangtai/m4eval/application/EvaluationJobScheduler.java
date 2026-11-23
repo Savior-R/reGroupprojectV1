@@ -161,7 +161,11 @@ public class EvaluationJobScheduler {
         List<DimensionScore> existing = dimensionScoreRepository.findByEvaluationId(
                 evaluation.id());
         if (existing.isEmpty()) {
-            evaluation.fail(EvaluationErrorCode.EVALUATION_TIMEOUT.name(), reason, now);
+            evaluation.fail(
+                    EvaluationErrorCode.EVALUATION_TIMEOUT.name(),
+                    reason,
+                    List.of("DIMENSION_TIMEOUT"),
+                    now);
             job.markTerminal(EvaluationJobStatus.FAILED, reason, now);
         } else {
             evaluation.apply(new EvaluationOutcome(
