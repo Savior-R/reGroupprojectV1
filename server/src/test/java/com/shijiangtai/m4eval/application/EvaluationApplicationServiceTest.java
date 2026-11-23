@@ -126,6 +126,7 @@ class EvaluationApplicationServiceTest {
         assertThat(queue.published.get(0).jobId()).isEqualTo(job.id());
         assertThat(queue.published.get(0).evaluationId()).isEqualTo(created.id());
         assertThat(queue.published.get(0).attempt()).isEqualTo(1);
+        assertThat(queue.published.get(0).publishedAt()).isEqualTo(NOW);
         assertThat(afterCommit.count()).isEqualTo(1);
 
         assertThat(created.attemptCount()).isZero();

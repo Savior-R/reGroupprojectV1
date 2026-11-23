@@ -37,7 +37,8 @@ public class EvaluationInputService {
     private static final int MAX_TEXTS = 500;
     private static final int MAX_FRAMES = 200;
     private static final int MAX_EVENTS = 500;
-    private static final Duration PRESIGN_TTL = Duration.ofMinutes(30);
+    /** 06 §9.3: presigned recording URLs are valid for 15 minutes only. */
+    private static final Duration PRESIGN_TTL = Duration.ofMinutes(15);
 
     private final EvaluationRepository evaluationRepository;
     private final EvaluationInputSnapshotRepository snapshotRepository;

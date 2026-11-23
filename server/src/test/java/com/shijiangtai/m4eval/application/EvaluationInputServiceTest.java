@@ -85,6 +85,7 @@ class EvaluationInputServiceTest {
         assertThat(manifest.recordings().get(0).streamId()).isEqualTo(RECORDING_1);
         assertThat(manifest.recordings().get(0).url()).contains("sessions/camera.webm");
         assertThat(storage.presigned).containsExactly("sessions/camera.webm");
+        assertThat(storage.presignedTtls).containsExactly(java.time.Duration.ofMinutes(15));
     }
 
     @Test

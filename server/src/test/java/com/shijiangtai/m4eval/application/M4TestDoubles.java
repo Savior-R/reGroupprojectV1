@@ -271,6 +271,7 @@ final class M4TestDoubles {
 
     static final class FakeObjectStorage implements RecordingObjectStorage {
         final List<String> presigned = new ArrayList<>();
+        final List<Duration> presignedTtls = new ArrayList<>();
 
         @Override
         public RecordingObjectStorage.MultipartUpload createMultipart(String objectKey, String contentType) {
@@ -297,6 +298,7 @@ final class M4TestDoubles {
         @Override
         public String presignGet(String objectKey, Duration ttl) {
             presigned.add(objectKey);
+            presignedTtls.add(ttl);
             return "https://minio.test/" + objectKey + "?sig=test";
         }
 

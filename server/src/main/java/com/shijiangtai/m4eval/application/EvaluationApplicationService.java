@@ -204,7 +204,7 @@ public class EvaluationApplicationService {
                 flags,
                 now));
 
-        EvaluationQueue.EvaluationDispatchMessage message = message(saved, job);
+        EvaluationQueue.EvaluationDispatchMessage message = message(saved, job, now);
         afterCommit.afterCommit(() -> publishQuietly(message));
         return saved;
     }
@@ -219,7 +219,8 @@ public class EvaluationApplicationService {
     }
 
     private static EvaluationQueue.EvaluationDispatchMessage message(
-            Evaluation evaluation, EvaluationJob job) {
+            Evaluation evaluation, EvaluationJob job, Instant now) {
+        // Use the injected clock so the queue message is deterministic and reproducible.
         return new EvaluationQueue.EvaluationDispatchMessage(
                 job.id(),
                 evaluation.id(),
@@ -227,7 +228,7 @@ public class EvaluationApplicationService {
                 evaluation.sourceId(),
                 evaluation.sessionId(),
                 job.attempts(),
-                Instant.now());
+                now);
     }
 
     public EvaluationView get(CurrentUser user, UUID evaluationId) {
