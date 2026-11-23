@@ -118,6 +118,59 @@ class EvaluationResultValidatorTest {
     }
 
     @Test
+    void rejectsMoreThanFiveProblemsWithinOneDimension() {
+        List<EvaluationIssue> issues = java.util.stream.IntStream.range(0, 6)
+                .mapToObj(index -> issue(1000L + index, "low", false))
+                .toList();
+
+        assertThatThrownBy(() -> EvaluationResultValidator.validate(
+                EvaluationMode.FREE, FREE_WEIGHTS, List.of(content("82.5")), issues))
+                .isInstanceOf(EvaluationException.class)
+                .hasMessageContaining("too many issues for content");
+    }
+
+    @Test
+    void rejectsMoreThanTwentyProblemsOverall() {
+        List<EvaluationIssue> issues = new java.util.ArrayList<>();
+        for (String dimension : List.of("content", "expression", "interaction", "board")) {
+            for (int index = 0; index < 5; index++) {
+                issues.add(issue(dimension, 1000L + index));
+            }
+        }
+        issues.add(issue("time", 1000L));
+
+        assertThatThrownBy(() -> EvaluationResultValidator.validate(
+                EvaluationMode.FREE, FREE_WEIGHTS, List.of(content("82.5")), issues))
+                .isInstanceOf(EvaluationException.class)
+                .hasMessageContaining("too many issues");
+    }
+
+    @Test
+    void suggestionsDoNotCountAgainstTheProblemLimits() {
+        List<EvaluationIssue> issues = new java.util.ArrayList<>();
+        for (int index = 0; index < 5; index++) {
+            issues.add(issue(1000L + index, "low", false));
+            issues.add(issue(1000L + index, "low", true));
+        }
+
+        assertThatCode(() -> EvaluationResultValidator.validate(
+                EvaluationMode.FREE, FREE_WEIGHTS, List.of(content("82.5")), issues))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void rejectsMoreThanFiveSuggestions() {
+        List<EvaluationIssue> issues = java.util.stream.IntStream.range(0, 6)
+                .mapToObj(index -> issue(1000L + index, "low", true))
+                .toList();
+
+        assertThatThrownBy(() -> EvaluationResultValidator.validate(
+                EvaluationMode.FREE, FREE_WEIGHTS, List.of(content("82.5")), issues))
+                .isInstanceOf(EvaluationException.class)
+                .hasMessageContaining("too many suggestions");
+    }
+
+    @Test
     void normalizeRoundsScoresAndConfidences() {
         DimensionScore rounded = EvaluationResultValidator.normalize(List.of(
                         content("82.55"))).getFirst();
@@ -163,6 +216,21 @@ class EvaluationResultValidatorTest {
             values.put(key, new BigDecimal("0.80"));
         }
         return values;
+    }
+
+    private static EvaluationIssue issue(String dimension, Long startMs) {
+        return new EvaluationIssue(
+                UUID.randomUUID(),
+                EVALUATION_ID,
+                dimension,
+                startMs,
+                null,
+                "low",
+                "evidence",
+                "suggestion",
+                false,
+                null,
+                0);
     }
 
     private static EvaluationIssue issue(Long startMs, String severity, boolean suggestion) {

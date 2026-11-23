@@ -15,7 +15,9 @@ import java.util.Set;
  */
 public final class EvaluationResultValidator {
 
-    public static final int MAX_ISSUES = 100;
+    public static final int MAX_ISSUES_PER_DIMENSION = 5;
+    public static final int MAX_TOTAL_ISSUES = 20;
+    public static final int MAX_SUGGESTIONS = 5;
     public static final int MAX_DIMENSIONS = 5;
     public static final BigDecimal MIN_SCORE = BigDecimal.ZERO;
     public static final BigDecimal MAX_SCORE = BigDecimal.valueOf(100);
@@ -34,8 +36,28 @@ public final class EvaluationResultValidator {
         if (dimensions.size() > MAX_DIMENSIONS) {
             throw invalid("too many dimensions: " + dimensions.size());
         }
-        if (issues.size() > MAX_ISSUES) {
-            throw invalid("too many issues: " + issues.size());
+        // Suggestions are a derived 3—5 item overlay; only the underlying problems count
+        // against the per-dimension and total limits (06 §6.6 / §7.3).
+        Map<String, Integer> problemsPerDimension = new LinkedHashMap<>();
+        int problemCount = 0;
+        int suggestionCount = 0;
+        for (EvaluationIssue issue : issues) {
+            if (issue.isSuggestion()) {
+                suggestionCount++;
+                continue;
+            }
+            problemCount++;
+            int count = problemsPerDimension.merge(issue.dimension(), 1, Integer::sum);
+            if (count > MAX_ISSUES_PER_DIMENSION) {
+                throw invalid("too many issues for " + issue.dimension()
+                        + ": " + count + " (max " + MAX_ISSUES_PER_DIMENSION + ")");
+            }
+        }
+        if (problemCount > MAX_TOTAL_ISSUES) {
+            throw invalid("too many issues: " + problemCount);
+        }
+        if (suggestionCount > MAX_SUGGESTIONS) {
+            throw invalid("too many suggestions: " + suggestionCount);
         }
 
         Set<String> applicable = Set.copyOf(DimensionCatalog.applicableDimensions(mode));
