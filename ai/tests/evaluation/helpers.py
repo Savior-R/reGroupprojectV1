@@ -30,6 +30,14 @@ WEIGHTS = {
 
 
 def manifest(mode: str = "free", *, weights: dict[str, int] | None = None) -> Manifest:
+    config: dict[str, object] = {
+        "topic": "分数的初步认识",
+        "reference_material": "参考材料：认识几分之一。",
+        "duration_recommended_seconds": 900,
+        "duration_max_seconds": 1200,
+    }
+    if mode == "interview":
+        config["answer_points"] = ["认识几分之一", "能比较同分母分数"]
     return Manifest(
         evaluation_id="11111111-1111-1111-1111-111111111111",
         session_id="22222222-2222-2222-2222-222222222222",
@@ -42,12 +50,7 @@ def manifest(mode: str = "free", *, weights: dict[str, int] | None = None) -> Ma
             started_at="2026-11-10T08:00:00Z",
             ended_at="2026-11-10T08:15:00Z",
         ),
-        config={
-            "topic": "分数的初步认识",
-            "reference_material": "参考材料：认识几分之一。",
-            "duration_recommended_seconds": 900,
-            "duration_max_seconds": 1200,
-        },
+        config=config,
         recordings=[],
         counts=ManifestCounts(texts=4, frames=2, events=3),
         weights=weights or WEIGHTS[mode],

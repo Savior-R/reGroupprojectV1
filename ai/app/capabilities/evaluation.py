@@ -197,6 +197,10 @@ class EvaluationCapability:
             return _DimensionOutcome(None, [], [], ["TRANSCRIPT_MISSING"], Usage())
 
         config = context.manifest.config
+        interview = context.manifest.mode == "interview"
+        if interview and not config.get("answer_points"):
+            return _DimensionOutcome(None, [], [], ["ANSWER_POINTS_MISSING"], Usage())
+
         warnings: list[str] = []
         view: dict[str, Any] = {
             "topic": config.get("topic"),
@@ -205,16 +209,17 @@ class EvaluationCapability:
                 for item in spoken[:400]
             ],
         }
+        missing_reference = not interview and not config.get("reference_material")
         if config.get("reference_material"):
             view["reference_material"] = str(config["reference_material"])[:20000]
-        else:
+        elif missing_reference:
             warnings.append("REFERENCE_MISSING")
         if config.get("answer_points"):
             view["answer_points"] = config["answer_points"]
 
         output, tokens = await self._json_call(dimension_messages("content", view))
         sub_scores = self._normalize_subscores("content", output.sub_scores)
-        if "accuracy" in sub_scores and not config.get("reference_material"):
+        if "accuracy" in sub_scores and missing_reference:
             sub_scores.pop("accuracy", None)
         if not sub_scores:
             raise ProviderError("EMPTY_SUBSCORES", "content returned no sub-scores")
@@ -225,6 +230,7 @@ class EvaluationCapability:
             context.duration_ms,
             warnings,
             tokens,
+            confidence_cap=0.75 if missing_reference else None,
         )
 
     # --------------------------------------------------------------- expression

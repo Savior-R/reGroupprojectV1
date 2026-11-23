@@ -61,17 +61,42 @@ class EvaluationResultValidatorTest {
     }
 
     @Test
-    void rejectsMissingSubItem() {
+    void acceptsMissingAccuracyWhenReferenceIsUnavailable() {
         Map<String, BigDecimal> subs = new LinkedHashMap<>(contentSubScores());
         subs.remove("accuracy");
+        DimensionScore content = new DimensionScore(
+                UUID.randomUUID(), EVALUATION_ID, "content", new BigDecimal("82.5"),
+                subs, confidences(subs), new BigDecimal("0.75"));
+
+        assertThatCode(() -> EvaluationResultValidator.validate(
+                EvaluationMode.FREE, FREE_WEIGHTS, List.of(content), List.of()))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void rejectsADimensionWithoutAnySubItemEvidence() {
+        DimensionScore empty = new DimensionScore(
+                UUID.randomUUID(), EVALUATION_ID, "content", new BigDecimal("82.5"),
+                Map.of(), Map.of(), new BigDecimal("0.85"));
+
+        assertThatThrownBy(() -> EvaluationResultValidator.validate(
+                EvaluationMode.FREE, FREE_WEIGHTS, List.of(empty), List.of()))
+                .isInstanceOf(EvaluationException.class)
+                .hasMessageContaining("at least one sub-item");
+    }
+
+    @Test
+    void rejectsUnknownSubItem() {
+        Map<String, BigDecimal> subs = new LinkedHashMap<>(contentSubScores());
+        subs.put("made_up", new BigDecimal("80.0"));
         DimensionScore broken = new DimensionScore(
                 UUID.randomUUID(), EVALUATION_ID, "content", new BigDecimal("82.5"),
-                subs, confidences(subs), new BigDecimal("0.85"));
+                subs, confidences(contentSubScores()), new BigDecimal("0.85"));
 
         assertThatThrownBy(() -> EvaluationResultValidator.validate(
                 EvaluationMode.FREE, FREE_WEIGHTS, List.of(broken), List.of()))
                 .isInstanceOf(EvaluationException.class)
-                .hasMessageContaining("missing sub-item accuracy");
+                .hasMessageContaining("unknown sub-item made_up");
     }
 
     @Test

@@ -112,18 +112,18 @@ public final class EvaluationResultValidator {
     private static void validateSubScores(DimensionScore dimension) {
         Set<String> expected = DimensionCatalog.subItems(dimension.dimension());
         Map<String, BigDecimal> subScores = dimension.subScores();
+        // Sub-items may be absent when evidence is unavailable (06 §6.1: a missing reference
+        // material removes accuracy while the remaining sub-items still score the dimension).
+        if (subScores.isEmpty()) {
+            throw invalid("dimension " + dimension.dimension()
+                    + " requires at least one sub-item score");
+        }
         for (Map.Entry<String, BigDecimal> entry : subScores.entrySet()) {
             if (!expected.contains(entry.getKey())) {
                 throw invalid(
                         "unknown sub-item " + entry.getKey() + " for " + dimension.dimension());
             }
             checkScore("sub-item " + entry.getKey(), entry.getValue());
-        }
-        for (String sub : expected) {
-            if (!subScores.containsKey(sub)) {
-                throw invalid(
-                        "missing sub-item " + sub + " for " + dimension.dimension());
-            }
         }
         for (Map.Entry<String, BigDecimal> entry : dimension.subConfidences().entrySet()) {
             if (!expected.contains(entry.getKey())) {

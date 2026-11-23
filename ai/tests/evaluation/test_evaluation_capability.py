@@ -184,3 +184,63 @@ async def test_issue_times_are_clamped_to_session_duration() -> None:
     result = await capability.evaluate(context)
 
     assert all(issue.start_ms <= 900_000 for issue in result.issues)
+
+
+async def test_missing_reference_removes_accuracy_but_keeps_completed() -> None:
+    manifest = helpers.manifest()
+    manifest = manifest.model_copy(
+        update={
+            "config": {
+                key: value
+                for key, value in manifest.config.items()
+                if key != "reference_material"
+            }
+        }
+    )
+    context = EvaluationContext(
+        manifest=manifest,
+        texts=helpers.texts(),
+        frames=helpers.frames(),
+        events=helpers.events(),
+        audio=helpers.audio(),
+    )
+
+    result = await _capability().evaluate(context)
+
+    content = next(item for item in result.dimensions if item.dimension == "content")
+    assert result.status == "completed"
+    assert "REFERENCE_MISSING" in result.warnings
+    assert "accuracy" not in content.sub_scores
+    assert content.confidence <= 0.75
+    assert set(content.sub_scores) == {
+        "logic",
+        "key_points",
+        "terminology",
+        "completeness",
+    }
+
+
+async def test_interview_without_answer_points_marks_content_partial() -> None:
+    manifest = helpers.manifest("interview")
+    manifest = manifest.model_copy(
+        update={
+            "config": {
+                key: value
+                for key, value in manifest.config.items()
+                if key != "answer_points"
+            }
+        }
+    )
+    context = EvaluationContext(
+        manifest=manifest,
+        texts=helpers.texts(),
+        frames=helpers.frames(),
+        events=helpers.events(),
+        audio=helpers.audio(),
+    )
+
+    result = await _capability().evaluate(context)
+
+    assert result.status == "partial"
+    assert "ANSWER_POINTS_MISSING" in result.partial_reasons
+    assert {item.dimension for item in result.dimensions} == {"expression", "time"}
