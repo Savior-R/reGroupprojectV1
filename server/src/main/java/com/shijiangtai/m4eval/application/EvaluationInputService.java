@@ -170,7 +170,9 @@ public class EvaluationInputService {
         List<EvaluationInputManifestView.RecordingView> views = new ArrayList<>();
         for (EvaluationInputQuery.RecordingStreamRow stream
                 : inputQuery.recordingStreams(evaluation.sessionId())) {
-            if (!allowed.isEmpty() && !allowed.contains(stream.id())) {
+            // The snapshot is authoritative: a stream uploaded after evaluation creation must
+            // not become evidence for an already-started job.
+            if (!allowed.contains(stream.id())) {
                 continue;
             }
             if (!"uploaded".equals(stream.status())

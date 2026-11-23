@@ -18,6 +18,7 @@ import com.shijiangtai.m4eval.domain.EvaluationMode;
 import com.shijiangtai.m4eval.domain.EvaluationStatus;
 import com.shijiangtai.m4eval.domain.InputSnapshot;
 import com.shijiangtai.m4eval.domain.WeightDefaults;
+import com.shijiangtai.m3classroom.application.port.RecordingObjectStorage;
 import com.shijiangtai.shared.application.ClockProvider;
 import com.shijiangtai.shared.application.EventPublisher;
 import com.shijiangtai.shared.application.IdGenerator;
@@ -265,6 +266,48 @@ final class M4TestDoubles {
         @Override
         public Optional<InputSnapshot> findByEvaluationId(UUID evaluationId) {
             return Optional.ofNullable(byEvaluation.get(evaluationId));
+        }
+    }
+
+    static final class FakeObjectStorage implements RecordingObjectStorage {
+        final List<String> presigned = new ArrayList<>();
+
+        @Override
+        public RecordingObjectStorage.MultipartUpload createMultipart(String objectKey, String contentType) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public String presignPart(
+                String objectKey, String uploadId, int partNumber, Duration ttl) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void completeMultipart(
+                String objectKey, String uploadId, List<RecordingObjectStorage.PartEtag> parts) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void abortMultipart(String objectKey, String uploadId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public String presignGet(String objectKey, Duration ttl) {
+            presigned.add(objectKey);
+            return "https://minio.test/" + objectKey + "?sig=test";
+        }
+
+        @Override
+        public RecordingObjectStorage.ObjectStat stat(String objectKey) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void delete(String objectKey) {
+            throw new UnsupportedOperationException();
         }
     }
 
