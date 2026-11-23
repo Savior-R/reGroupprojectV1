@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from app.capabilities.evaluation import EvaluationCapability, EvaluationContext
 from app.capabilities.media import MediaCapability
@@ -77,6 +78,7 @@ class EvaluationEngine:
             )
             raise
 
+        started = time.monotonic()
         try:
             manifest = await self._inputs.manifest(message.evaluation_id)
             if manifest.evaluation_id != message.evaluation_id:
@@ -94,8 +96,13 @@ class EvaluationEngine:
                 events=events,
                 audio=audio,
             )
+            # The capability owns the deadline so it can return the dimensions that already
+            # finished and mark the rest DIMENSION_TIMEOUT (06 §5.5) instead of losing them.
+            remaining = self._job_timeout_s - (time.monotonic() - started)
+            budget = max(0.0, remaining - 0.5)
             result = await asyncio.wait_for(
-                self._capability.evaluate(context), timeout=self._job_timeout_s
+                self._capability.evaluate(context, timeout_s=budget),
+                timeout=max(0.0, remaining),
             )
         except CallbackAbandon:
             raise

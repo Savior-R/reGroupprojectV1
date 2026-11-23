@@ -5,6 +5,7 @@ from app.prompts.evaluation.v1 import (
     RUBRIC_VERSION,
     SUB_WEIGHTS,
     dimension_messages,
+    suggestion_messages,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "RUBRIC_VERSION",
     "SUB_WEIGHTS",
     "dimension_messages",
+    "suggestion_messages",
 ]

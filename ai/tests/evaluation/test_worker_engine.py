@@ -116,7 +116,7 @@ class FakeCapability:
         self.error = error
         self.context = None
 
-    async def evaluate(self, context):
+    async def evaluate(self, context, *, timeout_s=None):
         if self.delay:
             await asyncio.sleep(self.delay)
         if self.error:
@@ -189,6 +189,22 @@ async def test_job_timeout_reports_ai_timeout() -> None:
 
     assert await engine.run(MESSAGE) == DONE
     assert callback.failures[0][0] == "AI_TIMEOUT"
+
+
+async def test_engine_passes_the_remaining_budget_to_the_capability() -> None:
+    class _BudgetCapability(FakeCapability):
+        budget: float | None = None
+
+        async def evaluate(self, context, *, timeout_s=None):
+            self.budget = timeout_s
+            return await super().evaluate(context, timeout_s=timeout_s)
+
+    capability = _BudgetCapability()
+    engine = _engine(capability=capability, timeout_s=90.0)
+
+    assert await engine.run(MESSAGE) == DONE
+    assert capability.budget is not None
+    assert 0 < capability.budget <= 90.0
 
 
 async def test_no_dimensions_reports_failure_not_result() -> None:

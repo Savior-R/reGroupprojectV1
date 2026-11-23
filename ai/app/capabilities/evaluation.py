@@ -20,6 +20,7 @@ from app.prompts.evaluation import (
     RUBRIC_VERSION,
     SUB_WEIGHTS,
     dimension_messages,
+    suggestion_messages,
 )
 from app.providers.base import LLMProvider, ProviderError, Usage
 from app.schemas.evaluation import (
@@ -91,29 +92,36 @@ class EvaluationCapability:
         self._prompt_version = prompt_version
         self._rubric_version = rubric_version
 
-    async def evaluate(self, context: EvaluationContext) -> EvaluationResult:
+    async def evaluate(
+        self, context: EvaluationContext, *, timeout_s: float | None = None
+    ) -> EvaluationResult:
         dimensions = self._applicable_dimensions(context.manifest.mode)
-        outcomes = await asyncio.gather(
-            *[self._guarded_dimension(name, context) for name in dimensions]
-        )
+        outcomes = await self._run_dimensions(dimensions, context, timeout_s)
 
         results: list[DimensionResult] = []
         issues: list[IssuePayload] = []
         warnings: list[str] = []
         partial_reasons: list[str] = []
         prompt_tokens = completion_tokens = 0
-        for outcome in outcomes:
+        for name, outcome in zip(dimensions, outcomes):
+            weight = context.manifest.weights.get(name, 0)
             if outcome.result is not None:
                 results.append(outcome.result)
                 issues.extend(outcome.issues)
             warnings.extend(outcome.warnings)
-            partial_reasons.extend(outcome.partial_reasons)
+            if weight > 0:
+                partial_reasons.extend(outcome.partial_reasons)
+            elif outcome.result is None:
+                # 06 §3.2 / §6.7: a missing zero-weight dimension is a warning, not partial.
+                warnings.append("ZERO_WEIGHT_DIMENSION_MISSING")
             prompt_tokens += outcome.tokens.prompt_tokens
             completion_tokens += outcome.tokens.completion_tokens
 
         issues = self._cap_issues(issues, context.duration_ms)
-        suggestions = self._suggestions(results, issues)
+        suggestions, suggestion_tokens = await self._suggestions(context, results, issues)
         issues = issues + suggestions
+        prompt_tokens += suggestion_tokens.prompt_tokens
+        completion_tokens += suggestion_tokens.completion_tokens
 
         required_missing = [
             name
@@ -150,6 +158,39 @@ class EvaluationCapability:
             return ["content", "expression", "time"]
         return ["content", "expression", "interaction", "board", "time"]
 
+    async def _run_dimensions(
+        self,
+        dimensions: list[str],
+        context: EvaluationContext,
+        timeout_s: float | None,
+    ) -> list[_DimensionOutcome]:
+        """Runs dimensions concurrently and keeps finished ones when the job deadline hits."""
+        tasks = [
+            asyncio.create_task(self._guarded_dimension(name, context))
+            for name in dimensions
+        ]
+        if timeout_s is None:
+            return list(await asyncio.gather(*tasks))
+        done, pending = await asyncio.wait(tasks, timeout=max(0.0, timeout_s))
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        outcomes: list[_DimensionOutcome] = []
+        for task in tasks:
+            if task in done and not task.cancelled():
+                try:
+                    outcomes.append(task.result())
+                except Exception:
+                    outcomes.append(
+                        _DimensionOutcome(None, [], [], ["DIMENSION_FAILED"], Usage())
+                    )
+            else:
+                outcomes.append(
+                    _DimensionOutcome(None, [], [], ["DIMENSION_TIMEOUT"], Usage())
+                )
+        return outcomes
+
     async def _guarded_dimension(
         self, dimension: str, context: EvaluationContext
     ) -> _DimensionOutcome:
@@ -173,7 +214,7 @@ class EvaluationCapability:
                 return await self._interaction(context)
             if dimension == "board":
                 return await self._board(context)
-            return self._time(context)
+            return await self._time(context)
         except ProviderError as exc:
             return _DimensionOutcome(
                 None,
@@ -386,23 +427,54 @@ class EvaluationCapability:
 
     # --------------------------------------------------------------------- time
 
-    def _time(self, context: EvaluationContext) -> _DimensionOutcome:
+    async def _time(self, context: EvaluationContext) -> _DimensionOutcome:
         if not context.texts and not context.events and not context.duration_ms:
             return _DimensionOutcome(None, [], [], ["DIMENSION_FAILED"], Usage())
 
         duration_ms = max(context.duration_ms, 1)
+        duration_s = duration_ms / 1000.0
         config = context.manifest.config
         recommended = _int(config.get("duration_recommended_seconds")) or 900
         maximum = _int(config.get("duration_max_seconds")) or max(recommended, 1200)
-        duration_s = duration_ms / 1000.0
-
-        overtime = _score_overtime(duration_s, recommended, maximum)
-        phases = 1 if context.manifest.mode == "interview" else _count_phases(context.texts)
-        phases_score = _score_phases(phases)
-        allocation = _score_allocation(phases)
-        pacing = _score_pacing(context.events, duration_s)
+        interview = context.manifest.mode == "interview"
 
         issues: list[dict[str, Any]] = []
+        if interview:
+            windows = _interview_windows(context.events, duration_ms)
+            phase_view = [
+                {
+                    "question": index,
+                    "start_ms": start,
+                    "end_ms": end,
+                    "answered": end is not None,
+                }
+                for index, (start, end) in enumerate(windows, start=1)
+            ]
+            phases_score = _score_interview_phases(windows)
+            allocation = _score_allocation_durations(
+                [end - start for start, end in windows if end is not None]
+            )
+            issues.extend(_unanswered_issues(windows))
+        else:
+            phases = _phases(context.texts)
+            phase_view = phases
+            phases_score = _score_phases(len(phases))
+            allocation = _score_allocation_durations(
+                [phase["duration_ms"] for phase in phases]
+            )
+            if len(phases) < 2:
+                issues.append(
+                    {
+                        "start_ms": 0,
+                        "end_ms": int(duration_s * 1000),
+                        "severity": "medium",
+                        "evidence": "课堂缺少清晰的阶段切换",
+                        "suggestion": "用导入、讲解、练习、总结等阶段组织课堂。",
+                    }
+                )
+
+        overtime = _score_overtime(duration_s, recommended, maximum)
+        pacing = _score_pacing(context.events, duration_s)
         if duration_s > maximum:
             issues.append(
                 {
@@ -423,41 +495,59 @@ class EvaluationCapability:
                     "suggestion": "为关键知识点补充例子或练习，避免内容过快结束。",
                 }
             )
-        if phases < 2:
-            issues.append(
-                {
-                    "start_ms": 0,
-                    "end_ms": int(duration_s * 1000),
-                    "severity": "medium",
-                    "evidence": "课堂缺少清晰的阶段切换",
-                    "suggestion": "用导入、讲解、练习、总结等阶段组织课堂。",
-                }
-            )
 
-        output = _DimensionOutput(
-            sub_scores={
-                "phases": phases_score,
-                "allocation": allocation,
-                "pacing": pacing,
-                "overtime": overtime,
-            },
-            confidence=0.9,
-            issues=issues,
-        )
+        rule_scores = {
+            "phases": phases_score,
+            "allocation": allocation,
+            "pacing": pacing,
+            "overtime": overtime,
+        }
+        view = {
+            "mode": context.manifest.mode,
+            "duration_ms": duration_ms,
+            "recommended_seconds": recommended,
+            "maximum_seconds": maximum,
+            "phases": phase_view,
+            "event_stats": _event_stats(context.events),
+            "rule_sub_scores": rule_scores,
+        }
+        warnings: list[str] = []
+        try:
+            output, tokens = await self._json_call(dimension_messages("time", view))
+            sub_scores = self._normalize_subscores("time", output.sub_scores)
+            if not sub_scores:
+                raise ProviderError("EMPTY_SUBSCORES", "time returned no sub-scores")
+            # The LLM evaluates the four sub-items; rule values fill any key it omitted so a
+            # dimension is never dropped for a partial model response (06 §6.5).
+            merged = {**rule_scores, **sub_scores}
+            combined = _DimensionOutput(
+                sub_scores=merged,
+                confidence=output.confidence,
+                issues=issues + output.issues,
+            )
+        except ProviderError:
+            warnings.append("TIME_RULE_ONLY")
+            tokens = Usage()
+            combined = _DimensionOutput(
+                sub_scores=rule_scores, confidence=0.7, issues=issues
+            )
         return self._outcome(
-            "time",
-            output.sub_scores,
-            output,
-            duration_ms,
-            [],
-            Usage(),
+            "time", combined.sub_scores, combined, duration_ms, warnings, tokens
         )
 
     # -------------------------------------------------------------- suggestions
 
-    def _suggestions(
-        self, dimensions: list[DimensionResult], issues: list[IssuePayload]
-    ) -> list[IssuePayload]:
+    async def _suggestions(
+        self,
+        context: EvaluationContext,
+        dimensions: list[DimensionResult],
+        issues: list[IssuePayload],
+    ) -> tuple[list[IssuePayload], Usage]:
+        """Asks the LLM to select and rewrite 3—5 suggestions, with a deterministic fallback.
+
+        The selected suggestions always keep the original dimension, severity and time span;
+        only the suggestion text may be rewritten (06 §6.6).
+        """
         ranked = sorted(
             issues,
             key=lambda issue: (
@@ -465,20 +555,81 @@ class EvaluationCapability:
                 issue.start_ms if issue.start_ms is not None else 1 << 62,
             ),
         )
-        selected = ranked[:5]
-        suggestions: list[IssuePayload] = []
-        for index, issue in enumerate(selected, start=1):
-            suggestions.append(
-                issue.model_copy(
-                    update={
-                        "is_suggestion": True,
-                        "suggestion_rank": index,
-                        "suggestion": issue.suggestion
-                        or "针对该问题补充讲解或调整课堂节奏。",
-                    }
+        pool = ranked[:10]
+        if not pool:
+            return self._template_suggestions(dimensions), Usage()
+
+        view = {
+            "mode": context.manifest.mode,
+            "dimensions": [
+                {"dimension": item.dimension, "score": item.score} for item in dimensions
+            ],
+            "problems": [
+                {
+                    "dimension": issue.dimension,
+                    "severity": issue.severity,
+                    "start_ms": issue.start_ms,
+                    "end_ms": issue.end_ms,
+                    "evidence": issue.evidence,
+                    "suggestion": issue.suggestion,
+                }
+                for issue in pool
+            ],
+        }
+        try:
+            payload, tokens = await self._raw_json_call(suggestion_messages(view))
+        except ProviderError:
+            return self._fallback_suggestions(pool, dimensions), Usage()
+
+        chosen = _select_suggestions(payload, pool)
+        if len(chosen) < 3:
+            chosen.extend(
+                (index, text)
+                for index, text in enumerate(
+                    [issue.suggestion for issue in pool], start=0
                 )
+                if index not in {item[0] for item in chosen}
             )
-        dimension_names = [result.dimension for result in dimensions] or ["content"]
+        chosen = chosen[:5]
+        if not chosen:
+            return self._fallback_suggestions(pool, dimensions), tokens
+        return [
+            pool[index].model_copy(
+                update={
+                    "is_suggestion": True,
+                    "suggestion_rank": rank,
+                    "suggestion": text
+                    or pool[index].suggestion
+                    or "针对该问题补充讲解或调整课堂节奏。",
+                }
+            )
+            for rank, (index, text) in enumerate(chosen, start=1)
+        ], tokens
+
+    def _fallback_suggestions(
+        self, pool: list[IssuePayload], dimensions: list[DimensionResult]
+    ) -> list[IssuePayload]:
+        suggestions = [
+            issue.model_copy(
+                update={
+                    "is_suggestion": True,
+                    "suggestion_rank": rank,
+                    "suggestion": issue.suggestion
+                    or "针对该问题补充讲解或调整课堂节奏。",
+                }
+            )
+            for rank, issue in enumerate(pool[:5], start=1)
+        ]
+        if len(suggestions) < 3:
+            for rank, issue in enumerate(
+                self._template_suggestions(dimensions), start=len(suggestions) + 1
+            ):
+                suggestions.append(issue.model_copy(update={"suggestion_rank": rank}))
+        return suggestions[:5]
+
+    def _template_suggestions(
+        self, dimensions: list[DimensionResult]
+    ) -> list[IssuePayload]:
         templates = {
             "content": "围绕目标知识点补充例子与课堂练习，强化重难点讲解。",
             "expression": "控制语速、减少口头禅，并在长段落之间留出停顿。",
@@ -486,11 +637,10 @@ class EvaluationCapability:
             "board": "优化板书/PPT 结构，突出主线并保持图文一致。",
             "time": "按导入、讲解、练习、总结分配时间，并预留机动时间。",
         }
-        index = len(suggestions)
-        for dimension in dimension_names:
-            if index >= 3:
-                break
-            index += 1
+        dimension_names = [result.dimension for result in dimensions] or ["content"]
+        suggestions: list[IssuePayload] = []
+        for rank in range(1, 4):
+            dimension = dimension_names[(rank - 1) % len(dimension_names)]
             suggestions.append(
                 IssuePayload(
                     dimension=dimension,  # type: ignore[arg-type]
@@ -500,7 +650,7 @@ class EvaluationCapability:
                     evidence="未发现明显问题",
                     suggestion=templates.get(dimension, "保持当前课堂节奏。"),
                     is_suggestion=True,
-                    suggestion_rank=index,
+                    suggestion_rank=rank,
                 )
             )
         return suggestions
@@ -512,19 +662,7 @@ class EvaluationCapability:
     ) -> tuple[_DimensionOutput, Usage]:
         last_error: Exception | None = None
         for attempt in range(2):
-            try:
-                response = await self._llm.chat(
-                    messages,
-                    self._model,
-                    self._timeout_s,
-                    response_format={"type": "json_object"},
-                    temperature=0.4,
-                    thinking=False,
-                )
-            except ProviderError as exc:
-                if exc.retryable and attempt == 0:
-                    continue
-                raise
+            response = await self._chat(messages, attempt)
             try:
                 payload = _parse_json(response.text)
                 return _DimensionOutput.model_validate(payload), response.usage or Usage()
@@ -535,6 +673,47 @@ class EvaluationCapability:
             f"model did not return valid JSON after 2 attempts: {last_error}",
             retryable=False,
         )
+
+    async def _raw_json_call(
+        self, messages: list[dict[str, str]]
+    ) -> tuple[dict[str, Any], Usage]:
+        last_error: Exception | None = None
+        for attempt in range(2):
+            response = await self._chat(messages, attempt)
+            try:
+                payload = _parse_json(response.text)
+                if not isinstance(payload, dict):
+                    raise ValueError("JSON response must be an object")
+                return payload, response.usage or Usage()
+            except Exception as exc:  # JSON decode or shape validation
+                last_error = exc
+        raise ProviderError(
+            "INVALID_LLM_JSON",
+            f"model did not return valid JSON after 2 attempts: {last_error}",
+            retryable=False,
+        )
+
+    async def _chat(self, messages: list[dict[str, str]], attempt: int):
+        try:
+            return await self._llm.chat(
+                messages,
+                self._model,
+                self._timeout_s,
+                response_format={"type": "json_object"},
+                temperature=0.4,
+                thinking=False,
+            )
+        except ProviderError as exc:
+            if exc.retryable and attempt == 0:
+                return await self._llm.chat(
+                    messages,
+                    self._model,
+                    self._timeout_s,
+                    response_format={"type": "json_object"},
+                    temperature=0.4,
+                    thinking=False,
+                )
+            raise
 
     def _normalize_subscores(
         self, dimension: str, raw: dict[str, float]
@@ -687,41 +866,132 @@ def _filler_per_100(text: str, characters: int) -> float:
     return count * 100.0 / characters
 
 
-def _event_stats(events: list[EventItem]) -> dict[str, int]:
-    stats = {
+def _event_stats(events: list[EventItem]) -> dict[str, Any]:
+    """Interaction statistics consumed by the LLM (06 §6.3)."""
+    stats: dict[str, Any] = {
         "question_count": 0,
         "student_question_count": 0,
         "hand_raise_count": 0,
+        "called_on_count": 0,
         "answer_count": 0,
         "follow_up_count": 0,
+        "marked_correct": 0,
+        "marked_partial": 0,
+        "marked_wrong": 0,
         "discipline_count": 0,
+        "management_action_count": 0,
+        "dialogue_rounds": 0,
+        "avg_response_ms": None,
     }
-    mapping = {
-        "classroom.question_asked": "question_count",
-        "student.question": "student_question_count",
-        "student.hand_raised": "hand_raise_count",
-        "student.answer": "answer_count",
-        "student.follow_up": "follow_up_count",
-        "discipline.event": "discipline_count",
-        "classroom.discipline_level_changed": "discipline_count",
-    }
-    for event in events:
-        key = mapping.get(event.type)
-        if key is not None:
-            stats[key] += 1
+    pending_call: int | None = None
+    open_questions: list[int] = []
+    response_times: list[int] = []
+    for event in sorted(events, key=lambda item: (item.timestamp_ms, item.seq)):
+        payload = event.payload or {}
+        if event.type == "classroom.question_asked":
+            # Only an "answer" intent opens a question; other intents are classroom flow.
+            if str(payload.get("intent", "answer")) == "answer":
+                stats["question_count"] += 1
+                open_questions.append(event.timestamp_ms)
+        elif event.type == "student.question":
+            stats["student_question_count"] += 1
+        elif event.type == "student.hand_raised":
+            stats["hand_raise_count"] += 1
+        elif event.type == "teacher.called_on":
+            stats["called_on_count"] += 1
+            pending_call = event.timestamp_ms
+        elif event.type == "student.answer":
+            stats["answer_count"] += 1
+            if pending_call is not None:
+                response_times.append(event.timestamp_ms - pending_call)
+                pending_call = None
+            elif open_questions:
+                response_times.append(event.timestamp_ms - open_questions.pop(0))
+        elif event.type == "student.follow_up":
+            stats["follow_up_count"] += 1
+        elif event.type == "teacher.marked":
+            result = str(
+                payload.get("result") or payload.get("correctness") or ""
+            ).lower()
+            if result in {"correct", "partial", "wrong"}:
+                stats[f"marked_{result}"] += 1
+        elif event.type in {"discipline.event", "classroom.discipline_level_changed"}:
+            stats["discipline_count"] += 1
+        elif event.type == "teacher.management_action":
+            stats["management_action_count"] += 1
+        elif event.type == "dialogue.started":
+            stats["dialogue_rounds"] += 1
+    if response_times:
+        stats["avg_response_ms"] = round(sum(response_times) / len(response_times))
     return stats
 
 
-def _count_phases(texts: list[TextItem]) -> int:
-    """A phase is a gap of at least 60 s between spoken segments."""
-    times = sorted(item.at_ms for item in texts)
-    if not times:
-        return 0
-    phases = 1
-    for previous, current in zip(times, times[1:]):
-        if current - previous >= 60_000:
-            phases += 1
+def _phases(texts: list[TextItem]) -> list[dict[str, int]]:
+    """Segments spoken text into phases; a gap of at least 60 s starts a new phase."""
+    spoken = [
+        item
+        for item in texts
+        if item.speaker_type in {"teacher", "examiner", "candidate"}
+    ]
+    ordered = sorted(spoken or texts, key=lambda item: item.at_ms)
+    if not ordered:
+        return []
+    groups: list[list[TextItem]] = [[ordered[0]]]
+    for item in ordered[1:]:
+        if item.at_ms - groups[-1][-1].at_ms >= 60_000:
+            groups.append([item])
+        else:
+            groups[-1].append(item)
+    phases: list[dict[str, int]] = []
+    for group in groups:
+        start = group[0].at_ms
+        end = max(
+            item.end_ms if item.end_ms is not None else item.at_ms for item in group
+        )
+        end = max(end, start)
+        phases.append(
+            {"start_ms": start, "end_ms": end, "duration_ms": end - start}
+        )
     return phases
+
+
+def _interview_windows(
+    events: list[EventItem], duration_ms: int
+) -> list[tuple[int, int | None]]:
+    """Per-question answer windows derived from interview events (06 §6.5)."""
+    windows: list[tuple[int, int | None]] = []
+    open_start: int | None = None
+    for event in sorted(events, key=lambda item: (item.timestamp_ms, item.seq)):
+        if event.type == "interview.question_shown":
+            if open_start is not None:
+                windows.append((open_start, None))
+            open_start = event.timestamp_ms
+        elif event.type == "interview.answer_ended" and open_start is not None:
+            windows.append(
+                (open_start, min(max(event.timestamp_ms, open_start), duration_ms))
+            )
+            open_start = None
+    if open_start is not None:
+        windows.append((open_start, None))
+    return windows
+
+
+def _unanswered_issues(
+    windows: list[tuple[int, int | None]]
+) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    for index, (start, end) in enumerate(windows, start=1):
+        if end is None:
+            issues.append(
+                {
+                    "start_ms": start,
+                    "end_ms": None,
+                    "severity": "high",
+                    "evidence": f"第 {index} 题在结束时仍未作答",
+                    "suggestion": "为每题预留作答时间，并在结束前完成作答。",
+                }
+            )
+    return issues
 
 
 def _score_phases(phases: int) -> float:
@@ -734,12 +1004,52 @@ def _score_phases(phases: int) -> float:
     return 60.0
 
 
-def _score_allocation(phases: int) -> float:
-    if phases <= 1:
+def _score_interview_phases(windows: list[tuple[int, int | None]]) -> float:
+    if not windows:
         return 50.0
-    ideal = 1.0 / phases
-    # Without per-phase durations, reward a reasonable number of phases.
-    return round(min(100.0, 60.0 + 40.0 * min(phases, 5) / 5), 1)
+    answered = sum(1 for _, end in windows if end is not None)
+    return round(max(40.0, 100.0 * answered / len(windows)), 1)
+
+
+def _score_allocation_durations(durations: list[int]) -> float:
+    values = [duration for duration in durations if duration > 0]
+    if len(values) < 2:
+        return 50.0
+    ratio = max(values) / min(values)
+    if ratio <= 2:
+        return 100.0
+    if ratio <= 3:
+        return 85.0
+    if ratio <= 5:
+        return 70.0
+    return 55.0
+
+
+def _select_suggestions(
+    payload: dict[str, Any], pool: list[IssuePayload]
+) -> list[tuple[int, str]]:
+    raw = payload.get("suggestions")
+    if not isinstance(raw, list):
+        return []
+    chosen: list[tuple[int, str]] = []
+    seen: set[int] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        index = _int(item.get("index"))
+        text = str(item.get("suggestion") or "").strip()
+        if (
+            index is None
+            or not 0 <= index < len(pool)
+            or index in seen
+            or not text
+        ):
+            continue
+        seen.add(index)
+        chosen.append((index, text[:500]))
+        if len(chosen) >= 5:
+            break
+    return chosen
 
 
 def _score_pacing(events: list[EventItem], duration_s: float) -> float:

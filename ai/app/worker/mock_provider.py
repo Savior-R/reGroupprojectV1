@@ -39,6 +39,12 @@ _DIMENSIONS: dict[str, dict[str, float]] = {
         "consistency": 84.0,
         "usage": 80.0,
     },
+    "time": {
+        "phases": 85.0,
+        "allocation": 82.0,
+        "pacing": 80.0,
+        "overtime": 90.0,
+    },
 }
 
 _ISSUES: dict[str, list[dict[str, Any]]] = {
@@ -93,13 +99,22 @@ class EvaluationMockProvider:
         thinking: bool | None = None,
     ) -> LLMResponse:
         system = messages[0].get("content", "") if messages else ""
-        match = re.search(r"维度=([a-z_]+)", system)
-        dimension = match.group(1) if match else "content"
-        payload: dict[str, Any] = {
-            "sub_scores": _DIMENSIONS.get(dimension, _DIMENSIONS["content"]),
-            "confidence": 0.85,
-            "issues": _ISSUES.get(dimension, []),
-        }
+        if re.search(r"任务=suggestions", system):
+            payload: dict[str, Any] = {
+                "suggestions": [
+                    {"index": 0, "suggestion": "先用一句话点明本课目标，再进入新知识点。"},
+                    {"index": 1, "suggestion": "在关键提问后停顿 3—5 秒，再请学生回答。"},
+                    {"index": 2, "suggestion": "用板书保留讲解主线，并在总结时回扣目标。"},
+                ]
+            }
+        else:
+            match = re.search(r"维度=([a-z_]+)", system)
+            dimension = match.group(1) if match else "content"
+            payload = {
+                "sub_scores": _DIMENSIONS.get(dimension, _DIMENSIONS["content"]),
+                "confidence": 0.85,
+                "issues": _ISSUES.get(dimension, []),
+            }
         return LLMResponse(
             text=json.dumps(payload, ensure_ascii=False),
             model_version="mock",
