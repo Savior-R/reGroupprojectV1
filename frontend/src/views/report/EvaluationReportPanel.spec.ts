@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import EvaluationReportPanel from './EvaluationReportPanel.vue'
-import { getEvaluation, getReport } from './api'
+import { getEvaluation, getIssues, getReport } from './api'
 import { ApiError } from '../../types/api'
-import type { EvaluationView, ReportView } from './types'
+import type { EvaluationView, IssueView, ReportView } from './types'
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }))
 
@@ -128,10 +128,26 @@ function mountPanel() {
   return mount(EvaluationReportPanel, { props: { evaluationId: EVALUATION_ID } })
 }
 
+function issue(overrides: Partial<IssueView> = {}): IssueView {
+  return {
+    issue_id: 'p1',
+    dimension: 'content',
+    start_ms: 12_000,
+    end_ms: 18_000,
+    severity: 'medium',
+    evidence: '讲解缺少关键结论。',
+    suggestion: '补充关键结论。',
+    is_suggestion: false,
+    suggestion_rank: null,
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getEvaluation).mockReset().mockResolvedValue(evaluation())
   vi.mocked(getReport).mockReset().mockResolvedValue(report())
+  vi.mocked(getIssues).mockReset().mockResolvedValue([])
 })
 
 describe('EvaluationReportPanel completed state', () => {
@@ -149,6 +165,50 @@ describe('EvaluationReportPanel completed state', () => {
     expect(wrapper.text()).toContain('没有课堂事件')
     expect(wrapper.text()).toContain('m4-eval-v1')
     expect(wrapper.findAll('.suggestion')).toHaveLength(2)
+  })
+
+  it('renders the confidence and marks a low-confidence dimension', async () => {
+    vi.mocked(getReport).mockResolvedValue(
+      report({
+        dimensions: [
+          {
+            dimension: 'content',
+            score: 82,
+            sub_scores: { accuracy: 82 },
+            sub_confidences: { accuracy: 0.6 },
+            confidence: 0.6,
+          },
+        ],
+      }),
+    )
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('置信度 60%')
+    expect(wrapper.text()).toContain('低置信度')
+  })
+
+  it('renders the full problem timeline without duplicating suggestions', async () => {
+    vi.mocked(getIssues).mockResolvedValue([
+      issue({
+        issue_id: 'p2',
+        dimension: 'expression',
+        start_ms: 30_000,
+        severity: 'high',
+        evidence: '语速过快。',
+      }),
+      issue({ issue_id: 'p1' }),
+      issue({ issue_id: 's1', is_suggestion: true, suggestion_rank: 1 }),
+    ])
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('问题时间线')
+    expect(wrapper.text()).toContain('共 2 条')
+    expect(wrapper.text()).toContain('语速过快。')
+    expect(wrapper.findAll('.el-collapse-item')).toHaveLength(2)
   })
 
   it('jumps to the replay timestamp of a suggestion', async () => {
@@ -194,6 +254,7 @@ describe('EvaluationReportPanel terminal states', () => {
     expect(wrapper.text()).toContain('缺失维度：板书')
     expect(wrapper.text()).toContain('屏幕帧 / OCR 缺失')
     expect(wrapper.text()).toContain('未提供')
+    expect(wrapper.text()).toContain('未完成')
     expect(wrapper.text()).toContain('存在缺失或失败的必需维度')
   })
 
@@ -229,7 +290,7 @@ describe('EvaluationReportPanel terminal states', () => {
     expect(getReport).not.toHaveBeenCalled()
 
     const poll = timeoutSpy.mock.calls
-      .filter((call) => call[1] === 3_000)
+      .filter((call) => call[1] === 5_000)
       .map((call) => call[0])
       .pop() as (() => void) | undefined
     expect(poll).toBeDefined()

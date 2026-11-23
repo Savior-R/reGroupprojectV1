@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElAlert, ElButton, ElCard } from 'element-plus'
 import { ApiError } from '../../types/api'
@@ -15,24 +15,58 @@ import EvaluationReportPanel from './EvaluationReportPanel.vue'
 
 const route = useRoute()
 
+const POLL_INTERVAL_MS = 3_000
+
 const recordId = computed(() => String(route.params.recordId ?? ''))
 const evaluationId = ref('')
 const loading = ref(true)
+const waiting = ref(false)
 const errorMessage = ref('')
 const errorCode = ref('')
 const forbidden = ref(false)
 const notFound = ref(false)
 
-async function resolve(): Promise<void> {
-  loading.value = true
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+let disposed = false
+
+function clearTimer(): void {
+  if (pollTimer !== null) {
+    clearTimeout(pollTimer)
+    pollTimer = null
+  }
+}
+
+function schedulePoll(): void {
+  clearTimer()
+  if (disposed) {
+    return
+  }
+  pollTimer = setTimeout(() => {
+    void resolve(false)
+  }, POLL_INTERVAL_MS)
+}
+
+async function resolve(initial = true): Promise<void> {
+  if (initial) {
+    loading.value = true
+  }
   errorMessage.value = ''
+  errorCode.value = ''
   forbidden.value = false
   notFound.value = false
   try {
     const evaluation = await getEvaluationByTrainingRecord(recordId.value)
     evaluationId.value = evaluation.evaluation_id
+    waiting.value = false
   } catch (error) {
     if (error instanceof ApiError) {
+      if (error.status === 409) {
+        // Training evaluation is still pending/running; retry until it reaches a terminal state.
+        waiting.value = true
+        errorMessage.value = ''
+        schedulePoll()
+        return
+      }
       errorCode.value = error.code
       errorMessage.value = error.message
       forbidden.value = error.status === 403
@@ -45,7 +79,14 @@ async function resolve(): Promise<void> {
   }
 }
 
-onMounted(resolve)
+onMounted(() => {
+  void resolve()
+})
+
+onBeforeUnmount(() => {
+  disposed = true
+  clearTimer()
+})
 </script>
 
 <template>
@@ -62,6 +103,11 @@ onMounted(resolve)
 
     <p v-if="loading" class="report-page__state">正在定位评测记录…</p>
 
+    <ElCard v-else-if="waiting" class="report-page__state" shadow="never">
+      <p class="report-page__waiting">AI 正在评测该训练记录…</p>
+      <p class="report-page__hint">页面每 3 秒自动刷新，评测完成后展示报告。</p>
+    </ElCard>
+
     <ElAlert
       v-else-if="errorMessage"
       type="error"
@@ -72,7 +118,7 @@ onMounted(resolve)
         {{ forbidden ? '无权查看该训练报告' : notFound ? '该训练记录还没有评测' : errorMessage }}
       </template>
       <p v-if="errorCode" class="report-page__code">错误码：{{ errorCode }}</p>
-      <ElButton v-if="!forbidden && !notFound" size="small" @click="resolve">重试</ElButton>
+      <ElButton v-if="!forbidden && !notFound" size="small" @click="resolve()">重试</ElButton>
     </ElAlert>
 
     <EvaluationReportPanel v-else-if="evaluationId" :evaluation-id="evaluationId" />
@@ -121,6 +167,12 @@ onMounted(resolve)
 .report-page__state {
   margin: 0;
   color: var(--m1-text-secondary);
+}
+
+.report-page__waiting {
+  margin: 0 0 4px;
+  color: var(--m1-text-primary);
+  font-size: 15px;
 }
 
 .report-page__code {

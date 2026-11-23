@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElCard, ElEmpty, ElProgress, ElTag } from 'element-plus'
+import {
+  ElAlert,
+  ElButton,
+  ElCard,
+  ElCollapse,
+  ElCollapseItem,
+  ElEmpty,
+  ElProgress,
+  ElTag,
+} from 'element-plus'
 import { ApiError } from '../../types/api'
-import { getEvaluation, getReport } from './api'
+import { getEvaluation, getIssues, getReport } from './api'
 import RadarChart from './RadarChart.vue'
 import type { EvaluationStatus, EvaluationView, IssueView, ReportView } from './types'
 import {
@@ -30,14 +39,17 @@ import {
 const props = defineProps<{ evaluationId: string }>()
 const emit = defineEmits<{ (event: 'resolved', evaluation: EvaluationView): void }>()
 
-const POLL_INTERVAL_MS = 3_000
+const POLL_PENDING_MS = 5_000
+const POLL_RUNNING_MS = 3_000
 const NOT_READY = 'EVALUATION_NOT_READY'
+const LOW_CONFIDENCE = 0.7
 
 const router = useRouter()
 const loading = ref(true)
 const status = ref<EvaluationStatus>('pending')
 const evaluation = ref<EvaluationView | null>(null)
 const report = ref<ReportView | null>(null)
+const issues = ref<IssueView[]>([])
 const errorMessage = ref('')
 const errorCode = ref('')
 const forbidden = ref(false)
@@ -74,6 +86,22 @@ const warningLabels = computed(() =>
   (report.value?.warnings ?? []).map((warning) => REASON_LABELS[warning] ?? warning),
 )
 
+/** Every problem (suggestion copies excluded), sorted by the replay timestamp. */
+const issueTimeline = computed(() =>
+  issues.value
+    .filter((issue) => !issue.is_suggestion)
+    .slice()
+    .sort(
+      (left, right) =>
+        (left.start_ms ?? Number.MAX_SAFE_INTEGER) -
+        (right.start_ms ?? Number.MAX_SAFE_INTEGER),
+    ),
+)
+
+function isLowConfidence(confidence: number): boolean {
+  return confidence < LOW_CONFIDENCE
+}
+
 function clearTimer(): void {
   if (pollTimer !== null) {
     clearTimeout(pollTimer)
@@ -86,9 +114,12 @@ function schedulePoll(): void {
   if (disposed.value) {
     return
   }
-  pollTimer = setTimeout(() => {
-    void load(false)
-  }, POLL_INTERVAL_MS)
+  pollTimer = setTimeout(
+    () => {
+      void load(false)
+    },
+    status.value === 'pending' ? POLL_PENDING_MS : POLL_RUNNING_MS,
+  )
 }
 
 function resetError(): void {
@@ -112,6 +143,8 @@ function handleError(error: unknown): void {
 async function load(initial: boolean): Promise<void> {
   if (initial) {
     loading.value = true
+    report.value = null
+    issues.value = []
     resetError()
   }
   try {
@@ -122,12 +155,14 @@ async function load(initial: boolean): Promise<void> {
 
     if (current.status === 'pending' || current.status === 'running') {
       report.value = null
+      issues.value = []
       loading.value = false
       schedulePoll()
       return
     }
     if (current.status === 'failed') {
       report.value = null
+      issues.value = []
       loading.value = false
       return
     }
@@ -137,6 +172,12 @@ async function load(initial: boolean): Promise<void> {
     status.value = data.status
     loading.value = false
     resetError()
+    try {
+      issues.value = (await getIssues(props.evaluationId)) ?? []
+    } catch {
+      // The timeline is supplementary: keep the report usable if /issues fails.
+      issues.value = []
+    }
   } catch (error) {
     if (error instanceof ApiError && (error.code === NOT_READY || error.status === 409)) {
       // The status and report reads raced with the worker's terminal callback.
@@ -290,6 +331,21 @@ watch(
               <header class="dimension-card__header">
                 <h3>{{ DIMENSION_LABELS[dimension.dimension] ?? dimension.dimension }}</h3>
                 <span class="dimension-card__score">{{ dimension.score.toFixed(1) }}</span>
+                <span
+                  class="dimension-card__confidence"
+                  :class="{
+                    'dimension-card__confidence--low': isLowConfidence(dimension.confidence),
+                  }"
+                >
+                  置信度 {{ (dimension.confidence * 100).toFixed(0) }}%
+                  <ElTag
+                    v-if="isLowConfidence(dimension.confidence)"
+                    size="small"
+                    type="warning"
+                  >
+                    低置信度
+                  </ElTag>
+                </span>
                 <span class="dimension-card__weight">
                   权重 {{ report.weights[dimension.dimension] ?? '—' }}%
                 </span>
@@ -312,8 +368,21 @@ watch(
                 </div>
               </dl>
             </article>
+            <article
+              v-for="dimension in report.missing_dimensions"
+              :key="`missing-${dimension}`"
+              class="dimension-card dimension-card--missing"
+            >
+              <header class="dimension-card__header">
+                <h3>{{ DIMENSION_LABELS[dimension] ?? dimension }}</h3>
+                <ElTag size="small" type="info">未完成</ElTag>
+              </header>
+              <p class="dimension-card__missing-hint">
+                该维度缺少可用输入或评测失败，未生成分数。
+              </p>
+            </article>
             <ElEmpty
-              v-if="report.dimensions.length === 0"
+              v-if="report.dimensions.length === 0 && report.missing_dimensions.length === 0"
               description="该报告没有可展示的维度得分"
             />
           </div>
@@ -357,6 +426,45 @@ watch(
           </li>
         </ol>
         <ElEmpty v-else description="暂无改进建议" />
+      </ElCard>
+
+      <ElCard v-if="issueTimeline.length" class="report-block" shadow="never">
+        <template #header>
+          <div class="report-block__header">
+            <h2 class="report-block__title">问题时间线</h2>
+            <span class="report-block__count">共 {{ issueTimeline.length }} 条</span>
+          </div>
+        </template>
+        <ElCollapse class="timeline">
+          <ElCollapseItem
+            v-for="issue in issueTimeline"
+            :key="issue.issue_id"
+            :name="issue.issue_id"
+          >
+            <template #title>
+              <span class="timeline__header">
+                <span class="timeline__time">{{ formatTimestamp(issue.start_ms) }}</span>
+                <ElTag size="small" type="info">
+                  {{ DIMENSION_LABELS[issue.dimension] ?? issue.dimension }}
+                </ElTag>
+                <ElTag size="small" :type="SEVERITY_TYPES[issue.severity]">
+                  {{ SEVERITY_LABELS[issue.severity] }}
+                </ElTag>
+              </span>
+            </template>
+            <p class="suggestion__evidence">{{ issue.evidence }}</p>
+            <p class="suggestion__action">{{ issue.suggestion }}</p>
+            <ElButton
+              v-if="report.session_id"
+              link
+              type="primary"
+              size="small"
+              @click="jumpToReplay(issue)"
+            >
+              回看该片段
+            </ElButton>
+          </ElCollapseItem>
+        </ElCollapse>
       </ElCard>
 
       <ElCard v-if="warningLabels.length" class="report-block" shadow="never">
@@ -509,10 +617,58 @@ watch(
   font-variant-numeric: tabular-nums;
 }
 
+.dimension-card__confidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--m1-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dimension-card__confidence--low {
+  color: var(--el-color-warning);
+}
+
 .dimension-card__weight {
   margin-left: auto;
   color: var(--m1-text-secondary);
   font-size: 12px;
+}
+
+.dimension-card--missing {
+  border-style: dashed;
+  opacity: 0.72;
+}
+
+.dimension-card__missing-hint {
+  margin: 8px 0 0;
+  color: var(--m1-text-secondary);
+  font-size: 12px;
+}
+
+.report-block__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.report-block__count {
+  color: var(--m1-text-secondary);
+  font-size: 12px;
+}
+
+.timeline__header {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeline__time {
+  color: var(--m1-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .dimension-card__subs {
