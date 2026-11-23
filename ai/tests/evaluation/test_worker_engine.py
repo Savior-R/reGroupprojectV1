@@ -9,6 +9,7 @@ from app.schemas.evaluation import (
     EvaluationResult,
     JobMessage,
 )
+from app.providers.base import ProviderError
 from app.worker.callback import CallbackAbandon, CallbackError
 from app.worker.engine import DONE, STALE, EvaluationEngine
 from app.worker.input_client import InputClientError
@@ -215,3 +216,62 @@ async def test_terminal_result_is_reported_as_stale() -> None:
 
     assert await engine.run(MESSAGE) == STALE
     assert callback.failures == []
+
+
+class MismatchedInputs(FakeInputs):
+    async def manifest(self, evaluation_id: str):
+        return helpers.manifest().model_copy(
+            update={"evaluation_id": "99999999-9999-9999-9999-999999999999"}
+        )
+
+
+async def test_manifest_evaluation_mismatch_reports_fail() -> None:
+    callback = FakeCallback()
+    engine = _engine(inputs=MismatchedInputs(), callback=callback)
+
+    assert await engine.run(MESSAGE) == DONE
+    assert callback.results == []
+    assert callback.failures[0][0] == "INPUT_FETCH_FAILED"
+
+
+async def test_provider_error_maps_to_service_unavailable() -> None:
+    callback = FakeCallback()
+    engine = _engine(
+        callback=callback,
+        capability=FakeCapability(
+            error=ProviderError("UPSTREAM_429", "rate limited", retryable=True)
+        ),
+    )
+
+    assert await engine.run(MESSAGE) == DONE
+    assert callback.failures[0][0] == "AI_SERVICE_UNAVAILABLE"
+    assert callback.failures[0][1] == "rate limited"
+
+
+async def test_unexpected_capability_failure_is_reported_as_internal_error() -> None:
+    callback = FakeCallback()
+    engine = _engine(
+        callback=callback,
+        capability=FakeCapability(error=ValueError("broken payload")),
+    )
+
+    assert await engine.run(MESSAGE) == DONE
+    assert callback.failures[0][0] == "AI_INTERNAL_ERROR"
+    assert callback.failures[0][1] == "ValueError"
+
+
+async def test_dimension_timeout_without_results_reports_ai_timeout() -> None:
+    callback = FakeCallback()
+    timed_out = EvaluationResult(
+        status="failed",
+        model_version="mock",
+        prompt_version="m4-eval-v1",
+        rubric_version="m4-rubric-v1",
+        dimensions=[],
+        partial_reasons=["DIMENSION_TIMEOUT"],
+    )
+    engine = _engine(callback=callback, capability=FakeCapability(result=timed_out))
+
+    assert await engine.run(MESSAGE) == DONE
+    assert callback.failures[0][0] == "AI_TIMEOUT"
+    assert callback.failures[0][2] == ["DIMENSION_TIMEOUT"]
