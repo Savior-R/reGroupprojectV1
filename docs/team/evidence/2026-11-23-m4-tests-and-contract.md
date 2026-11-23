@@ -4,7 +4,7 @@
 > 依据：`docs/team/prompts/03-ai-m4.md`、`docs/design/06-M4-AI评测与反馈.md`、`docs/design/10-测试与验收.md` §6.7
 > 执行人：AI Owner（当前使用者）
 > 环境：Windows 11 + Git Bash；JDK 25.0.1 + Gradle 9.5.0（临时 init script 覆盖 toolchain 21，未改 `build.gradle.kts`）；Python 3.13.15（`ai/.venv`）；Node 24 / npm 11；**无 Docker、无 PostgreSQL / Redis / MinIO 运行中**。
-> 结论：补齐 M4 Java 应用层、Python worker、前端报告页测试，并修复三处契约偏差。M4 Java **81 条**、Python **53 条**、前端报告页 **16 条**（全量 159 条）通过；前端生产构建通过。**PostgreSQL / Redis / MinIO IT、真实 Provider、真实浏览器 E2E 与真实模型性能仍未执行，本文不声称全链路验收通过。**
+> 结论：补齐 M4 Java 应用层、Python worker、前端报告页测试，并修复四处契约偏差。M4 Java **88 条**、Python **53 条**、前端报告页 **16 条**（全量 159 条）通过；前端生产构建通过。**PostgreSQL / Redis / MinIO IT、真实 Provider、真实浏览器 E2E 与真实模型性能仍未执行，本文不声称全链路验收通过。**
 
 ## 1. 分支与提交
 
@@ -14,6 +14,7 @@
 | `a2fcf4c` | `test(m4-ai)` worker 输入 / 回调 / 异常映射 / 3 并发 mock 预算 |
 | `99f9dee` | `test(m4-web)` 报告页状态、雷达图、文案与定位跳转 |
 | `b74914d` | `fix(m4)` 缺失参考材料 / 面试答案要点的结果校验与置信度契约 |
+| `656ee6b` | `fix(m4)` 输入清单严格按快照录像 ID 过滤，补充 manifest / 分页用例 |
 
 ## 2. 新增覆盖
 
@@ -29,6 +30,7 @@
 | `EvaluationAccessPolicyTest` | 学生本人、课程教师组、非本组教师、管理员 403、跨校、训练仅本人、无课程跳过学校校验 | M4-T09 |
 | `EvaluationReportQueryServiceTest` | completed 报告 / 雷达、partial 缺失维度与无总分、pending 409、failed 422、建议 3—5 与排序、issues 排序、训练过期 / 删除 404、无权限 | M4-T05 / T09 |
 | `EvaluationResultValidatorTest` | 缺失 accuracy 可接受、空子项与未知子项拒绝 | M4-T04 / T05 |
+| `EvaluationInputServiceTest` | manifest 配置 / counts / flags、仅快照录像、迟到上传不进入、未完成流排除、分页上限 | M4-T02 |
 
 ### 2.2 Python（`ai/tests/evaluation/**`）
 
@@ -53,13 +55,14 @@
 1. **失败终态丢失 `partial_reasons`**：`Evaluation.fail` 原先只写 `error_code`，fail 回调与死信原因被丢弃。新增带 reasons 的重载，fail 回调、空结果与死信均保留原因，报告页与 M7 可读取。
 2. **Java 校验强制全部子项**：`06` §6.1 / §6.9 规定参考材料缺失时 `accuracy` 置空、其余子项计分；原校验会拒绝整份结果。现允许缺失子项，但拒绝空子项与未知子项。
 3. **Python 参考材料 / 答案要点**：参考材料缺失时删除 `accuracy` 并将内容维度置信度上限设为 0.75；面试缺答案要点时内容维度缺失并返回 `ANSWER_POINTS_MISSING`，按规则进入 partial。
+4. **输入清单可复现性**：`recordings()` 原先在快照录像 ID 为空时回退到实时全部流，迟到上传会改变 manifest；现严格只取快照内 ID。
 
 ## 4. 验证结果
 
 | 项 | 命令 | 结果 |
 |---|---|---|
-| Java M4 | `gradle test --tests "com.shijiangtai.m4eval.*"` | **81 passed / 0 failed** |
-| Java 全量 | `gradle test` | 947 tests，255 failed：均为其他模块 Spring 上下文 / 外部依赖不可用（无 PostgreSQL / Redis / MinIO）；**M4 81 条全部通过** |
+| Java M4 | `gradle test --tests "com.shijiangtai.m4eval.*"` | **88 passed / 0 failed** |
+| Java 全量 | `gradle test` | 947 tests，255 failed：均为其他模块 Spring 上下文 / 外部依赖不可用（无 PostgreSQL / Redis / MinIO）；**M4 88 条全部通过** |
 | Python M4 | `.venv/Scripts/python -m pytest tests/evaluation` | **53 passed** |
 | 前端报告页 | `npx vitest run src/views/report` | **16 passed** |
 | 前端全量 | `npx vitest run` | **21 files / 159 tests passed** |
