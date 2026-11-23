@@ -112,6 +112,73 @@ class EvaluationPolicyTest {
     }
 
     @Test
+    void zeroWeightInputReasonDoesNotTurnAFullReportPartial() {
+        Map<String, Integer> weights = Map.of(
+                "content", 30, "expression", 20, "interaction", 20, "board", 0, "time", 30);
+
+        EvaluationOutcome outcome = EvaluationPolicy.decide(
+                EvaluationMode.FREE,
+                weights,
+                allDimensions(),
+                List.of(),
+                List.of("FRAMES_MISSING"),
+                "mock",
+                "m4-eval-v1",
+                DimensionCatalog.RUBRIC_VERSION,
+                Map.of(),
+                NOW);
+
+        assertThat(outcome.status()).isEqualTo(EvaluationStatus.COMPLETED);
+        assertThat(outcome.totalScore()).isNotNull();
+        assertThat(outcome.partialReasons()).isEmpty();
+    }
+
+    @Test
+    void zeroWeightDimensionFailureDoesNotGateCompletion() {
+        Map<String, Integer> weights = Map.of(
+                "content", 30, "expression", 20, "interaction", 20, "board", 0, "time", 30);
+        Map<String, BigDecimal> scores = new LinkedHashMap<>(allDimensions());
+        scores.remove("board");
+
+        EvaluationOutcome outcome = EvaluationPolicy.decide(
+                EvaluationMode.FREE,
+                weights,
+                scores,
+                List.of(),
+                List.of("DIMENSION_TIMEOUT"),
+                "mock",
+                "m4-eval-v1",
+                DimensionCatalog.RUBRIC_VERSION,
+                Map.of(),
+                NOW);
+
+        assertThat(outcome.status()).isEqualTo(EvaluationStatus.COMPLETED);
+        assertThat(outcome.warnings()).contains(EvaluationPolicy.ZERO_WEIGHT_MISSING);
+        assertThat(outcome.partialReasons()).doesNotContain("DIMENSION_TIMEOUT");
+    }
+
+    @Test
+    void transcriptReasonStillGatesWhenOnlyOneAffectedDimensionHasWeight() {
+        Map<String, Integer> weights = Map.of(
+                "content", 0, "expression", 25, "interaction", 25, "board", 25, "time", 25);
+
+        EvaluationOutcome outcome = EvaluationPolicy.decide(
+                EvaluationMode.FREE,
+                weights,
+                allDimensions(),
+                List.of(),
+                List.of("TRANSCRIPT_MISSING"),
+                "mock",
+                "m4-eval-v1",
+                DimensionCatalog.RUBRIC_VERSION,
+                Map.of(),
+                NOW);
+
+        assertThat(outcome.status()).isEqualTo(EvaluationStatus.PARTIAL);
+        assertThat(outcome.partialReasons()).contains("TRANSCRIPT_MISSING");
+    }
+
+    @Test
     void noDimensionAtAllFails() {
         EvaluationOutcome outcome = EvaluationPolicy.decide(
                 EvaluationMode.INTERVIEW,

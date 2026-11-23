@@ -37,6 +37,20 @@ public final class EvaluationPolicy {
     public static final String ZERO_WEIGHT_MISSING = "ZERO_WEIGHT_DIMENSION_MISSING";
     public static final BigDecimal MAX_SCORE = BigDecimal.valueOf(100);
 
+    /**
+     * Input reasons that only gate completion while one of their dimensions has weight &gt; 0
+     * (06 §3.2 / §6.7: a missing zero-weight dimension is a warning, not a partial result).
+     */
+    private static final Map<String, Set<String>> REASON_DIMENSIONS = Map.of(
+            "TRANSCRIPT_MISSING", Set.of("content", "expression", "time"),
+            "AUDIO_MISSING", Set.of("expression"),
+            "FRAMES_MISSING", Set.of("board"),
+            "ANSWER_POINTS_MISSING", Set.of("content"));
+
+    /** Reasons reported per dimension; whether they gate completion depends on that dimension. */
+    private static final Set<String> DIMENSION_REASONS = Set.of(
+            "DIMENSION_FAILED", "DIMENSION_TIMEOUT", "INVALID_MODEL_OUTPUT");
+
     private EvaluationPolicy() {
     }
 
@@ -116,14 +130,23 @@ public final class EvaluationPolicy {
         warnings = new ArrayList<>(distinct(warnings));
         partialReasons = new ArrayList<>(distinct(partialReasons));
 
-        if (missingRequired || !partialReasons.isEmpty()) {
+        // Only reasons that affect a weight>0 dimension may gate completion. A worker that
+        // reports FRAMES_MISSING while board has weight 0 must not turn a full report partial.
+        List<String> effectiveReasons = new ArrayList<>();
+        for (String reason : partialReasons) {
+            if (gatesCompletion(reason, weights, missingRequired)) {
+                effectiveReasons.add(reason);
+            }
+        }
+
+        if (missingRequired || !effectiveReasons.isEmpty()) {
             return new EvaluationOutcome(
-                    EvaluationStatus.PARTIAL, null, warnings, partialReasons, modelVersion,
+                    EvaluationStatus.PARTIAL, null, warnings, effectiveReasons, modelVersion,
                     promptVersion, rubricVersion, tokenUsage, now);
         }
         BigDecimal total = totalScore(weights, dimensionScores);
         return new EvaluationOutcome(
-                EvaluationStatus.COMPLETED, total, warnings, partialReasons, modelVersion,
+                EvaluationStatus.COMPLETED, total, warnings, effectiveReasons, modelVersion,
                 promptVersion, rubricVersion, tokenUsage, now);
     }
 
@@ -139,6 +162,26 @@ public final class EvaluationPolicy {
         return new EvaluationOutcome(
                 EvaluationStatus.PARTIAL, null, List.of(), reasons, null, null,
                 DimensionCatalog.RUBRIC_VERSION, Map.of(), Instant.now());
+    }
+
+    private static boolean gatesCompletion(
+            String reason, Map<String, Integer> weights, boolean missingRequired) {
+        Set<String> dimensions = REASON_DIMENSIONS.get(reason);
+        if (dimensions != null) {
+            for (String dimension : dimensions) {
+                if (weights.getOrDefault(dimension, 0) > 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (DIMENSION_REASONS.contains(reason)) {
+            // A failed dimension is already reflected by the missing-dimension check. Without a
+            // missing required dimension the failure must belong to a zero-weight dimension.
+            return missingRequired;
+        }
+        // Unknown reasons are kept: rejecting a report is safer than silently completing it.
+        return true;
     }
 
     private static List<String> distinct(List<String> values) {
