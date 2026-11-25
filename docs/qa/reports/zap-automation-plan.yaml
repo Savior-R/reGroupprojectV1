@@ -1,0 +1,35 @@
+env:
+  contexts:
+    - name: m1-api
+      urls:
+        - "http://localhost:8091"
+      includePaths:
+        - "http://localhost:8091/.*"
+  parameters:
+    failOnError: false
+    progressToStdout: true
+
+jobs:
+  - type: spider
+    parameters:
+      context: m1-api
+      url: "http://localhost:8091/api/v1/public/schools"
+      maxDuration: 2
+      maxDepth: 3
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: activeScan
+    parameters:
+      context: m1-api
+      maxRuleDurationInMins: 1
+      maxScanDurationInMins: 6
+      addQueryParam: false
+
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: "D:/soft/HomeWork/ReSoftProject/docs/qa/reports"
+      reportFile: zap-m1-dast

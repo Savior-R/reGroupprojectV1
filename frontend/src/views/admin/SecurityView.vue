@@ -5,22 +5,26 @@ import {
   bindEmail,
   bindWechat,
   createWechatQr,
+  listSecurityEvents,
   me,
   sendBindCode,
   unbindEmail,
   unbindWechat,
   wechatStatus,
 } from '../../api/auth'
-import type { AccountView } from '../../api/auth'
+import type { AccountView, SecurityEventView } from '../../api/auth'
 
 /**
  * 账号安全（FR-M1-09 / FR-M1-11 / 03 §3.9 /settings/security）：
- * 绑定 / 换绑 / 解绑邮箱与微信，均需当前密码 + 重新验证。
+ * 绑定 / 换绑 / 解绑邮箱与微信，均需当前密码 + 重新验证；
+ * 末尾展示本人登录记录（只读，GET /auth/security/events）。
  */
 
 const account = ref<AccountView | null>(null)
 const loading = ref(false)
 const countdown = ref(0)
+const events = ref<SecurityEventView[]>([])
+const eventsLoading = ref(false)
 let timer: number | undefined
 
 const emailForm = reactive({ email: '', code: '', password: '' })
@@ -28,6 +32,45 @@ const wechat = reactive({ ticket: '', password: '', state: '' })
 
 async function reload(): Promise<void> {
   account.value = await me()
+  // 绑定 / 解绑成功后列表会新增记录，随 reload 一起刷新
+  await loadEvents()
+}
+
+async function loadEvents(): Promise<void> {
+  eventsLoading.value = true
+  try {
+    events.value = await listSecurityEvents(20)
+  } catch {
+    // 登录记录属辅助信息，失败不阻塞绑定 / 解绑主流程
+    events.value = []
+  } finally {
+    eventsLoading.value = false
+  }
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  login: '登录',
+  bind: '绑定',
+  unbind: '解绑',
+}
+
+const METHOD_LABELS: Record<string, string> = {
+  password: '密码',
+  email: '邮箱验证码',
+  wechat: '微信扫码',
+}
+
+function eventLabel(type: string): string {
+  return EVENT_LABELS[type] ?? type
+}
+
+function methodLabel(method: string): string {
+  return METHOD_LABELS[method] ?? method
+}
+
+function formatTime(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
 }
 
 function startCountdown(): void {
@@ -213,6 +256,32 @@ onMounted(reload)
           <el-button @click="removeWechat">解绑微信</el-button>
         </div>
       </el-form>
+    </el-card>
+
+    <el-card class="card">
+      <template #header>登录记录</template>
+      <p class="status">最近 20 条登录与绑定操作，仅本人可见。</p>
+      <el-table v-loading="eventsLoading" :data="events" empty-text="暂无登录记录" size="small">
+        <el-table-column label="时间" min-width="150">
+          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column label="事件" width="80">
+          <template #default="{ row }">{{ eventLabel(row.event_type) }}</template>
+        </el-table-column>
+        <el-table-column label="方式" width="110">
+          <template #default="{ row }">{{ methodLabel(row.method) }}</template>
+        </el-table-column>
+        <el-table-column label="结果" width="80">
+          <template #default="{ row }">
+            <el-tag :type="row.success ? 'success' : 'danger'" size="small">
+              {{ row.success ? '成功' : '失败' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="IP" min-width="120">
+          <template #default="{ row }">{{ row.ip ?? '—' }}</template>
+        </el-table-column>
+      </el-table>
     </el-card>
   </div>
 </template>

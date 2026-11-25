@@ -167,6 +167,26 @@ export async function me(): Promise<AccountView> {
   return data
 }
 
+/** 一条登录 / 绑定审计（03 §3.9）。字段不含 token / 验证码（03 §3.10）。 */
+export interface SecurityEventView {
+  id: string
+  event_type: 'login' | 'bind' | 'unbind' | string
+  method: 'password' | 'email' | 'wechat' | string
+  provider: string | null
+  success: boolean
+  ip: string | null
+  user_agent: string | null
+  created_at: string
+}
+
+/** 我的登录记录，只读；后端缺省 20 条、上限 50 条。 */
+export async function listSecurityEvents(limit = 20): Promise<SecurityEventView[]> {
+  const { data } = await authClient.get<SecurityEventView[]>('/auth/security/events', {
+    params: { limit },
+  })
+  return data
+}
+
 export async function createWechatQr(): Promise<QrView> {
   const { data } = await authClient.get<QrView>('/auth/oauth/wechat/qr')
   return data
