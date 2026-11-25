@@ -1,0 +1,6 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+GET,GET /public/schools [public],HTTPError('500 Server Error:  for url: GET /public/schools [public]'),5,2026-11-24T10:13:24Z,2026-11-24T10:13:27Z
+POST,POST /auth/login [ok],CatchResponseError('login failed: 500'),11,2026-11-24T10:13:24Z,2026-11-24T10:13:29Z
+GET,GET /auth/me,CatchResponseError('unexpected status: 500'),4,2026-11-24T10:13:24Z,2026-11-24T10:13:24Z
+POST,POST /auth/login [bad password],CatchResponseError('unexpected status: 500'),3,2026-11-24T10:13:24Z,2026-11-24T10:13:26Z
+POST,/api/v1/auth/login,HTTPError('500 Server Error:  for url: /api/v1/auth/login'),9,2026-11-24T10:13:24Z,2026-11-24T10:13:28Z
