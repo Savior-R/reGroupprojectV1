@@ -93,7 +93,9 @@ class SecurityEventIT extends PostgresIntegrationTest {
 
     @Test
     void limitCapsReturnedEvents() throws Exception {
-        String username = registerAndLogin(uniqueName("学生"));
+        // 注意：registerAndLogin 返回的是 JWT，不是用户名；这里需保留用户名本身做二次登录
+        String username = uniqueName("学生");
+        registerAndLogin(username);
         String body = """
                 {"username": "%s", "password": "%s"}
                 """.formatted(username, PASSWORD);
