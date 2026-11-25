@@ -962,6 +962,12 @@ function reduceClassroomEvent(state: ClassroomState, event: ServerEvent): Classr
     case 'teacher.management_action':
       return applyTeacherEvent(state, event)
 
+    // The teacher turn text is rendered from session_texts; the classification event is
+    // record-only. Both are intentionally no-ops for the UI state machine.
+    case 'teacher.reply':
+    case 'teacher.intent_classified':
+      return state
+
     case 'dialogue.started':
     case 'dialogue.ended':
       return applyDialogueEvent(state, event)

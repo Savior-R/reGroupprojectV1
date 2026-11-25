@@ -9,6 +9,10 @@ import com.shijiangtai.m3classroom.application.port.MaterialTextExtractor;
 import com.shijiangtai.m3classroom.application.port.OcrClient;
 import com.shijiangtai.m3classroom.application.port.SchedulerPort;
 import com.shijiangtai.m3classroom.application.port.TeacherSpeechClassifier;
+import com.shijiangtai.m3classroom.domain.classroom.HybridTeacherIntentClassifier;
+import com.shijiangtai.m3classroom.domain.classroom.RuleBasedTeacherIntentClassifier;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherIntent;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherIntentClassifier;
 import com.shijiangtai.m3classroom.domain.task.TaskPublishPolicy;
 import com.shijiangtai.m3classroom.domain.task.TaskSnapshotFactory;
 import com.shijiangtai.m3classroom.infrastructure.events.SpringAfterCommitHook;
@@ -17,6 +21,8 @@ import com.shijiangtai.m3classroom.infrastructure.material.CompositeMaterialText
 import com.shijiangtai.m3classroom.infrastructure.material.DocxMaterialTextExtractor;
 import com.shijiangtai.m3classroom.infrastructure.material.PdfMaterialTextExtractor;
 import com.shijiangtai.m3classroom.infrastructure.material.PlainTextMaterialTextExtractor;
+import com.shijiangtai.m3classroom.infrastructure.perception.LinearTeacherIntentClassifier;
+import com.shijiangtai.m3classroom.infrastructure.perception.ShadowTeacherIntentClassifier;
 import com.shijiangtai.m3classroom.infrastructure.time.SystemClockProvider;
 import com.shijiangtai.m3classroom.infrastructure.time.SystemScheduler;
 import com.shijiangtai.m3classroom.infrastructure.time.UuidIdGenerator;
@@ -25,14 +31,24 @@ import com.shijiangtai.shared.application.EventPublisher;
 import com.shijiangtai.shared.application.IdGenerator;
 import com.shijiangtai.shared.domain.DomainException;
 import com.shijiangtai.shared.domain.ErrorCode;
+import java.nio.file.Path;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 public class M3Config {
+
+    private static final Logger LOG = LoggerFactory.getLogger(M3Config.class);
 
     @Bean
     public TaskSnapshotFactory taskSnapshotFactory() {
@@ -112,6 +128,79 @@ public class M3Config {
         return jpeg -> {
             throw new DomainException(ErrorCode.SERVICE_UNAVAILABLE, "OCR 服务不可用");
         };
+    }
+
+    /**
+     * Teacher-intent classifier. Rules are the default.
+     *
+     * <p>{@code m3.classroom.teacher-intent.mode}:
+     * <ul>
+     *   <li>{@code off} (default): rules only, even when a model path is configured;</li>
+     *   <li>{@code shadow}: rules drive the classroom, model predictions are logged for
+     *       comparison;</li>
+     *   <li>{@code active}: model + rules hybrid. {@code active-labels} limits which labels the
+     *       model may contribute; the default excludes the high-risk call-on / ending labels.</li>
+     * </ul>
+     * A missing / broken model falls back to rules without failing startup.
+     */
+    @Bean
+    @ConditionalOnMissingBean(TeacherIntentClassifier.class)
+    public TeacherIntentClassifier teacherIntentClassifier(
+            @Value("${m3.classroom.teacher-intent.model-path:}") String modelPath,
+            @Value("${m3.classroom.teacher-intent.mode:off}") String mode,
+            @Value("${m3.classroom.teacher-intent.active-labels:"
+                    + "ask_class,ask_student,prompt_student_question,comment_answer}")
+            String activeLabels,
+            ObjectMapper objectMapper) {
+        TeacherIntentClassifier rules = new RuleBasedTeacherIntentClassifier();
+        if (modelPath == null || modelPath.isBlank()) {
+            return rules;
+        }
+        String normalizedMode = mode == null ? "off" : mode.trim().toLowerCase(Locale.ROOT);
+        if ("off".equals(normalizedMode)) {
+            return rules;
+        }
+        try {
+            TeacherIntentClassifier model =
+                    new LinearTeacherIntentClassifier(Path.of(modelPath), objectMapper);
+            if ("shadow".equals(normalizedMode)) {
+                LOG.info("Loaded local teacher-intent model from {} in shadow mode", modelPath);
+                return new ShadowTeacherIntentClassifier(model, rules);
+            }
+            if ("active".equals(normalizedMode)) {
+                Set<TeacherIntent> modelLabels = parseActiveLabels(activeLabels);
+                LOG.info("Loaded local teacher-intent model from {} in active mode; "
+                                + "model labels={}",
+                        modelPath,
+                        modelLabels.isEmpty() ? "all" : modelLabels);
+                return new HybridTeacherIntentClassifier(model, rules, modelLabels);
+            }
+            LOG.warn("Unknown teacher-intent mode '{}'; using rules", mode);
+            return rules;
+        } catch (RuntimeException exception) {
+            LOG.warn("Failed to load local teacher-intent model {}; using rules",
+                    modelPath, exception);
+            return rules;
+        }
+    }
+
+    private static Set<TeacherIntent> parseActiveLabels(String value) {
+        if (value == null || value.isBlank() || "*".equals(value.trim())) {
+            return Set.of();
+        }
+        Set<TeacherIntent> labels = EnumSet.noneOf(TeacherIntent.class);
+        for (String part : value.split(",")) {
+            String candidate = part.trim();
+            if (candidate.isEmpty()) {
+                continue;
+            }
+            try {
+                labels.add(TeacherIntent.fromWire(candidate));
+            } catch (IllegalArgumentException exception) {
+                LOG.warn("Unknown teacher-intent label '{}' in active-labels; ignored", candidate);
+            }
+        }
+        return labels;
     }
 
     /**

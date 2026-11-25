@@ -148,10 +148,46 @@ public final class ClassroomStateMachine {
     }
 
     /**
+     * Moves from the first-answer phase into {@code dialogue}. The first version starts a
+     * dialogue at call-on time, before the initial student answer/question is generated, so
+     * every later teacher utterance is interpreted as a dialogue turn rather than a fresh
+     * question.
+     *
+     * @param trigger event trigger, normally {@code call_on}
+     * @param now current instant
+     * @return the {@code classroom.state_changed} event, or an empty list when already in
+     *     {@code dialogue}
+     */
+    public List<ClassroomEvent> beginDialogue(String trigger, Instant now) {
+        Objects.requireNonNull(trigger, "trigger");
+        Objects.requireNonNull(now, "now");
+        if (trigger.isBlank()) {
+            throw new DomainException(ErrorCode.VALIDATION_ERROR, "触发器不能为空",
+                    Map.of("field", "trigger"));
+        }
+        if (macroState != ClassroomMacroState.QA) {
+            throw stateInvalid("beginDialogue", "当前状态不允许进入对话");
+        }
+        if (qaPhase == QaPhase.DIALOGUE) {
+            return List.of();
+        }
+        if (qaPhase != QaPhase.STUDENT_ANSWERING && qaPhase != QaPhase.TEACHER_ANSWERING) {
+            throw stateInvalid("beginDialogue", "当前状态不允许进入对话");
+        }
+        this.qaPhase = QaPhase.DIALOGUE;
+        this.handWindowStartedAtMs = 0L;
+        return List.of(stateChanged(ClassroomMacroState.QA, ClassroomMacroState.QA,
+                QaPhase.DIALOGUE, trigger));
+    }
+
+    /**
      * Records a finished student answer. A follow-up continues into {@code dialogue};
      * otherwise the machine waits for another hand raise. Allowed while
      * {@code student_answering} or already in {@code dialogue}; a follow-up that keeps the
      * dialogue phase emits no state-change event.
+     *
+     * <p>Kept for the explicit {@code teacher.end_dialogue} path while an answer is being
+     * generated. Normal call-on flows use {@link #beginDialogue(String, Instant)}.
      */
     public List<ClassroomEvent> answerFinished(UUID studentId, boolean followUp, Instant now) {
         Objects.requireNonNull(studentId, "studentId");
@@ -193,10 +229,23 @@ public final class ClassroomStateMachine {
                 QaPhase.WAITING_HANDS, trigger));
     }
 
-    /** Ends the whole QA block and returns to lecturing. */
+    /** Ends the whole QA block and returns to lecturing with trigger {@code end_qa}. */
     public List<ClassroomEvent> endQa(String reason, Instant now) {
+        return endQa(reason, "end_qa", now);
+    }
+
+    /**
+     * Ends the whole QA block with an explicit trigger ({@code end_qa} for the button /
+     * {@code sit_down} for the voice ending).
+     */
+    public List<ClassroomEvent> endQa(String reason, String trigger, Instant now) {
         Objects.requireNonNull(reason, "reason");
+        Objects.requireNonNull(trigger, "trigger");
         Objects.requireNonNull(now, "now");
+        if (trigger.isBlank()) {
+            throw new DomainException(ErrorCode.VALIDATION_ERROR, "触发器不能为空",
+                    Map.of("field", "trigger"));
+        }
         if (macroState != ClassroomMacroState.QA) {
             throw stateInvalid("endQa", "当前状态不允许该操作");
         }
@@ -207,7 +256,7 @@ public final class ClassroomStateMachine {
         this.handWindowStartedAtMs = 0L;
         return List.of(
                 new ClassroomEvent(QA_ENDED, Map.of("reason", reason)),
-                stateChanged(from, ClassroomMacroState.LECTURING, null, "end_qa"));
+                stateChanged(from, ClassroomMacroState.LECTURING, null, trigger));
     }
 
     /**

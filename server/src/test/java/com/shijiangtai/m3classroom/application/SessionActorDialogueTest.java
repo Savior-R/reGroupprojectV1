@@ -2,6 +2,7 @@ package com.shijiangtai.m3classroom.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.shijiangtai.m3classroom.domain.classroom.ClassroomMacroState;
 import com.shijiangtai.m3classroom.domain.classroom.ClassroomStateMachine;
 import com.shijiangtai.m3classroom.domain.classroom.QaPhase;
 import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentBehavior;
@@ -27,7 +28,6 @@ import com.shijiangtai.m3classroom.support.MutableRandom;
 import com.shijiangtai.shared.application.IdGenerator;
 import com.shijiangtai.shared.domain.AccountId;
 import com.shijiangtai.shared.domain.CourseId;
-import com.shijiangtai.shared.domain.ErrorCode;
 import com.shijiangtai.shared.domain.SessionId;
 import com.shijiangtai.shared.domain.TaskId;
 import java.math.BigDecimal;
@@ -40,7 +40,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
-/** Actor-level tests for the initial answer -> dialogue decision (M3B multi-turn dialogue). */
+/** Actor-level tests for the first-version call-on / dialogue behaviour (05A §5.5). */
 class SessionActorDialogueTest {
 
     private static final Instant NOW = Instant.parse("2026-11-04T00:00:00Z");
@@ -57,346 +57,218 @@ class SessionActorDialogueTest {
             UUID.fromString("00000000-0000-0000-0000-000000000501");
 
     @Test
-    void winningFollowUpRollStartsDialogueAndEmitsFollowUp() {
-        Fixture f = fixture(new MutableRandom(0.0)); // question_rate 0.5 -> p = 0.25, 0.0 wins
+    void callOnStartsTeacherDialogueWithFirstAnswer() {
+        Fixture f = fixture(new MutableRandom(0.0));
         f.start();
-        f.actor().handle(f.callOn());
+        assertThat(f.actor().handle(f.callOn()).ok()).isTrue();
 
         List<SessionEvent> events = f.context().after(0);
         assertThat(events).extracting(SessionEvent::type).containsSubsequence(
-                "teacher.called_on", "student.answer",
-                "classroom.state_changed", "student.state_changed",
-                "dialogue.started", "student.follow_up");
-        SessionEvent started = events.stream()
-                .filter(e -> e.type().equals("dialogue.started")).findFirst().orElseThrow();
-        assertThat(started.payload().get("student_id")).isEqualTo(f.studentId());
-        SessionEvent followUp = events.stream()
-                .filter(e -> e.type().equals("student.follow_up")).findFirst().orElseThrow();
-        assertThat(followUp.payload().get("answer_id")).isEqualTo(f.answerId(events));
-        assertThat(followUp.payload().get("student_id")).isEqualTo(f.studentId());
+                "teacher.called_on", "dialogue.started",
+                "classroom.state_changed", "student.answer");
+        SessionEvent started = f.lastEvent("dialogue.started");
+        assertThat(started.payload().get("initiator")).isEqualTo("teacher");
+        SessionEvent answer = f.lastEvent("student.answer");
+        assertThat(answer.payload().get("turn")).isEqualTo(1);
+        assertThat(answer.payload().get("dialogue_id"))
+                .isEqualTo(started.payload().get("dialogue_id"));
+        assertThat(answer.payload().get("answer_id")).isNotNull();
         assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
         assertThat(f.dynamics().find(f.studentId()).behavior())
                 .isEqualTo(VirtualStudentBehavior.DIALOGUE);
-        assertThat(f.textStore().all())
-                .anySatisfy(text -> assertThat(text.kind()).isEqualTo("follow_up"));
+        assertThat(f.countEvents("student.follow_up")).isZero();
         assertThat(f.scheduler().pendingTasks()).isZero();
     }
 
     @Test
-    void callOnAckIncludesDialogueEventsInSpecOrder() {
+    void teacherFollowUpGeneratesNextStudentAnswer() {
         Fixture f = fixture(new MutableRandom(0.0));
         f.start();
+        f.actor().handle(f.callOn());
 
-        CommandResult result = f.actor().handle(f.callOn());
+        f.actor().recordSpeechFinal("teacher", null, "对，你能再具体说说吗？",
+                1000L, 2000L, BigDecimal.valueOf(0.9));
 
-        assertThat(result.ok()).isTrue();
-        List<SessionEvent> ackEvents = result.events();
-        int answerIndex = f.indexOf(ackEvents, "student.answer");
-        assertThat(answerIndex).isNotNegative();
-        assertThat(ackEvents.subList(answerIndex, ackEvents.size()))
-                .extracting(SessionEvent::type)
-                .containsExactly(
-                        "student.answer",
-                        "student.state_changed",
-                        "classroom.state_changed",
-                        "student.state_changed",
-                        "dialogue.started",
-                        "student.follow_up");
+        List<SessionEvent> events = f.context().after(0);
+        assertThat(events).extracting(SessionEvent::type).containsSubsequence(
+                "teacher.intent_classified", "teacher.reply", "student.answer");
+        SessionEvent reply = f.lastEvent("teacher.reply");
+        assertThat(reply.payload().get("intent")).isEqualTo("ask_class");
+        assertThat(reply.payload().get("turn")).isEqualTo(1);
+        SessionEvent answer = f.lastEvent("student.answer");
+        assertThat(answer.payload().get("turn")).isEqualTo(2);
+        assertThat(f.countEvents("student.answer")).isEqualTo(2);
+        assertThat(f.countEvents("student.follow_up")).isZero();
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
     }
 
     @Test
-    void losingFollowUpRollKeepsLegacyAnswerFinishedPath() {
-        Fixture f = fixture(new MutableRandom(0.99));
+    void commentOnlyWritesTeacherReplyAndDoesNotAdvance() {
+        Fixture f = fixture(new MutableRandom(0.0));
         f.start();
         f.actor().handle(f.callOn());
-        assertThat(f.context().after(0)).extracting(SessionEvent::type)
-                .doesNotContain("dialogue.started", "student.follow_up");
+        int answersBefore = f.countEvents("student.answer");
+
+        f.actor().recordSpeechFinal("teacher", null, "很好",
+                1000L, 2000L, BigDecimal.valueOf(0.9));
+
+        SessionEvent reply = f.lastEvent("teacher.reply");
+        assertThat(reply.payload().get("intent")).isEqualTo("comment_answer");
+        assertThat(reply.payload().get("turn")).isEqualTo(1);
+        assertThat(f.countEvents("student.answer")).isEqualTo(answersBefore);
+        assertThat(f.countEvents("teacher.marked")).isZero();
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
+    }
+
+    @Test
+    void sitDownEndsWholeQaAndReturnsToLecturing() {
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+        f.actor().handle(f.callOn());
+
+        f.actor().recordSpeechFinal("teacher", null, "好，请坐",
+                1000L, 2000L, BigDecimal.valueOf(0.9));
+
+        List<SessionEvent> events = f.context().after(0);
+        assertThat(events).extracting(SessionEvent::type).containsSubsequence(
+                "teacher.reply", "dialogue.ended", "student.state_changed",
+                "classroom.qa_ended", "classroom.state_changed");
+        SessionEvent ended = f.lastEvent("dialogue.ended");
+        assertThat(ended.payload().get("reason")).isEqualTo("sit_down");
+        assertThat(ended.payload().get("rounds")).isEqualTo(1);
+        assertThat(f.lastEvent("classroom.qa_ended").payload().get("reason"))
+                .isEqualTo("sit_down");
+
+        SessionEvent transition = f.lastEvent("classroom.state_changed");
+        assertThat(transition.payload().get("to")).isEqualTo("lecturing");
+        assertThat(transition.payload().get("qa_phase")).isNull();
+        assertThat(transition.payload().get("trigger")).isEqualTo("sit_down");
+        assertThat(f.classroom().macroState()).isEqualTo(ClassroomMacroState.LECTURING);
+        assertThat(f.classroom().qaPhase()).isNull();
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+        assertThat(f.context().after(ended.seq()).stream()
+                .filter(event -> event.type().equals("classroom.state_changed"))
+                .filter(event -> "waiting_hands".equals(event.payload().get("qa_phase")))
+                .toList()).isEmpty();
+    }
+
+    @Test
+    void studentInitiatedDialogueFollowsUpAndCanEndWithoutFollowUp() {
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+        assertThat(f.actor().handle(f.callOnStudentQuestion()).ok()).isTrue();
+
+        SessionEvent started = f.lastEvent("dialogue.started");
+        assertThat(started.payload().get("initiator")).isEqualTo("student");
+        SessionEvent question = f.lastEvent("student.question");
+        assertThat(question.payload().get("turn")).isEqualTo(1);
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.DIALOGUE);
+
+        f.actor().recordSpeechFinal("teacher", null, "因为光合作用需要光能",
+                1000L, 2000L, BigDecimal.valueOf(0.9));
+
+        SessionEvent reply = f.lastEvent("teacher.reply");
+        assertThat(reply.payload().get("intent")).isEqualTo("other");
+        SessionEvent followUp = f.lastEvent("student.follow_up");
+        assertThat(followUp.payload().get("turn")).isEqualTo(2);
+        assertThat(followUp.payload().get("answer_id"))
+                .isEqualTo(question.payload().get("question_id"));
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
+
+        f.random().set(0.99);
+        f.actor().recordSpeechFinal("teacher", null, "嗯",
+                3000L, 4000L, BigDecimal.valueOf(0.9));
+
+        SessionEvent ended = f.lastEvent("dialogue.ended");
+        assertThat(ended.payload().get("reason")).isEqualTo("no_follow_up");
+        assertThat(ended.payload().get("rounds")).isEqualTo(2);
         assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
         assertThat(f.dynamics().find(f.studentId()).behavior())
                 .isEqualTo(VirtualStudentBehavior.FOCUSED);
     }
 
     @Test
-    void failingContentClientStillPersistsTemplateFollowUp() {
-        FakeContentClient client = FakeContentClient.failing();
-        Fixture f = fixture(new MutableRandom(0.0), client);
+    void studentInitiatedDialogueWithoutFollowUpReturnsToWaitingHands() {
+        Fixture f = fixture(new MutableRandom(0.99));
         f.start();
-        f.actor().handle(f.callOn());
+        f.actor().handle(f.callOnStudentQuestion());
 
-        SessionEvent followUp = f.lastEvent("student.follow_up");
-        assertThat(followUp).isNotNull();
-        SessionText text = f.textStore().all().stream()
-                .filter(candidate -> "follow_up".equals(candidate.kind()))
-                .findFirst()
-                .orElseThrow();
-        assertThat(text.text()).isEqualTo(ContentGenerationService.QUESTION_FALLBACK);
-        assertThat(text.confidence()).isEqualByComparingTo("0.0");
-        assertThat(text.speakerType()).isEqualTo("student");
-        assertThat(text.speakerRef()).isEqualTo(f.studentId());
-        assertThat(text.source()).isEqualTo("llm");
-        assertThat(text.status()).isEqualTo("final");
-        assertThat(followUp.payload().get("text_id")).isEqualTo(text.id());
-        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
-    }
+        f.actor().recordSpeechFinal("teacher", null, "因为光合作用需要光能",
+                1000L, 2000L, BigDecimal.valueOf(0.9));
 
-    @Test
-    void teacherFinalAfterFollowUpContinuesToSecondRound() {
-        MutableRandom random = new MutableRandom(0.0);
-        Fixture f = fixture(random);
-        f.start();
-        f.actor().handle(f.callOn());
-        long boundary = f.lastFollowUpAtMs();
-
-        f.actor().recordSpeechFinal("teacher", null, "对，你能再具体说说吗？",
-                boundary + 1000, boundary + 2000, BigDecimal.valueOf(0.9));
-
-        assertThat(f.context().after(0)).extracting(SessionEvent::type)
-                .contains("dialogue.started", "student.follow_up");
-        assertThat(f.dialogueRound()).isEqualTo(2);
+        SessionEvent ended = f.lastEvent("dialogue.ended");
+        assertThat(ended.payload().get("reason")).isEqualTo("no_follow_up");
+        assertThat(ended.payload().get("rounds")).isEqualTo(1);
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+        assertThat(f.dynamics().find(f.studentId()).behavior())
+                .isEqualTo(VirtualStudentBehavior.FOCUSED);
     }
 
     @Test
     void finalStartedBeforeBoundaryDoesNotAdvanceDialogue() {
-        MutableRandom random = new MutableRandom(0.0);
-        Fixture f = fixture(random);
+        Fixture f = fixture(new MutableRandom(0.0));
         f.start();
         f.actor().handle(f.callOn());
-        long boundary = f.lastFollowUpAtMs();
-        int before = f.countEvents("student.follow_up");
+
+        f.advanceClock(Duration.ofSeconds(1));
+        f.actor().recordSpeechFinal("teacher", null, "你能再说说吗？",
+                1000L, 2000L, BigDecimal.valueOf(0.9));
+        assertThat(f.countEvents("student.answer")).isEqualTo(2);
 
         f.actor().recordSpeechFinal("teacher", null, "上一句话",
-                boundary - 1000, boundary - 500, BigDecimal.valueOf(0.9));
-
-        assertThat(f.countEvents("student.follow_up")).isEqualTo(before);
-    }
-
-    /**
-     * Review focus #6: an ASR utterance may produce several finals. The first advances the
-     * dialogue and moves the boundary to its own follow-up; the second final of the same
-     * utterance starts before that boundary and must not create a third round.
-     */
-    @Test
-    void secondFinalFromSameTeacherUtteranceDoesNotCreateAnotherRound() {
-        MutableRandom random = new MutableRandom(0.0);
-        Fixture f = fixture(random);
-        f.start();
-        f.actor().handle(f.callOn());
-        assertThat(f.lastFollowUpAtMs()).isZero(); // first follow-up at session start (at_ms=0)
-        assertThat(f.dialogueRound()).isEqualTo(1);
-
-        f.advanceClock(Duration.ofMillis(1000));
-
-        // Final A starts at 500 ms (>= boundary 0) and advances the dialogue to round 2; the
-        // new follow-up is emitted at at_ms=1000, which moves the boundary forward.
-        f.actor().recordSpeechFinal("teacher", null, "对，你能再具体说说吗？",
                 500L, 600L, BigDecimal.valueOf(0.9));
-        assertThat(f.dialogueRound()).isEqualTo(2);
-        assertThat(f.lastFollowUpAtMs()).isEqualTo(1_000L);
-
-        // Final B belongs to the same utterance: its start (500 ms) is now before the moved
-        // boundary (1000 ms), so it is persisted only and must not advance the dialogue.
-        f.actor().recordSpeechFinal("teacher", null, "对，你能再具体说说吗？",
-                500L, 600L, BigDecimal.valueOf(0.9));
-
-        assertThat(f.countEvents("student.follow_up")).isEqualTo(2);
-        assertThat(f.countEvents("dialogue.ended")).isZero();
+        assertThat(f.countEvents("student.answer")).isEqualTo(2);
         assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
-        assertThat(f.dynamics().find(f.studentId()).behavior())
-                .isEqualTo(VirtualStudentBehavior.DIALOGUE);
     }
 
     @Test
-    void teacherFinalWithoutFollowUpEndsDialogueAndReturnsToWaitingHands() {
-        MutableRandom random = new MutableRandom(0.0);
-        Fixture f = fixture(random);
+    void thirdRoundTeacherFollowUpEndsWithMaxRounds() {
+        Fixture f = fixture(new MutableRandom(0.0));
         f.start();
         f.actor().handle(f.callOn());
-        long boundary = f.lastFollowUpAtMs();
-        random.set(0.99); // next follow-up roll loses
 
-        f.actor().recordSpeechFinal("teacher", null, "嗯，请坐。",
-                boundary + 1000, boundary + 2000, BigDecimal.valueOf(0.9));
-
-        assertThat(f.context().after(0)).extracting(SessionEvent::type)
-                .containsSubsequence("dialogue.ended", "student.state_changed",
-                        "classroom.state_changed");
-        SessionEvent ended = f.lastEvent("dialogue.ended");
-        assertThat(ended.payload().get("reason")).isEqualTo("no_follow_up");
-        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
-        assertThat(f.dynamics().find(f.studentId()).behavior())
-                .isEqualTo(VirtualStudentBehavior.FOCUSED);
-    }
-
-    @Test
-    void classificationDuringDialogueIsIgnored() {
-        Fixture f = dialogueFixture();
-        int suggestedBefore = f.countEvents("classroom.question_suggested");
-        int askedBefore = f.countEvents("classroom.question_asked");
-
-        f.actor().onTeacherSpeechClassified(0.9);
-
-        assertThat(f.countEvents("classroom.question_suggested"))
-                .isEqualTo(suggestedBefore);
-        assertThat(f.countEvents("classroom.question_asked")).isEqualTo(askedBefore);
-    }
-
-    @Test
-    void thirdRoundTeacherFinalEndsWithMaxRounds() {
-        MutableRandom random = new MutableRandom(0.0);
-        Fixture f = fixture(random);
-        f.start();
-        f.actor().handle(f.callOn());
-        long boundary = f.lastFollowUpAtMs();
-        f.actor().recordSpeechFinal("teacher", null, "继续", boundary + 1000,
-                boundary + 2000, BigDecimal.valueOf(0.9)); // round 2 follow-up
-        long boundary2 = f.lastFollowUpAtMs();
-        f.actor().recordSpeechFinal("teacher", null, "再继续", boundary2 + 1000,
-                boundary2 + 2000, BigDecimal.valueOf(0.9)); // round 3 follow-up
-        long boundary3 = f.lastFollowUpAtMs();
-        f.actor().recordSpeechFinal("teacher", null, "最后", boundary3 + 1000,
-                boundary3 + 2000, BigDecimal.valueOf(0.9)); // max rounds
+        f.actor().recordSpeechFinal("teacher", null, "你能再说说吗？",
+                1000L, 2000L, BigDecimal.valueOf(0.9));
+        f.actor().recordSpeechFinal("teacher", null, "你能再说说吗？",
+                3000L, 4000L, BigDecimal.valueOf(0.9));
+        f.actor().recordSpeechFinal("teacher", null, "你能再说说吗？",
+                5000L, 6000L, BigDecimal.valueOf(0.9));
 
         SessionEvent ended = f.lastEvent("dialogue.ended");
         assertThat(ended.payload().get("reason")).isEqualTo("max_rounds");
+        assertThat(ended.payload().get("rounds")).isEqualTo(3);
         assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+        assertThat(f.countEvents("student.answer")).isEqualTo(3);
     }
 
-    // ---------------------------------------------------------------------
-    // Termination paths and dialogue-id validation (spec §5.3)
-    // ---------------------------------------------------------------------
-
     @Test
-    void endDialogueWithMatchingIdEmitsTeacherReasonThenStateChange() {
-        Fixture f = dialogueFixture();
+    void manualEndDialogueEndsCurrentDialogueOnly() {
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+        f.actor().handle(f.callOn());
         UUID dialogueId = f.activeDialogueId();
-        assertThat(f.actor().handle(
-                new SessionCommand.EndDialogue("end-1", dialogueId)).ok()).isTrue();
 
-        assertThat(f.context().after(0)).extracting(SessionEvent::type)
-                .containsSubsequence("dialogue.ended", "student.state_changed",
-                        "classroom.state_changed");
+        assertThat(f.actor().handle(new SessionCommand.EndDialogue(
+                "end-1", dialogueId)).ok()).isTrue();
+
         assertThat(f.lastEvent("dialogue.ended").payload().get("reason"))
                 .isEqualTo("teacher");
+        assertThat(f.lastEvent("classroom.state_changed").payload().get("trigger"))
+                .isEqualTo("end_dialogue");
         assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
         assertThat(f.dynamics().find(f.studentId()).behavior())
                 .isEqualTo(VirtualStudentBehavior.FOCUSED);
-    }
-
-    /**
-     * {@code teacher.end_dialogue.dialogue_id} is optional in the contract, so a null id still
-     * ends the active dialogue instead of being treated as a stale id.
-     */
-    @Test
-    void nullDialogueIdEndsActiveDialogue() {
-        Fixture f = dialogueFixture();
-        int endedBefore = f.countEvents("dialogue.ended");
-
-        CommandResult result = f.actor().handle(
-                new SessionCommand.EndDialogue("end-null", null));
-
-        assertThat(result.ok()).isTrue();
-        assertThat(f.countEvents("dialogue.ended")).isEqualTo(endedBefore + 1);
-        SessionEvent ended = f.lastEvent("dialogue.ended");
-        assertThat(ended.payload().get("reason")).isEqualTo("teacher");
-        assertThat(ended.payload().get("dialogue_id")).isEqualTo(f.activeDialogueId());
-
-        List<SessionEvent> events = result.events();
-        int endedIndex = f.indexOf(events, "dialogue.ended");
-        List<SessionEvent> transitions = events.stream()
-                .filter(event -> event.type().equals("classroom.state_changed"))
-                .toList();
-        assertThat(transitions).hasSize(1);
-        assertThat(f.indexOf(events, "classroom.state_changed")).isGreaterThan(endedIndex);
-        SessionEvent transition = transitions.get(0);
-        assertThat(transition.payload().get("from")).isEqualTo("qa");
-        assertThat(transition.payload().get("to")).isEqualTo("qa");
-        assertThat(transition.payload().get("qa_phase")).isEqualTo("waiting_hands");
-        assertThat(transition.payload().get("trigger")).isEqualTo("end_dialogue");
-
-        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
-        assertThat(f.dynamics().find(f.studentId()).behavior())
-                .isEqualTo(VirtualStudentBehavior.FOCUSED);
-    }
-
-    @Test
-    void duplicateEndDialogueIsRejectedWithoutSecondEndedEvent() {
-        Fixture f = dialogueFixture();
-        UUID dialogueId = f.activeDialogueId();
-        int stateChangesBeforeFirst = f.countEvents("classroom.state_changed");
-
-        CommandResult first = f.actor().handle(
-                new SessionCommand.EndDialogue("end-dup-1", dialogueId));
-
-        assertThat(first.ok()).isTrue();
-        // The first call emits exactly one classroom transition, and it is the waiting_hands
-        // transition of the ended dialogue.
-        assertThat(f.countEvents("classroom.state_changed"))
-                .isEqualTo(stateChangesBeforeFirst + 1);
-        List<SessionEvent> firstTransitions = first.events().stream()
-                .filter(event -> event.type().equals("classroom.state_changed"))
-                .toList();
-        assertThat(firstTransitions).hasSize(1);
-        assertThat(firstTransitions.get(0).payload().get("qa_phase"))
-                .isEqualTo("waiting_hands");
-        int endedAfterFirst = f.countEvents("dialogue.ended");
-        int stateChangesAfterFirst = f.countEvents("classroom.state_changed");
-        int eventsAfterFirst = f.context().after(0).size();
-
-        CommandResult second = f.actor().handle(
-                new SessionCommand.EndDialogue("end-dup-2", dialogueId));
-
-        assertThat(second.ok()).isFalse();
-        assertThat(second.errorCode()).isEqualTo(ErrorCode.SESSION_STATE_INVALID);
-        assertThat(second.events()).isEmpty();
-        assertThat(f.countEvents("dialogue.ended")).isEqualTo(endedAfterFirst).isEqualTo(1);
-        assertThat(f.countEvents("classroom.state_changed")).isEqualTo(stateChangesAfterFirst);
-        assertThat(f.context().after(0)).hasSize(eventsAfterFirst);
-        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
-        assertThat(f.dynamics().find(f.studentId()).behavior())
-                .isEqualTo(VirtualStudentBehavior.FOCUSED);
-    }
-
-    @Test
-    void endDialogueWithStaleIdIsRejectedWithoutMutation() {
-        Fixture f = dialogueFixture();
-        int before = f.context().after(0).size();
-
-        CommandResult result = f.actor().handle(
-                new SessionCommand.EndDialogue("end-2", UUID.randomUUID()));
-
-        assertThat(result.ok()).isFalse();
-        assertThat(result.errorCode()).isEqualTo(ErrorCode.SESSION_STATE_INVALID);
-        assertThat(f.context().after(0)).hasSize(before);
-        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
-        assertThat(f.dynamics().find(f.studentId()).behavior())
-                .isEqualTo(VirtualStudentBehavior.DIALOGUE);
-    }
-
-    @Test
-    void staleDialogueIdIsRejectedWhileStudentAnswering() {
-        // 0.99 loses the follow-up roll, so the initial answer returns to waiting_hands and no
-        // dialogue becomes active.
-        Fixture f = fixture(new MutableRandom(0.99));
-        f.start();
-        assertThat(f.actor().handle(f.callOn()).ok()).isTrue();
-        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
-
-        // Put the domain back into student_answering, where end_dialogue finishes the answer.
-        f.classroom().callOn(f.studentId(), NOW);
-        int before = f.context().after(0).size();
-
-        CommandResult result = f.actor().handle(
-                new SessionCommand.EndDialogue("end-stale", UUID.randomUUID()));
-
-        assertThat(result.ok()).isFalse();
-        assertThat(result.errorCode()).isEqualTo(ErrorCode.SESSION_STATE_INVALID);
-        assertThat(f.context().after(0)).hasSize(before);
-        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.STUDENT_ANSWERING);
     }
 
     @Test
     void endQaWhileInDialogueEmitsDialogueEndedFirst() {
-        Fixture f = dialogueFixture();
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+        f.actor().handle(f.callOn());
+
         assertThat(f.actor().handle(new SessionCommand.EndQa("qa-1")).ok()).isTrue();
 
         assertThat(f.context().after(0)).extracting(SessionEvent::type)
@@ -404,13 +276,15 @@ class SessionActorDialogueTest {
                         "classroom.qa_ended", "classroom.state_changed");
         assertThat(f.lastEvent("dialogue.ended").payload().get("reason"))
                 .isEqualTo("qa_ended");
-        assertThat(f.dynamics().find(f.studentId()).behavior())
-                .isEqualTo(VirtualStudentBehavior.FOCUSED);
+        assertThat(f.classroom().macroState()).isEqualTo(ClassroomMacroState.LECTURING);
     }
 
     @Test
     void askClassWhileInDialogueRestartsAfterDialogueEnded() {
-        Fixture f = dialogueFixture();
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+        f.actor().handle(f.callOn());
+
         assertThat(f.actor().handle(new SessionCommand.AskClass("ask-2")).ok()).isTrue();
 
         assertThat(f.context().after(0)).extracting(SessionEvent::type)
@@ -418,65 +292,15 @@ class SessionActorDialogueTest {
                         "classroom.question_asked", "classroom.state_changed");
         assertThat(f.lastEvent("dialogue.ended").payload().get("reason"))
                 .isEqualTo("qa_restarted");
-        assertThat(f.dynamics().find(f.studentId()).behavior())
-                .isEqualTo(VirtualStudentBehavior.FOCUSED);
-    }
-
-    @Test
-    void askStudentQuestionDuringDialogueEndsDialogueBeforeQuestion() {
-        Fixture f = dialogueFixture();
-
-        CommandResult result = f.actor().handle(
-                new SessionCommand.AskStudentQuestion("ask-during-dialogue"));
-
-        assertThat(result.ok()).isTrue();
-        List<SessionEvent> events = result.events();
-        int endedIndex = f.indexOf(events, "dialogue.ended");
-        int questionIndex = f.indexOf(events, "classroom.question_asked");
-        assertThat(endedIndex).isNotNegative();
-        assertThat(questionIndex).isGreaterThan(endedIndex);
-        assertThat(events.get(endedIndex).payload().get("reason"))
-                .isEqualTo("qa_restarted");
-        assertThat(events.get(questionIndex).payload().get("intent"))
-                .isEqualTo(ClassroomStateMachine.INTENT_STUDENT_QUESTION);
-
-        // The dialogue -> focused transition must sit between the dialogue end and the new
-        // question; dropping or reordering it must fail this test.
-        SessionEvent focused = events.stream()
-                .filter(event -> event.type().equals("student.state_changed"))
-                .filter(event -> f.studentId().equals(event.payload().get("student_id")))
-                .filter(event -> "focused".equals(event.payload().get("to")))
-                .findFirst()
-                .orElseThrow();
-        assertThat(focused.payload().get("reason")).isEqualTo("dialogue_ended");
-        int focusedIndex = events.indexOf(focused);
-        assertThat(focusedIndex).isGreaterThan(endedIndex);
-        assertThat(focusedIndex).isLessThan(questionIndex);
-
-        List<SessionEvent> transitions = events.stream()
-                .filter(event -> event.type().equals("classroom.state_changed"))
-                .toList();
-        assertThat(transitions).hasSize(1);
-        SessionEvent transition = transitions.get(0);
-        assertThat(transition.payload().get("from")).isEqualTo("qa");
-        assertThat(transition.payload().get("to")).isEqualTo("qa");
-        assertThat(transition.payload().get("qa_phase")).isEqualTo("waiting_hands");
-        assertThat(transition.payload().get("trigger")).isEqualTo("manual");
-        // The new hand window is entered only after the question event: no extra
-        // waiting_hands transition is emitted before it.
-        assertThat(events.subList(0, questionIndex))
-                .filteredOn(event -> event.type().equals("classroom.state_changed"))
-                .isEmpty();
-
-        assertThat(f.countEvents("dialogue.ended")).isEqualTo(1);
         assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
-        assertThat(f.dynamics().find(f.studentId()).behavior())
-                .isEqualTo(VirtualStudentBehavior.FOCUSED);
     }
 
     @Test
     void endSessionWhileInDialogueEmitsDialogueEndedBeforeSessionEnded() {
-        Fixture f = dialogueFixture();
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+        f.actor().handle(f.callOn());
+
         assertThat(f.actor().handle(new SessionCommand.EndSession("end-3")).ok()).isTrue();
 
         assertThat(f.context().after(0)).extracting(SessionEvent::type)
@@ -489,53 +313,11 @@ class SessionActorDialogueTest {
     }
 
     @Test
-    void tickTimeoutDuringDialogueEndsDialogueBeforeSessionEnded() {
-        Fixture f = dialogueFixture();
-        int eventsBeforeTick = f.context().after(0).size();
-
-        f.actor().onTick(NOW.plusSeconds(1200)); // duration.max_seconds
-
-        List<SessionEvent> events = f.context().after(0);
-        List<SessionEvent> tickEvents = events.subList(eventsBeforeTick, events.size());
-        int endedIndex = f.indexOf(tickEvents, "dialogue.ended");
-        int sessionIndex = f.indexOf(tickEvents, "session.ended");
-        assertThat(endedIndex).isNotNegative();
-        assertThat(sessionIndex).isGreaterThan(endedIndex);
-        assertThat(tickEvents.get(endedIndex).payload().get("reason"))
-                .isEqualTo("session_ended");
-        // Ending the session goes straight to classroom.ended: no intermediate waiting_hands
-        // transition may appear before the terminal event.
-        assertThat(tickEvents.subList(0, sessionIndex))
-                .filteredOn(event -> event.type().equals("classroom.state_changed")
-                        && "waiting_hands".equals(event.payload().get("qa_phase")))
-                .isEmpty();
-
-        SessionEvent focused = tickEvents.stream()
-                .filter(event -> event.type().equals("student.state_changed"))
-                .filter(event -> f.studentId().equals(event.payload().get("student_id")))
-                .filter(event -> "focused".equals(event.payload().get("to")))
-                .reduce((first, second) -> second)
-                .orElseThrow();
-        assertThat(focused.payload().get("reason")).isEqualTo("dialogue_ended");
-        int focusedIndex = tickEvents.indexOf(focused);
-        assertThat(focusedIndex).isGreaterThan(endedIndex);
-        assertThat(focusedIndex).isLessThan(sessionIndex);
-
-        List<SessionEvent> sessionEnded = tickEvents.stream()
-                .filter(event -> event.type().equals("session.ended"))
-                .toList();
-        assertThat(sessionEnded).hasSize(1);
-        assertThat(sessionEnded.get(0).payload().get("reason")).isEqualTo("timeout");
-        assertThat(f.countEvents("dialogue.ended")).isEqualTo(1);
-        assertThat(f.countEvents("session.ended")).isEqualTo(1);
-        assertThat(f.classroom().qaPhase()).isNull();
-        assertThat(f.dynamics().find(f.studentId()).behavior())
-                .isEqualTo(VirtualStudentBehavior.FOCUSED);
-    }
-
-    @Test
     void failWhileInDialogueEmitsDialogueEndedBeforeSessionFailed() {
-        Fixture f = dialogueFixture();
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+        f.actor().handle(f.callOn());
+
         f.actor().fail(FailureReason.GRACE_TIMEOUT);
 
         assertThat(f.context().after(0)).extracting(SessionEvent::type)
@@ -547,22 +329,74 @@ class SessionActorDialogueTest {
                 .isEqualTo(VirtualStudentBehavior.FOCUSED);
     }
 
+    @Test
+    void classificationDuringDialogueDoesNotTriggerVoiceQuestion() {
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+        f.actor().handle(f.callOn());
+        int askedBefore = f.countEvents("classroom.question_asked");
+        int suggestedBefore = f.countEvents("classroom.question_suggested");
+
+        f.actor().onTeacherSpeechClassified(0.9);
+
+        assertThat(f.countEvents("classroom.question_asked")).isEqualTo(askedBefore);
+        assertThat(f.countEvents("classroom.question_suggested")).isEqualTo(suggestedBefore);
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
+    }
+
+    @Test
+    void lateVoiceClassificationAfterSitDownDoesNotOpenQa() {
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+        f.actor().handle(f.callOn());
+        f.actor().recordSpeechFinal("teacher", null, "好，请坐",
+                1000L, 2000L, BigDecimal.valueOf(0.9));
+        int askedBefore = f.countEvents("classroom.question_asked");
+
+        f.actor().onTeacherSpeechClassified(0.9);
+
+        assertThat(f.countEvents("classroom.question_asked")).isEqualTo(askedBefore);
+        assertThat(f.classroom().macroState()).isEqualTo(ClassroomMacroState.LECTURING);
+    }
+
+    @Test
+    void voiceCallOnInWaitingHandsStartsDialogue() {
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+        assertThat(f.actor().handle(new SessionCommand.AskClass("ask-voice")).ok()).isTrue();
+
+        f.actor().recordSpeechFinal("teacher", null, "林小雨你来说",
+                1000L, 2000L, BigDecimal.valueOf(0.9));
+
+        SessionEvent calledOn = f.lastEvent("teacher.called_on");
+        assertThat(calledOn.payload().get("student_id")).isEqualTo(VIRTUAL_STUDENT_1);
+        assertThat(f.lastEvent("dialogue.started").payload().get("initiator"))
+                .isEqualTo("teacher");
+        assertThat(f.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
+        assertThat(f.lastEvent("student.answer").payload().get("turn")).isEqualTo(1);
+    }
+
+    @Test
+    void teacherIntentClassifiedIsEmittedForEveryClassroomFinal() {
+        Fixture f = fixture(new MutableRandom(0.0));
+        f.start();
+
+        f.actor().recordSpeechFinal("teacher", null, "同学们看这里",
+                0L, 1000L, BigDecimal.valueOf(0.9));
+
+        SessionEvent classified = f.lastEvent("teacher.intent_classified");
+        assertThat(classified.payload().get("primary_intent")).isEqualTo("other");
+        assertThat(classified.payload().get("text_id")).isNotNull();
+        assertThat(classified.payload().get("model_version"))
+                .isEqualTo("teacher-intent-rules-v1");
+        assertThat(f.countEvents("teacher.reply")).isZero();
+    }
+
     // ---------------------------------------------------------------------
     // Fixture
     // ---------------------------------------------------------------------
 
-    private static Fixture dialogueFixture() {
-        Fixture f = fixture(new MutableRandom(0.0));
-        f.start();
-        f.actor().handle(f.callOn());
-        return f;
-    }
-
     private static Fixture fixture(MutableRandom random) {
-        return fixture(random, new FakeContentClient());
-    }
-
-    private static Fixture fixture(MutableRandom random, FakeContentClient client) {
         Session session = Session.createPreparing(
                 new SessionId(UUID.randomUUID()), SessionType.TASK, new TaskId(TASK_ID),
                 new CourseId(COURSE_ID), new AccountId(STUDENT_ACCOUNT_ID), TaskMode.FREE,
@@ -582,9 +416,10 @@ class SessionActorDialogueTest {
         InMemorySessionTextStore textStore = new InMemorySessionTextStore();
         SessionActor actor = new SessionActor(
                 session, taskSnapshot, context, classroom, dynamics, interview,
-                new ContentGenerationService(client), eventStore, textStore, ids,
+                new ContentGenerationService(new FakeContentClient()), eventStore, textStore, ids,
                 clock::get, scheduler, random);
-        return new Fixture(actor, context, classroom, dynamics, textStore, scheduler, clock);
+        return new Fixture(actor, context, classroom, dynamics, textStore, scheduler, clock,
+                taskSnapshot, random);
     }
 
     private static TaskSnapshot taskSnapshot() {
@@ -633,6 +468,8 @@ class SessionActorDialogueTest {
         private final InMemorySessionTextStore textStore;
         private final FakeScheduler scheduler;
         private final AtomicReference<Instant> clock;
+        private final TaskSnapshot taskSnapshot;
+        private final MutableRandom random;
         private UUID studentId;
 
         private Fixture(
@@ -642,7 +479,9 @@ class SessionActorDialogueTest {
                 VirtualStudentDynamics dynamics,
                 InMemorySessionTextStore textStore,
                 FakeScheduler scheduler,
-                AtomicReference<Instant> clock) {
+                AtomicReference<Instant> clock,
+                TaskSnapshot taskSnapshot,
+                MutableRandom random) {
             this.actor = actor;
             this.context = context;
             this.classroom = classroom;
@@ -650,6 +489,8 @@ class SessionActorDialogueTest {
             this.textStore = textStore;
             this.scheduler = scheduler;
             this.clock = clock;
+            this.taskSnapshot = taskSnapshot;
+            this.random = random;
         }
 
         private SessionActor actor() {
@@ -668,12 +509,12 @@ class SessionActorDialogueTest {
             return dynamics;
         }
 
-        private InMemorySessionTextStore textStore() {
-            return textStore;
-        }
-
         private FakeScheduler scheduler() {
             return scheduler;
+        }
+
+        private MutableRandom random() {
+            return random;
         }
 
         private UUID studentId() {
@@ -685,40 +526,28 @@ class SessionActorDialogueTest {
             assertThat(actor.handle(new SessionCommand.StartSession("start-1")).ok()).isTrue();
         }
 
-        /**
-         * Asks the class, lets the hand-raise timers fire and returns the call-on command for the
-         * first raised hand. The command itself is executed by the test via {@code handle}.
-         */
         private SessionCommand.CallOn callOn() {
             assertThat(actor.handle(new SessionCommand.AskClass("ask-1")).ok()).isTrue();
             scheduler.advance(Duration.ofSeconds(3));
+            return callOnForLastRaise("call-1");
+        }
+
+        private SessionCommand.CallOn callOnStudentQuestion() {
+            assertThat(actor.handle(
+                    new SessionCommand.AskStudentQuestion("ask-student-1")).ok()).isTrue();
+            scheduler.advance(Duration.ofSeconds(3));
+            return callOnForLastRaise("call-student-1");
+        }
+
+        private SessionCommand.CallOn callOnForLastRaise(String commandId) {
             SessionEvent raise = lastEvent("student.hand_raised");
             studentId = (UUID) raise.payload().get("student_id");
             return new SessionCommand.CallOn(
-                    "call-1", studentId, (UUID) raise.payload().get("hand_raise_id"));
+                    commandId, studentId, (UUID) raise.payload().get("hand_raise_id"));
         }
 
-        /** The {@code answer_id} of the (single) {@code student.answer} event. */
-        private UUID answerId(List<SessionEvent> events) {
-            return events.stream()
-                    .filter(event -> event.type().equals("student.answer"))
-                    .map(event -> (UUID) event.payload().get("answer_id"))
-                    .findFirst()
-                    .orElseThrow();
-        }
-
-        /** The {@code dialogue_id} of the latest {@code dialogue.started} event. */
         private UUID activeDialogueId() {
             return (UUID) lastEvent("dialogue.started").payload().get("dialogue_id");
-        }
-
-        private int indexOf(List<SessionEvent> events, String type) {
-            for (int i = 0; i < events.size(); i++) {
-                if (events.get(i).type().equals(type)) {
-                    return i;
-                }
-            }
-            return -1;
         }
 
         private SessionEvent lastEvent(String type) {
@@ -734,18 +563,8 @@ class SessionActorDialogueTest {
                     .count();
         }
 
-        private long lastFollowUpAtMs() {
-            return lastEvent("student.follow_up").atMs();
-        }
-
-        /** Moves the actor clock forward so later events carry a non-zero {@code at_ms}. */
         private void advanceClock(Duration duration) {
             clock.updateAndGet(current -> current.plus(duration));
-        }
-
-        /** One {@code student.follow_up} is emitted per round, so the count equals the round. */
-        private int dialogueRound() {
-            return countEvents("student.follow_up");
         }
     }
 }

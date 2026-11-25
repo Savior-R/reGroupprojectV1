@@ -6,6 +6,8 @@ import com.shijiangtai.m3classroom.application.port.SchedulerPort;
 import com.shijiangtai.m3classroom.application.port.SessionEventStore;
 import com.shijiangtai.m3classroom.application.port.SessionTextStore;
 import com.shijiangtai.m3classroom.domain.classroom.ClassroomStateMachine;
+import com.shijiangtai.m3classroom.domain.classroom.RuleBasedTeacherIntentClassifier;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherIntentClassifier;
 import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentDynamics;
 import com.shijiangtai.m3classroom.domain.interview.InterviewStateMachine;
 import com.shijiangtai.m3classroom.domain.session.Session;
@@ -66,6 +68,7 @@ public final class SessionRuntimeRegistry {
     private final ContentGenerationService contentGeneration;
     private final ContextPersistenceWriter persistence;
     private final TrainingSessionConfigPort trainingConfigPort;
+    private final TeacherIntentClassifier intentClassifier;
     private final Supplier<RandomGenerator> randomFactory;
 
     /**
@@ -84,10 +87,11 @@ public final class SessionRuntimeRegistry {
             SchedulerPort scheduler,
             ContentClient contentClient,
             ContextPersistenceWriter persistence,
-            TrainingSessionConfigPort trainingConfigPort) {
+            TrainingSessionConfigPort trainingConfigPort,
+            TeacherIntentClassifier intentClassifier) {
         this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
                 clockProvider, scheduler, contentClient, persistence, trainingConfigPort,
-                Random::new);
+                intentClassifier, Random::new);
     }
 
     /**
@@ -105,7 +109,8 @@ public final class SessionRuntimeRegistry {
         this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
                 clockProvider, scheduler, contentClient,
                 new DirectContextPersistenceWriter(eventStore, textStore),
-                TrainingSessionConfigPort.unsupported(), Random::new);
+                TrainingSessionConfigPort.unsupported(),
+                new RuleBasedTeacherIntentClassifier(), Random::new);
     }
 
     /**
@@ -126,7 +131,8 @@ public final class SessionRuntimeRegistry {
         this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
                 clockProvider, scheduler, contentClient,
                 new DirectContextPersistenceWriter(eventStore, textStore),
-                TrainingSessionConfigPort.unsupported(), randomFactory);
+                TrainingSessionConfigPort.unsupported(),
+                new RuleBasedTeacherIntentClassifier(), randomFactory);
     }
 
     /** Full test seam: explicit persistence writer and random factory. */
@@ -143,7 +149,8 @@ public final class SessionRuntimeRegistry {
             Supplier<RandomGenerator> randomFactory) {
         this(sessionRepository, taskRepository, eventStore, textStore, idGenerator,
                 clockProvider, scheduler, contentClient, persistence,
-                TrainingSessionConfigPort.unsupported(), randomFactory);
+                TrainingSessionConfigPort.unsupported(),
+                new RuleBasedTeacherIntentClassifier(), randomFactory);
     }
 
     private SessionRuntimeRegistry(
@@ -157,6 +164,7 @@ public final class SessionRuntimeRegistry {
             ContentClient contentClient,
             ContextPersistenceWriter persistence,
             TrainingSessionConfigPort trainingConfigPort,
+            TeacherIntentClassifier intentClassifier,
             Supplier<RandomGenerator> randomFactory) {
         this.sessionRepository = Objects.requireNonNull(
                 sessionRepository, "sessionRepository");
@@ -171,6 +179,7 @@ public final class SessionRuntimeRegistry {
         this.persistence = Objects.requireNonNull(persistence, "persistence");
         this.trainingConfigPort = Objects.requireNonNull(
                 trainingConfigPort, "trainingConfigPort");
+        this.intentClassifier = Objects.requireNonNull(intentClassifier, "intentClassifier");
         this.randomFactory = Objects.requireNonNull(randomFactory, "randomFactory");
     }
 
@@ -427,7 +436,8 @@ public final class SessionRuntimeRegistry {
                 idGenerator,
                 clockProvider,
                 scheduler,
-                randomFactory.get());
+                randomFactory.get(),
+                intentClassifier);
         actor.attachStatusListener(status -> onStatusChanged(id, actor, status));
         return actor;
     }

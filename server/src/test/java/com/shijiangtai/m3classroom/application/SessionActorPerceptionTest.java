@@ -4,6 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.shijiangtai.m3classroom.domain.classroom.ClassroomMacroState;
 import com.shijiangtai.m3classroom.domain.classroom.ClassroomStateMachine;
+import com.shijiangtai.m3classroom.domain.classroom.RuleBasedTeacherIntentClassifier;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherIntent;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherIntentClassifier;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherIntentHit;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherUtteranceContext;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherUtteranceIntent;
 import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentDynamics;
 import com.shijiangtai.m3classroom.domain.interview.InterviewStateMachine;
 import com.shijiangtai.m3classroom.domain.recording.StreamType;
@@ -79,6 +85,40 @@ class SessionActorPerceptionTest {
 
         assertThat(eventsOfType(fixture, "student.hand_raised")).isNotEmpty();
         assertThat(fixture.scheduler().pendingTasks()).isEqualTo(1);
+    }
+
+    @Test
+    void activeLocalModelCanOpenVoiceQaWhileLecturing() {
+        TeacherIntentClassifier localModel = new TeacherIntentClassifier() {
+            @Override
+            public TeacherUtteranceIntent classify(TeacherUtteranceContext context) {
+                return new TeacherUtteranceIntent(
+                        List.of(new TeacherIntentHit(TeacherIntent.ASK_CLASS, 0.92)),
+                        TeacherIntent.ASK_CLASS,
+                        0.92,
+                        null,
+                        null,
+                        "stub-local-v1");
+            }
+
+            @Override
+            public boolean drivesLecturingQuestions() {
+                return true;
+            }
+        };
+        ActorFixture fixture = fixture(
+                TaskMode.FREE, new FakeContentClient(), () -> NOW, localModel);
+        startClassroom(fixture);
+
+        fixture.actor().recordSpeechFinal("teacher", null,
+                "同学们，光合作用需要什么条件？", 0L, 1000L, new BigDecimal("0.90"));
+
+        List<SessionEvent> asked = eventsOfType(fixture, "classroom.question_asked");
+        assertThat(asked).hasSize(1);
+        assertThat(asked.get(0).payload().get("source")).isEqualTo("voice");
+        assertThat(asked.get(0).payload().get("intent")).isEqualTo("answer");
+        assertThat(fixture.scheduler().pendingTasks()).isEqualTo(2);
+        assertThat(fixture.classroom().macroState()).isEqualTo(ClassroomMacroState.QA);
     }
 
     @Test
@@ -249,6 +289,14 @@ class SessionActorPerceptionTest {
     }
 
     private static ActorFixture fixture(TaskMode mode, FakeContentClient client, ClockProvider clock) {
+        return fixture(mode, client, clock, new RuleBasedTeacherIntentClassifier());
+    }
+
+    private static ActorFixture fixture(
+            TaskMode mode,
+            FakeContentClient client,
+            ClockProvider clock,
+            TeacherIntentClassifier intentClassifier) {
         UUID sessionUuid = UUID.randomUUID();
         Session session = Session.createPreparing(
                 new SessionId(sessionUuid), SessionType.TASK, new TaskId(TASK_ID),
@@ -268,7 +316,7 @@ class SessionActorPerceptionTest {
         SessionActor actor = new SessionActor(
                 session, taskSnapshot, context, classroom, dynamics, interview,
                 new ContentGenerationService(client), eventStore, textStore, ids,
-                clock, scheduler, new java.util.Random(11));
+                clock, scheduler, new java.util.Random(11), intentClassifier);
         return new ActorFixture(actor, session, taskSnapshot, context, scheduler, client,
                 eventStore, textStore, dynamics, classroom, interview);
     }

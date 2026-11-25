@@ -94,3 +94,13 @@ docs/team/evidence/*g2*、*review*
 - 不得在评审中直接改其他 Owner 的实现或测试。
 - 不得把未冻结契约标为通过。
 - 不得跳过 M1 新增登录扩展的复审。
+
+## 11. 前端原型与契约评审（2026-11-25）
+
+- 必读：`docs/prototype/README.md` V1.5、根目录 `DESIGN.md`、`docs/team/02-进度看板.md` §9。
+- 评审职责：
+  - 裁决原型与 `09` / `02` / DTO / 权限的冲突；不直接实现业务页面；
+  - 确认各模块前端任务 ID 的 Owner、跨模块影响、共享路由 / layouts / stores / services 边界；
+  - 对 M1—M7 的页面级契约变更给出“通过 / 修改 / 待确认”结论。
+- 交付：评审记录写入 `docs/design/11-概要设计评审.md` 或证据文件；不修改他人模块实现。
+- 提交信息按 `docs/team/prompts/README.md` §7.3 详细模板；禁止只写 `[arch] 更新`。

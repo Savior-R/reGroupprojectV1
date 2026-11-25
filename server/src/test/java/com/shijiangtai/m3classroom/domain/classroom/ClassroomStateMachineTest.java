@@ -140,6 +140,45 @@ class ClassroomStateMachineTest {
     }
 
     @Test
+    void beginDialogueMovesFromStudentOrTeacherAnswering() {
+        ClassroomStateMachine answerMachine = started();
+        answerMachine.askClass(NOW);
+        answerMachine.callOn(STUDENT_ID, NOW.plusSeconds(1));
+
+        List<ClassroomEvent> answerEvents =
+                answerMachine.beginDialogue("call_on", NOW.plusSeconds(2));
+
+        assertThat(answerMachine.qaPhase()).isEqualTo(QaPhase.DIALOGUE);
+        assertThat(types(answerEvents)).containsExactly("classroom.state_changed");
+        assertThat(event(answerEvents, "classroom.state_changed").payload())
+                .containsEntry("qa_phase", "dialogue")
+                .containsEntry("trigger", "call_on");
+
+        ClassroomStateMachine questionMachine = started();
+        questionMachine.askStudentQuestion(NOW);
+        questionMachine.callOn(STUDENT_ID, NOW.plusSeconds(1));
+
+        List<ClassroomEvent> questionEvents =
+                questionMachine.beginDialogue("call_on", NOW.plusSeconds(2));
+
+        assertThat(questionMachine.qaPhase()).isEqualTo(QaPhase.DIALOGUE);
+        assertThat(event(questionEvents, "classroom.state_changed").payload())
+                .containsEntry("qa_phase", "dialogue")
+                .containsEntry("trigger", "call_on");
+    }
+
+    @Test
+    void beginDialogueIsIdempotentAndRejectsOtherPhases() {
+        ClassroomStateMachine dialogue = machineInDialogue();
+        assertThat(dialogue.beginDialogue("call_on", NOW)).isEmpty();
+
+        assertStateInvalid(() -> started().beginDialogue("call_on", NOW));
+        ClassroomStateMachine waiting = started();
+        waiting.askClass(NOW);
+        assertStateInvalid(() -> waiting.beginDialogue("call_on", NOW));
+    }
+
+    @Test
     void answerFinishedMovesToDialogueWhenFollowUp() {
         ClassroomStateMachine machine = started();
         machine.askClass(NOW);
@@ -244,6 +283,21 @@ class ClassroomStateMachineTest {
                 .containsEntry("to", "lecturing")
                 .containsEntry("qa_phase", null)
                 .containsEntry("trigger", "end_qa");
+    }
+
+    @Test
+    void endQaUsesExplicitSitDownTrigger() {
+        ClassroomStateMachine machine = machineInDialogue();
+
+        List<ClassroomEvent> events =
+                machine.endQa("sit_down", "sit_down", NOW.plusSeconds(30));
+
+        assertThat(machine.macroState()).isEqualTo(ClassroomMacroState.LECTURING);
+        assertThat(event(events, "classroom.qa_ended").payload())
+                .containsEntry("reason", "sit_down");
+        assertThat(event(events, "classroom.state_changed").payload())
+                .containsEntry("trigger", "sit_down")
+                .containsEntry("to", "lecturing");
     }
 
     @Test
