@@ -145,25 +145,25 @@ public class EmailCodeService {
                 .filter(Account::canLoginByEmail);
 
         if (found.isEmpty()) {
-            auditFailure(email, requestIp, userAgent, now);
+            auditFailure(null, requestIp, userAgent, now);
             throw unauthorized();
         }
 
         EmailLoginCode stored = authMethods
                 .findLatestCode(email, EmailLoginCode.Purpose.LOGIN)
                 .orElseThrow(() -> {
-                    auditFailure(email, requestIp, userAgent, now);
+                    auditFailure(found.orElse(null), requestIp, userAgent, now);
                     return unauthorized();
                 });
 
         if (!stored.isUsable(now, properties.emailCode().maxAttempts())) {
-            auditFailure(email, requestIp, userAgent, now);
+            auditFailure(found.orElse(null), requestIp, userAgent, now);
             throw unauthorized();
         }
 
         if (!stored.matchesHash(hasher.hash(email, code))) {
             authMethods.updateCode(stored.withFailedAttempt());
-            auditFailure(email, requestIp, userAgent, now);
+            auditFailure(found.orElse(null), requestIp, userAgent, now);
             throw unauthorized();
         }
 
@@ -248,10 +248,16 @@ public class EmailCodeService {
                 .orElseThrow(() -> new DomainException(ErrorCode.UNAUTHORIZED, "账号不存在"));
     }
 
-    private void auditFailure(String email, String ip, String userAgent, Instant now) {
-        // 邮箱可能未绑定任何账号，故 account_id 为空；不记录验证码
-        auditWriter.write(AuthLoginEvent.failure(
-                UUID.randomUUID(), AuthLoginEvent.LoginMethod.EMAIL, null, ip, userAgent, now));
+    private void auditFailure(Account account, String ip, String userAgent, Instant now) {
+        // 邮箱未绑定任何账号时 account 为空；已定位则归属账号，本人才能在登录记录里看到失败尝试。
+        // 不记录验证码；对外仍统一 401，不泄露账号存在性。
+        AuthLoginEvent event = account == null
+                ? AuthLoginEvent.failure(
+                        UUID.randomUUID(), AuthLoginEvent.LoginMethod.EMAIL, null, ip, userAgent, now)
+                : AuthLoginEvent.loginFailure(
+                        UUID.randomUUID(), account.id(), AuthLoginEvent.LoginMethod.EMAIL, null,
+                        ip, userAgent, now);
+        auditWriter.write(event);
     }
 
     private void auditBind(

@@ -128,4 +128,25 @@ class SecurityEventIT extends PostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)));
     }
+
+    /** 账号安全页的核心用途：本人要能看到自己账号的失败登录尝试。 */
+    @Test
+    void failedPasswordLoginIsVisibleToOwner() throws Exception {
+        String username = uniqueName("学生");
+        String token = registerAndLogin(username);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username": "%s", "password": "WrongPass1!"}
+                                """.formatted(username)))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/v1/auth/security/events")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].event_type").value("login"))
+                .andExpect(jsonPath("$[0].method").value("password"))
+                .andExpect(jsonPath("$[0].success").value(false));
+    }
 }

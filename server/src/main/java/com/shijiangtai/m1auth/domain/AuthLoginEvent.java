@@ -54,11 +54,30 @@ public record AuthLoginEvent(
         userAgent = truncate(userAgent);
     }
 
-    /** 登录失败事件没有 accountId（账号可能不存在），用于「不泄露账号存在性」。 */
+    /**
+     * 登录失败且账号无法定位（用户名不存在 / 邮箱未绑定 / ticket 无效）：account_id 留空。
+     *
+     * <p>对外仍是统一 401，不泄露账号是否存在；此处留空仅因确实无从归属。
+     */
     public static AuthLoginEvent failure(
             UUID id, LoginMethod method, String provider, String ip, String userAgent, Instant now) {
         return new AuthLoginEvent(
                 id, null, EventType.LOGIN, method, provider, false, ip, userAgent, now);
+    }
+
+    /**
+     * 登录失败但账号已定位（密码错误、验证码错误等）：必须归属账号。
+     *
+     * <p>否则 {@code /auth/security/events} 按 account_id 过滤时，本人看不到自己的失败
+     * 登录尝试，账号安全页就失去「发现异常登录」的作用。该归属只在内部审计表，不参与
+     * 任何对外响应，故不影响 03 §3.10「不泄露账号存在性」。
+     */
+    public static AuthLoginEvent loginFailure(
+            UUID id, AccountId accountId, LoginMethod method, String provider,
+            String ip, String userAgent, Instant now) {
+        Objects.requireNonNull(accountId, "accountId");
+        return new AuthLoginEvent(
+                id, accountId, EventType.LOGIN, method, provider, false, ip, userAgent, now);
     }
 
     /** 绑定审计：操作者已登录，accountId 必填；成功 / 失败都要记录。 */

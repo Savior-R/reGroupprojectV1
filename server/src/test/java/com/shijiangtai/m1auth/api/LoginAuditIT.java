@@ -28,7 +28,8 @@ import org.springframework.test.web.servlet.MvcResult;
  * <ul>
  *   <li>密码 / 邮箱两种登录的成功与失败都写入 {@code auth_login_events}
  *   <li>{@code method} / {@code provider} / {@code success} / {@code ip} / {@code user_agent} 有值
- *   <li>失败事件不写 {@code account_id}，避免反向泄露账号存在性
+ *   <li>失败事件在账号已定位时归属 {@code account_id}（本人可见自己的异常登录）；
+ *       账号无法定位（用户名不存在 / 邮箱未绑定）时才留空
  *   <li>表结构不含 token / 验证码 / secret 类列
  * </ul>
  */
@@ -78,9 +79,9 @@ class LoginAuditIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void passwordLoginFailureWritesEventWithoutAccountId() throws Exception {
+    void passwordLoginFailureIsAttributedToOwner() throws Exception {
         String username = uniqueName("审计失败");
-        registerAndGetAccountId(username);
+        String accountId = registerAndGetAccountId(username);
         String marker = "junit-audit-fail-" + UUID.randomUUID();
 
         mockMvc.perform(post("/api/v1/auth/login")
@@ -93,8 +94,8 @@ class LoginAuditIT extends PostgresIntegrationTest {
         assertThat(event.get("event_type")).isEqualTo("login");
         assertThat(event.get("method")).isEqualTo("password");
         assertThat(event.get("success")).isEqualTo(false);
-        // 失败事件不带 account_id：FR-M1-11「不泄露账号存在性」
-        assertThat(event.get("account_id")).isNull();
+        // 账号已定位：失败事件必须归属本人，否则账号安全页看不到异常登录
+        assertThat(event.get("account_id")).isEqualTo(UUID.fromString(accountId));
         assertThat((String) event.get("ip")).contains("127.0.0.1");
     }
 
@@ -122,9 +123,9 @@ class LoginAuditIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void emailLoginFailureWritesEventWithoutAccountId() throws Exception {
+    void emailLoginFailureIsAttributedToOwner() throws Exception {
         String username = uniqueName("审计邮箱失败");
-        registerAndGetAccountId(username);
+        String accountId = registerAndGetAccountId(username);
         String email = uniqueEmail();
         seedVerifiedEmail(username, email);
         requestLoginCode(email);
@@ -142,7 +143,8 @@ class LoginAuditIT extends PostgresIntegrationTest {
         assertThat(event.get("event_type")).isEqualTo("login");
         assertThat(event.get("method")).isEqualTo("email");
         assertThat(event.get("success")).isEqualTo(false);
-        assertThat(event.get("account_id")).isNull();
+        // 邮箱已绑定到账号：失败事件归属本人
+        assertThat(event.get("account_id")).isEqualTo(UUID.fromString(accountId));
     }
 
     @Test

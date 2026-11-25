@@ -145,6 +145,7 @@ public class AuthApplicationService {
                 ? Optional.empty() : accounts.findByUsername(username);
 
         if (found.isEmpty()) {
+            // 账号不存在，无从归属；对外统一 401，不泄露存在性
             audit(AuthLoginEvent.failure(
                     UUID.randomUUID(), AuthLoginEvent.LoginMethod.PASSWORD, null, ip, userAgent,
                     clock.instant()));
@@ -153,9 +154,10 @@ public class AuthApplicationService {
 
         Account account = found.get();
         if (!passwordHasher.matches(command.password(), account.passwordHash())) {
-            audit(AuthLoginEvent.failure(
-                    UUID.randomUUID(), AuthLoginEvent.LoginMethod.PASSWORD, null, ip, userAgent,
-                    clock.instant()));
+            // 账号已定位：归属到本人，否则用户在自己的登录记录里看不到被尝试登录
+            audit(AuthLoginEvent.loginFailure(
+                    UUID.randomUUID(), account.id(), AuthLoginEvent.LoginMethod.PASSWORD, null,
+                    ip, userAgent, clock.instant()));
             throw new DomainException(ErrorCode.UNAUTHORIZED, LOGIN_FAILED);
         }
 
