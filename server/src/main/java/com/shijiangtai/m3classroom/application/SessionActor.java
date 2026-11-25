@@ -15,6 +15,11 @@ import com.shijiangtai.m3classroom.domain.classroom.DialogueState;
 import com.shijiangtai.m3classroom.domain.classroom.HandRaise;
 import com.shijiangtai.m3classroom.domain.classroom.HandRaisePolicy;
 import com.shijiangtai.m3classroom.domain.classroom.QaPhase;
+import com.shijiangtai.m3classroom.domain.classroom.RuleBasedTeacherIntentClassifier;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherIntent;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherIntentClassifier;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherUtteranceContext;
+import com.shijiangtai.m3classroom.domain.classroom.TeacherUtteranceIntent;
 import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentDynamics;
 import com.shijiangtai.m3classroom.domain.classroom.VirtualStudentRuntime;
 import com.shijiangtai.m3classroom.domain.interview.InterviewSnapshot;
@@ -71,12 +76,16 @@ import org.slf4j.LoggerFactory;
  * {@code student.hand_raised} event is emitted and carries the raised ids into
  * {@link ClassroomStateMachine#handWindowTimeout(Instant, List)}.
  *
- * <p>A finished answer rolls {@code question_rate * 0.5}: a losing roll keeps the P0 path
- * ({@link ClassroomStateMachine#answerFinished(UUID, boolean, Instant)} with {@code false} and
- * back to {@code waiting_hands}); a winning roll starts a dialogue ({@code dialogue.started} +
- * {@code student.follow_up}) and leaves the classroom in {@code qa.dialogue}. Teacher-response
- * driven continuation rounds end the dialogue through the same {@code dialogue.ended} →
- * student {@code focused} → caller transition order used by every termination path (05A §5.3).
+ * <p>Calling on a raised hand always starts a dialogue ({@code dialogue.started}) in the first
+ * version. A teacher-initiated dialogue is advanced only by the teacher's follow-up questions;
+ * a student-initiated dialogue keeps the existing student follow-up roll ({@code question_rate
+ * * 0.5}). Every termination path uses the same {@code dialogue.ended} → student {@code focused}
+ * → caller transition order (05A §5.3).
+ *
+ * <p>Teacher ASR finals are interpreted by a {@link TeacherIntentClassifier}. In dialogue the
+ * classifier drives follow-up rounds, comments and the {@code 坐下} ending; while waiting for a
+ * hand it can resolve a voice call-on. The rules implementation is the first version; a local
+ * trained model can replace it without changing this actor.
  */
 public final class SessionActor {
 
@@ -87,6 +96,12 @@ public final class SessionActor {
     private static final long HAND_RAISE_MAX_EXTRA_DELAY_MS = 2_000L;
     private static final Duration HAND_WINDOW_TIMEOUT = Duration.ofSeconds(30);
     private static final Duration WS_GRACE = Duration.ofSeconds(30);
+    private static final double FOLLOW_UP_INTENT_THRESHOLD = 0.75;
+    private static final double END_INTENT_THRESHOLD = 0.90;
+    private static final double CALL_ON_INTENT_THRESHOLD = 0.85;
+    private static final double LOCAL_VOICE_QUESTION_THRESHOLD = 0.85;
+    private static final long VOICE_QUESTION_AFTER_DIALOGUE_COOLDOWN_MS = 2_000L;
+    private static final long LOCAL_VOICE_QUESTION_DEDUPE_MS = 3_000L;
 
     private static final String RECORDING_READY_ACK = "recording.ready_ack";
     private static final String SESSION_STARTED = "session.started";
@@ -103,6 +118,8 @@ public final class SessionActor {
     private static final String TEACHER_CALLED_ON = "teacher.called_on";
     private static final String TEACHER_MARKED = "teacher.marked";
     private static final String TEACHER_MANAGEMENT_ACTION = "teacher.management_action";
+    private static final String TEACHER_REPLY = "teacher.reply";
+    private static final String TEACHER_INTENT_CLASSIFIED = "teacher.intent_classified";
     private static final String QUESTION_ASKED = "classroom.question_asked";
     private static final String STATE_CHANGED = "classroom.state_changed";
     private static final String HAND_WINDOW_TIMEOUT_EVENT = "classroom.hand_window_timeout";
@@ -127,6 +144,7 @@ public final class SessionActor {
     private final ClockProvider clock;
     private final SchedulerPort scheduler;
     private final RandomGenerator random;
+    private final TeacherIntentClassifier intentClassifier;
 
     private final HandRaisePolicy handRaisePolicy = new HandRaisePolicy();
     private final AnswerQualityPolicy answerQualityPolicy = new AnswerQualityPolicy();
@@ -152,7 +170,8 @@ public final class SessionActor {
 
     private DialogueState dialogue;
     private UUID dialogueAnswerId;
-    private long dialogueAwaitingSinceMs;
+    private long lastDialogueEndedAtMs = -10_000L;
+    private long lastLocalVoiceQuestionAtMs = -10_000L;
 
     public SessionActor(
             Session session,
@@ -167,6 +186,30 @@ public final class SessionActor {
             ClockProvider clock,
             SchedulerPort scheduler,
             RandomGenerator random) {
+        this(session, taskSnapshot, context, classroom, students, interview, content,
+                persistence, ids, clock, scheduler, random,
+                new RuleBasedTeacherIntentClassifier());
+    }
+
+    /**
+     * Constructor with an explicit teacher-intent classifier. Production uses the rules
+     * implementation; tests and the future local-model adapter can inject a different port
+     * without changing the dialogue state machine.
+     */
+    public SessionActor(
+            Session session,
+            TaskSnapshot taskSnapshot,
+            SessionContext context,
+            ClassroomStateMachine classroom,
+            VirtualStudentDynamics students,
+            InterviewStateMachine interview,
+            ContentGenerationService content,
+            ContextPersistenceWriter persistence,
+            IdGenerator ids,
+            ClockProvider clock,
+            SchedulerPort scheduler,
+            RandomGenerator random,
+            TeacherIntentClassifier intentClassifier) {
         this.session = Objects.requireNonNull(session, "session");
         this.taskSnapshot = Objects.requireNonNull(taskSnapshot, "taskSnapshot");
         this.context = Objects.requireNonNull(context, "context");
@@ -179,6 +222,7 @@ public final class SessionActor {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
         this.random = Objects.requireNonNull(random, "random");
+        this.intentClassifier = Objects.requireNonNull(intentClassifier, "intentClassifier");
         initializeStudentsIfNeeded();
     }
 
@@ -202,6 +246,27 @@ public final class SessionActor {
                 scheduler, random);
     }
 
+    /** Store-backed constructor with an explicit teacher-intent classifier (tests / wiring). */
+    public SessionActor(
+            Session session,
+            TaskSnapshot taskSnapshot,
+            SessionContext context,
+            ClassroomStateMachine classroom,
+            VirtualStudentDynamics students,
+            InterviewStateMachine interview,
+            ContentGenerationService content,
+            SessionEventStore eventStore,
+            SessionTextStore textStore,
+            IdGenerator ids,
+            ClockProvider clock,
+            SchedulerPort scheduler,
+            RandomGenerator random,
+            TeacherIntentClassifier intentClassifier) {
+        this(session, taskSnapshot, context, classroom, students, interview, content,
+                new DirectContextPersistenceWriter(eventStore, textStore), ids, clock,
+                scheduler, random, intentClassifier);
+    }
+
     // ------------------------------------------------------------------
     // Command entry point
     // ------------------------------------------------------------------
@@ -223,7 +288,6 @@ public final class SessionActor {
         openHandRaises.clear();
         dialogue = null;
         dialogueAnswerId = null;
-        dialogueAwaitingSinceMs = 0L;
         cancelAllTasks();
         try {
             forceFlush();
@@ -498,6 +562,8 @@ public final class SessionActor {
         }
 
         Instant now = clock.now();
+        boolean studentQuestion =
+                ClassroomStateMachine.INTENT_STUDENT_QUESTION.equals(classroom.intent());
         List<ClassroomEvent> callOnEvents = classroom.callOn(command.studentId(), now);
         windowGeneration++;
         cancel(handRaiseTask);
@@ -520,10 +586,26 @@ public final class SessionActor {
         events.add(append(TEACHER_CALLED_ON, payload, now));
         events.addAll(appendStudentEvents(students.applyCalledOn(command.studentId()), now));
 
-        if (ClassroomStateMachine.INTENT_STUDENT_QUESTION.equals(classroom.intent())) {
+        DialogueState.Initiator initiator = studentQuestion
+                ? DialogueState.Initiator.STUDENT
+                : DialogueState.Initiator.TEACHER;
+        dialogue = new DialogueState(ids.nextId(), student.id(), initiator);
+        dialogue.awaitTeacher(atMs(now));
+        dialogueAnswerId = null;
+
+        Map<String, Object> dialoguePayload = new LinkedHashMap<>();
+        dialoguePayload.put("dialogue_id", dialogue.dialogueId());
+        dialoguePayload.put("student_id", student.id());
+        dialoguePayload.put("initiator", initiator.wireValue());
+        events.add(append(DIALOGUE_STARTED, dialoguePayload, now));
+        events.addAll(appendClassroomEvents(
+                classroom.beginDialogue("call_on", now), now));
+
+        if (studentQuestion) {
             events.addAll(emitStudentQuestion(student, now));
+            events.addAll(appendStudentEvents(students.applyFollowUp(student.id()), now));
         } else {
-            events.addAll(emitStudentAnswer(student, now));
+            events.addAll(emitStudentAnswerInDialogue(student, now));
         }
         return CommandResult.ok(events);
     }
@@ -870,28 +952,140 @@ public final class SessionActor {
                 "candidate".equals(speakerType) ? "answer" : "utterance",
                 text, startMs, endMs, atMs, confidence, null, null, "final"));
         if ("teacher".equals(speakerType)) {
-            continueDialogueAfterTeacherFinal(text, startMs, endMs, now);
+            handleTeacherUtterance(textId, text, startMs, endMs, now);
         }
         return Optional.of(textId);
     }
 
     /**
-     * Advances the active dialogue once a teacher ASR final starts at or after the current
-     * follow-up boundary (05A §5.5). Finals that began before the boundary belong to the
-     * teacher's previous utterance and only get persisted. At the round limit or on a losing
-     * follow-up roll the dialogue ends and the classroom returns to {@code waiting_hands};
-     * otherwise the student follows up again in the next round.
+     * Classifies one teacher ASR final and lets the current classroom state resolve it.
+     *
+     * <p>Every classroom teacher final gets a record-only {@code teacher.intent_classified}
+     * event. The classifier never mutates the session; the dialogue / waiting-hands branches
+     * below decide whether an intent becomes an action.
      */
-    private void continueDialogueAfterTeacherFinal(
-            String text, Long startMs, Long endMs, Instant now) {
-        if (dialogue == null) {
+    private void handleTeacherUtterance(
+            UUID textId, String text, Long startMs, Long endMs, Instant now) {
+        if (isInterviewMode()) {
             return;
         }
-        long finalStart = startMs != null ? startMs
-                : endMs != null ? endMs : currentAtMs();
-        if (finalStart < dialogueAwaitingSinceMs) {
+        TeacherUtteranceContext context = new TeacherUtteranceContext(
+                text,
+                classroom.macroState().wireValue(),
+                classroom.qaPhase() == null ? null : classroom.qaPhase().wireValue(),
+                dialogue == null ? null : dialogue.initiator().wireValue(),
+                currentStudentId,
+                students.students().stream()
+                        .map(student -> new TeacherUtteranceContext.CandidateStudent(
+                                student.id(), student.config().name()))
+                        .toList());
+        TeacherUtteranceIntent intent = intentClassifier.classify(context);
+        appendTeacherIntentClassified(textId, intent, now);
+
+        if (dialogue != null) {
+            handleDialogueTeacherUtterance(textId, startMs, endMs, intent, now);
             return;
         }
+        if (classroom.macroState() == ClassroomMacroState.QA
+                && classroom.qaPhase() == QaPhase.WAITING_HANDS) {
+            handleWaitingHandsTeacherUtterance(intent, now);
+            return;
+        }
+        if (classroom.macroState() == ClassroomMacroState.LECTURING) {
+            handleLocalVoiceQuestion(intent);
+        }
+    }
+
+    /**
+     * Active local-model path for a spoken question while lecturing. Rules / shadow deployments
+     * return {@code false} from {@link TeacherIntentClassifier#drivesLecturingQuestions()}, so
+     * this path is inert unless the local model is explicitly activated.
+     */
+    private void handleLocalVoiceQuestion(TeacherUtteranceIntent intent) {
+        if (!intentClassifier.drivesLecturingQuestions()) {
+            return;
+        }
+        double confidence = Math.max(
+                intent.confidenceOf(TeacherIntent.ASK_CLASS),
+                intent.confidenceOf(TeacherIntent.ASK_STUDENT));
+        if (confidence < LOCAL_VOICE_QUESTION_THRESHOLD) {
+            return;
+        }
+        long nowMs = currentAtMs();
+        if (nowMs - lastLocalVoiceQuestionAtMs < LOCAL_VOICE_QUESTION_DEDUPE_MS) {
+            return;
+        }
+        onTeacherSpeechClassified(confidence);
+        lastLocalVoiceQuestionAtMs = nowMs;
+    }
+
+    /**
+     * Applies a classified teacher turn inside an active dialogue.
+     *
+     * <ul>
+     *   <li>teacher-initiated: only question intents advance the round; comments stay put;</li>
+     *   <li>student-initiated: the teacher's answer moves the turn to the student, who follows
+     *       up by probability;</li>
+     *   <li>{@code sit_down} / {@code end_qa} end the whole QA and return to lecturing.</li>
+     * </ul>
+     */
+    private void handleDialogueTeacherUtterance(
+            UUID textId, Long startMs, Long endMs,
+            TeacherUtteranceIntent intent, Instant now) {
+        long finalStart = startMs != null ? startMs : endMs != null ? endMs : currentAtMs();
+        if (finalStart < dialogue.awaitingSinceMs()) {
+            // A final from the teacher's previous utterance: persist and classify only.
+            return;
+        }
+        boolean teacherTurn = dialogue.initiator() == DialogueState.Initiator.STUDENT
+                || intent.has(TeacherIntent.ASK_CLASS)
+                || intent.has(TeacherIntent.ASK_STUDENT)
+                || intent.has(TeacherIntent.COMMENT_ANSWER)
+                || intent.has(TeacherIntent.PROMPT_STUDENT_QUESTION)
+                || intent.has(TeacherIntent.END_QA)
+                || intent.has(TeacherIntent.END_DIALOGUE)
+                || intent.has(TeacherIntent.MANAGE_DISCIPLINE);
+        if (teacherTurn) {
+            appendTeacherReply(textId, intent, now);
+        }
+        if (intent.has(TeacherIntent.MANAGE_DISCIPLINE)) {
+            // Multi-intent utterances may contain a discipline side effect and a real turn.
+            applyVoiceManagement(intent, now);
+        }
+        boolean endQa = intent.confidenceOf(TeacherIntent.END_QA) >= END_INTENT_THRESHOLD;
+        boolean endDialogue =
+                intent.confidenceOf(TeacherIntent.END_DIALOGUE) >= END_INTENT_THRESHOLD;
+        if (endQa || endDialogue) {
+            String reason = endQa ? "qa_ended" : "sit_down";
+            endActiveDialogue(reason, now);
+            emitHandLowers(reason, now);
+            appendClassroomEvents(classroom.endQa(reason, endQa ? "end_qa" : "sit_down", now),
+                    now);
+            return;
+        }
+        if (dialogue.initiator() == DialogueState.Initiator.TEACHER) {
+            boolean asksFollowUp =
+                    (intent.confidenceOf(TeacherIntent.ASK_CLASS) >= FOLLOW_UP_INTENT_THRESHOLD
+                            || intent.confidenceOf(TeacherIntent.ASK_STUDENT)
+                                    >= FOLLOW_UP_INTENT_THRESHOLD)
+                            && !intent.has(TeacherIntent.PROMPT_STUDENT_QUESTION);
+            if (!asksFollowUp) {
+                return;
+            }
+            if (!dialogue.canFollowUp()) {
+                endActiveDialogue("max_rounds", now);
+                appendClassroomEvents(classroom.endDialogue(
+                        ClassroomStateMachine.TRIGGER_MAX_ROUNDS, now), now);
+                return;
+            }
+            dialogue.nextRound();
+            emitStudentAnswerInDialogue(students.find(dialogue.studentId()), now);
+            return;
+        }
+
+        // Student-initiated dialogue: the teacher has answered; the student decides whether to
+        // follow up. Sit-down and end-QA were handled above.
+        dialogue.awaitStudent(atMs(now));
         VirtualStudentRuntime student = students.find(dialogue.studentId());
         if (!dialogue.canFollowUp()) {
             endActiveDialogue("max_rounds", now);
@@ -911,6 +1105,106 @@ public final class SessionActor {
     }
 
     /**
+     * Handles a teacher final while the classroom is waiting for a hand raise: a voice call-on
+     * with a uniquely matched student starts the dialogue, end-QA returns to lecturing, and a
+     * discipline intent is applied to the named student. Other intents only leave the
+     * record-only classification event.
+     */
+    private void handleWaitingHandsTeacherUtterance(
+            TeacherUtteranceIntent intent, Instant now) {
+        if (intent.has(TeacherIntent.MANAGE_DISCIPLINE)) {
+            applyVoiceManagement(intent, now);
+        }
+        if (intent.confidenceOf(TeacherIntent.END_QA) >= END_INTENT_THRESHOLD
+                || intent.confidenceOf(TeacherIntent.END_DIALOGUE) >= END_INTENT_THRESHOLD) {
+            handleEndQa();
+            return;
+        }
+        if (!intent.has(TeacherIntent.CALL_ON)
+                || intent.confidenceOf(TeacherIntent.CALL_ON) < CALL_ON_INTENT_THRESHOLD
+                || intent.studentName() == null) {
+            return;
+        }
+        Optional<VirtualStudentRuntime> student = findStudentByName(intent.studentName());
+        if (student.isEmpty()) {
+            return;
+        }
+        try {
+            handleCallOn(new SessionCommand.CallOn(
+                    "voice-call-on-" + UUID.randomUUID(), student.get().id(), null));
+        } catch (DomainException exception) {
+            LOG.warn("Voice call-on rejected for session {}: {}",
+                    session.id().value(), exception.getMessage());
+        }
+    }
+
+    private Optional<VirtualStudentRuntime> findStudentByName(String name) {
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        List<VirtualStudentRuntime> matches = students.students().stream()
+                .filter(student -> student.config().name().equals(name))
+                .toList();
+        return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
+    }
+
+    private void applyVoiceManagement(TeacherUtteranceIntent intent, Instant now) {
+        Optional<VirtualStudentRuntime> student = findStudentByName(intent.studentName());
+        if (student.isEmpty()) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("student_id", student.get().id());
+        payload.put("action", "remind");
+        append(TEACHER_MANAGEMENT_ACTION, payload, now);
+        appendStudentEvents(students.applyManaged(student.get().id()), now);
+    }
+
+    private void appendTeacherIntentClassified(
+            UUID textId, TeacherUtteranceIntent intent, Instant now) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("text_id", textId);
+        payload.put("primary_intent", intent.primary().wireValue());
+        payload.put("confidence", intent.confidence());
+        payload.put("intents", intent.hits().stream()
+                .map(hit -> {
+                    Map<String, Object> value = new LinkedHashMap<>();
+                    value.put("label", hit.intent().wireValue());
+                    value.put("confidence", hit.confidence());
+                    return value;
+                })
+                .toList());
+        if (intent.studentName() != null) {
+            payload.put("student_name", intent.studentName());
+        }
+        if (intent.polarity() != null) {
+            payload.put("polarity", intent.polarity());
+        }
+        payload.put("model_version", intent.modelVersion());
+        append(TEACHER_INTENT_CLASSIFIED, payload, now);
+    }
+
+    private void appendTeacherReply(
+            UUID textId, TeacherUtteranceIntent intent, Instant now) {
+        if (dialogue == null) {
+            return;
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("dialogue_id", dialogue.dialogueId());
+        payload.put("turn", dialogue.round());
+        payload.put("text_id", textId);
+        payload.put("intent", intent.primary().wireValue());
+        payload.put("confidence", intent.confidence());
+        if (intent.studentName() != null) {
+            payload.put("student_name", intent.studentName());
+        }
+        if (intent.polarity() != null) {
+            payload.put("polarity", intent.polarity());
+        }
+        append(TEACHER_REPLY, payload, now);
+    }
+
+    /**
      * Applies an off-actor teacher-utterance classification. A high-confidence question starts a
      * voice QA window with the same hand scheduling as a manual ask; every other classification
      * only appends the suggested-question event. Terminal and interview sessions are ignored, so
@@ -923,6 +1217,18 @@ public final class SessionActor {
         // A teacher final during QA (answering / dialogue / waiting hands) is the teacher's
         // response to the ongoing interaction, not a new class-level question.
         if (classroom.macroState() != ClassroomMacroState.LECTURING) {
+            return;
+        }
+        // A late Python classification for the utterance that just ended a dialogue must not
+        // open a fresh voice-QA window (for example "请坐" misread as a question).
+        if (currentAtMs() - lastDialogueEndedAtMs
+                < VOICE_QUESTION_AFTER_DIALOGUE_COOLDOWN_MS) {
+            return;
+        }
+        // The local model already opened QA for this utterance; ignore the asynchronous Python
+        // classification for the same short window instead of emitting a duplicate suggestion.
+        if (currentAtMs() - lastLocalVoiceQuestionAtMs
+                < LOCAL_VOICE_QUESTION_DEDUPE_MS) {
             return;
         }
         Instant now = clock.now();
@@ -1173,6 +1479,7 @@ public final class SessionActor {
     private List<SessionEvent> emitStudentQuestion(VirtualStudentRuntime student, Instant now) {
         ContentResponse response = content.questionOrFallback(contentRequest(student));
         UUID textId = ids.nextId();
+        UUID questionId = ids.nextId();
         persistText(new SessionText(
                 textId, session.id(), "student", student.id(), "llm", "question",
                 response.text(), null, null, atMs(now),
@@ -1182,13 +1489,25 @@ public final class SessionActor {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("student_id", student.id());
         payload.put("text_id", textId);
-        payload.put("question_id", ids.nextId());
+        payload.put("question_id", questionId);
+        if (dialogue != null) {
+            payload.put("dialogue_id", dialogue.dialogueId());
+            payload.put("turn", dialogue.round());
+            dialogueAnswerId = questionId;
+            dialogue.awaitTeacher(atMs(now));
+        }
         SessionEvent event = append(STUDENT_QUESTION, payload, now);
         students.applyStudentQuestion(student.id());
         return List.of(event);
     }
 
-    private List<SessionEvent> emitStudentAnswer(VirtualStudentRuntime student, Instant now) {
+    /**
+     * Emits one student answer inside an active dialogue. The answer becomes the next round's
+     * content, carries {@code dialogue_id} / {@code turn}, and leaves the dialogue waiting for
+     * the teacher.
+     */
+    private List<SessionEvent> emitStudentAnswerInDialogue(
+            VirtualStudentRuntime student, Instant now) {
         ContentResponse response = content.answerOrFallback(contentRequest(student));
         AnswerQuality quality = answerQualityPolicy.evaluate(
                 student.config().ability().doubleValue(), 0.5, random);
@@ -1206,53 +1525,23 @@ public final class SessionActor {
         payload.put("text_id", textId);
         payload.put("quality", quality.score());
         payload.put("correctness", quality.correctness().wireValue());
+        if (dialogue != null) {
+            payload.put("dialogue_id", dialogue.dialogueId());
+            payload.put("turn", dialogue.round());
+        }
         SessionEvent event = append(STUDENT_ANSWER, payload, now);
         answerStudents.put(answerId, student.id());
 
-        // Behaviour order mirrors the protocol: fact, answer_started, then either the legacy
-        // answer-finished path or the first follow-up round when the student decides to keep
-        // the dialogue going (05A §5.1).
         List<SessionEvent> events = new ArrayList<>();
         events.add(event);
         events.addAll(appendStudentEvents(students.applyAnswer(student.id()), now));
-        boolean followUp = random.nextDouble() < DialogueState.followUpProbability(
-                student.config().questionRate().doubleValue());
-        if (followUp) {
-            events.addAll(maybeStartDialogue(student, answerId, now));
-        } else {
-            events.addAll(appendClassroomEvents(
-                    classroom.answerFinished(student.id(), false, now), now));
-            events.addAll(appendStudentEvents(
-                    students.applyAnswerFinished(student.id()), now));
+        if (dialogue != null) {
+            if (dialogueAnswerId == null) {
+                dialogueAnswerId = answerId;
+            }
+            events.addAll(appendStudentEvents(students.applyFollowUp(student.id()), now));
+            dialogue.awaitTeacher(atMs(now));
         }
-        return events;
-    }
-
-    /**
-     * Starts a dialogue after the initial answer (05A §5.1). Event order is fixed:
-     * {@code classroom.state_changed} (follow-up), the student's {@code answering -> dialogue}
-     * transition, {@code dialogue.started}, then the first {@code student.follow_up}. The
-     * initial round does not apply a second attention delta, because
-     * {@link VirtualStudentDynamics#applyFollowUp} already did so above.
-     *
-     * @return every event appended by this method, in append order, for the command ack
-     */
-    private List<SessionEvent> maybeStartDialogue(
-            VirtualStudentRuntime student, UUID answerId, Instant now) {
-        List<SessionEvent> events = new ArrayList<>();
-        events.addAll(appendClassroomEvents(
-                classroom.answerFinished(student.id(), true, now), now));
-        events.addAll(appendStudentEvents(students.applyFollowUp(student.id()), now));
-
-        dialogue = new DialogueState(ids.nextId(), student.id());
-        dialogueAnswerId = answerId;
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("dialogue_id", dialogue.dialogueId());
-        payload.put("student_id", student.id());
-        events.add(append(DIALOGUE_STARTED, payload, now));
-
-        events.addAll(emitFollowUp(student, now, false));
         return events;
     }
 
@@ -1279,8 +1568,12 @@ public final class SessionActor {
         payload.put("student_id", student.id());
         payload.put("answer_id", dialogueAnswerId);
         payload.put("text_id", textId);
+        if (dialogue != null) {
+            payload.put("dialogue_id", dialogue.dialogueId());
+            payload.put("turn", dialogue.round());
+            dialogue.awaitTeacher(atMs(now));
+        }
         SessionEvent event = append(STUDENT_FOLLOW_UP, payload, now);
-        dialogueAwaitingSinceMs = atMs(now);
         return List.of(event);
     }
 
@@ -1300,6 +1593,7 @@ public final class SessionActor {
         payload.put("dialogue_id", active.dialogueId());
         payload.put("student_id", active.studentId());
         payload.put("reason", reason);
+        payload.put("rounds", active.round());
 
         List<SessionEvent> events = new ArrayList<>();
         events.add(append(DIALOGUE_ENDED, payload, now));
@@ -1308,7 +1602,7 @@ public final class SessionActor {
 
         dialogue = null;
         dialogueAnswerId = null;
-        dialogueAwaitingSinceMs = 0L;
+        lastDialogueEndedAtMs = atMs(now);
         return events;
     }
 

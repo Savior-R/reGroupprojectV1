@@ -76,8 +76,22 @@ PYTHONPATH=. .venv/bin/pytest
 - FastAPI 路由、Service Token、ASR WebSocket
 - Mock 模式与缺失配置
 
+## 离线训练（不进入生产镜像）
+
+教师意图线性模型的训练、数据导出与评估在 `ai/training/teacher_intent/`，详见
+[training/teacher_intent/README.md](training/teacher_intent/README.md)。训练依赖
+`training/teacher_intent/requirements.txt`，产物为 `ai/models/teacher_intent/v1/model.json`，
+由 Java `LinearTeacherIntentClassifier` 本地推理；默认不启用，配置模型路径后与规则混合。
+
+```bash
+cd ai
+PYTHONPATH=. .venv/bin/python -m training.teacher_intent.train \
+  --data training/teacher_intent/data/seed.jsonl
+```
+
 ## 与设计文档的对应
 
 - 接口：`docs/design/02-API与实时协议.md` §5.2
 - 类与方法：`docs/implementation/08-Python-AI-实现设计.md`
 - 选型：`docs/design/00-总体设计.md` §3.3
+- 教师意图规则 / 本地模型：`docs/design/05A-M3-课堂状态机与WebSocket.md` §7.6 / §7.7

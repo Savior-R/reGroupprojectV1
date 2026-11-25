@@ -12,7 +12,7 @@
 | [01-M1-实现设计.md](01-M1-实现设计.md) | M1 | Foundation Owner | 账号、密码 / 邮箱验证码 / 微信扫码登录、OAuth 引导注册、JWT、建校、组织、教师专业 | 设计提交（待复审） | 10% |
 | [02-M2-实现设计.md](02-M2-实现设计.md) | M2 | Course/Question Owner | 课程、老师组、学生成员、归档 | 设计提交（待复审） | 10% |
 | [03-M5-实现设计.md](03-M5-实现设计.md) | M5 | Course/Question Owner | 题库、种子、类别 / 题目、M3 选题 | 设计提交（待复审） | 10% |
-| [04-M3-实现设计.md](04-M3-实现设计.md) | M3 | M3 Owner（A/B）+ Media/Training Owner（C） | 任务配置、SessionActor、课堂 / 面试、录制、回放 | 设计提交（待复审） | 10% |
+| [04-M3-实现设计.md](04-M3-实现设计.md) | M3 | M3 Owner（A/B）+ Media/Training Owner（C） | 任务配置、SessionActor、课堂 / 面试、录制、回放；点名即对话 + 教师意图规则第一版 | 设计提交（待复审） | 10% |
 | [05-M4-实现设计.md](05-M4-实现设计.md) | M4 | AI Owner | 评测触发 / job / 回调 / 报告 / 输入接口 | 设计提交（待复审） | 10% |
 | [06-M7-实现设计.md](06-M7-实现设计.md) | M7 | Score/QA Owner | 评分、最终分、统计、排行榜、CSV、学生结果 | 设计提交（待复审） | 10% |
 | [07-M6-实现设计.md](07-M6-实现设计.md) | M6 | Media/Training Owner | 个人训练模板、课程发布、训练 session、训练记录、隐私、任务预填 | 设计提交（待复审） | 10% |

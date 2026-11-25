@@ -457,13 +457,13 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
     // ------------------------------------------------------------------
 
     /**
-     * Voice-driven dialogue rounds end-to-end: the initial answer wins the follow-up roll (shared
-     * random 0.0), a teacher ASR final after the boundary advances to round 2, and once the random
-     * is switched to 0.99 the next final ends the dialogue with {@code no_follow_up} and returns
-     * the classroom to {@code waiting_hands}. The session and both sockets stay alive throughout.
+     * Teacher-initiated voice dialogue end-to-end: call-on starts a dialogue and emits the first
+     * student answer; a teacher ASR final with a question advances to round 2 via a new
+     * {@code student.answer}; "请坐" then ends the whole QA and returns the classroom to
+     * lecturing. The session and both sockets stay alive throughout.
      */
     @Test
-    void teacherVoiceResponseDrivesFollowUpRoundsAndEndsWithoutFollowUp() throws Exception {
+    void teacherVoiceFollowUpDrivesAnswersAndSitDownEndsQa() throws Exception {
         SessionId id = createStartedSession();
         Connection control = connectControl(id);
         control.nextOfType("session.snapshot");
@@ -480,10 +480,13 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
                 new SessionCommand.CallOn("call-dialogue", studentId, handRaiseId)).ok())
                 .isTrue();
 
-        SessionEvent firstFollowUp = awaitEvent(id, "student.follow_up");
+        SessionEvent firstAnswer = awaitEvent(id, "student.answer");
         SessionEvent dialogueStarted = awaitEvent(id, "dialogue.started");
         assertThat(String.valueOf(dialogueStarted.payload().get("student_id")))
                 .isEqualTo(studentId.toString());
+        assertThat(String.valueOf(dialogueStarted.payload().get("initiator")))
+                .isEqualTo("teacher");
+        assertThat(String.valueOf(firstAnswer.payload().get("turn"))).isEqualTo("1");
         assertThat(eventStore.after(id, 0, 200))
                 .anySatisfy(event -> {
                     assertThat(event.type()).isEqualTo("classroom.state_changed");
@@ -491,46 +494,46 @@ class PerceptionWebSocketIT extends PostgresIntegrationTest {
                     assertThat(String.valueOf(event.payload().get("qa_phase")))
                             .isEqualTo("dialogue");
                     assertThat(String.valueOf(event.payload().get("trigger")))
-                            .isEqualTo("follow_up");
+                            .isEqualTo("call_on");
                 });
 
         Connection perception = connect(id);
         send(perception, AUDIO_START);
         FakeAsrStreamClient.FakeAsrSession asr = awaitAsrSession();
 
-        // The ASR begin_ms is offset by the perception audio.start time; a boundary-relative
-        // value well after the follow-up therefore maps to a session time past the boundary.
-        long boundary = firstFollowUp.atMs();
-        asr.emitFinal("对，你具体说说。", boundary + 1_000L, boundary + 2_000L,
+        long boundary = firstAnswer.atMs();
+        asr.emitFinal("对，你能再具体说说吗？", boundary + 1_000L, boundary + 2_000L,
                 new BigDecimal("0.90"));
 
-        SessionEvent secondFollowUp = awaitEventAfter(
-                id, "student.follow_up", firstFollowUp.seq());
-        assertThat(secondFollowUp.payload().get("answer_id"))
-                .isEqualTo(firstFollowUp.payload().get("answer_id"));
-        // The dialogue is still open between round 1 and round 2: no dialogue.ended may appear
-        // in that window (the second follow-up itself proves the events up to its seq are
-        // persisted, so this assertion is not vacuous).
-        assertThat(eventStore.after(id, firstFollowUp.seq(), 200).stream()
-                .filter(event -> event.seq() < secondFollowUp.seq())
+        SessionEvent secondAnswer = awaitEventAfter(
+                id, "student.answer", firstAnswer.seq());
+        assertThat(String.valueOf(secondAnswer.payload().get("turn"))).isEqualTo("2");
+        assertThat(String.valueOf(secondAnswer.payload().get("dialogue_id")))
+                .isEqualTo(String.valueOf(dialogueStarted.payload().get("dialogue_id")));
+        assertThat(eventStore.after(id, firstAnswer.seq(), 200).stream()
+                .filter(event -> event.seq() < secondAnswer.seq())
                 .toList())
+                .anySatisfy(event -> {
+                    assertThat(event.type()).isEqualTo("teacher.reply");
+                    assertThat(String.valueOf(event.payload().get("intent")))
+                            .isEqualTo("ask_class");
+                })
                 .noneMatch(event -> "dialogue.ended".equals(event.type()));
         assertThat(textStore.bySession(id, "teacher")).hasSize(1);
 
-        mutableRandom.set(0.99); // the next follow-up roll loses
-        long boundary2 = secondFollowUp.atMs();
+        long boundary2 = secondAnswer.atMs();
         asr.emitFinal("好，请坐。", boundary2 + 1_000L, boundary2 + 2_000L,
                 new BigDecimal("0.90"));
 
-        SessionEvent ended = awaitEventAfter(id, "dialogue.ended", secondFollowUp.seq());
-        assertThat(String.valueOf(ended.payload().get("reason"))).isEqualTo("no_follow_up");
-        SessionEvent waitingHands = awaitEventAfter(
+        SessionEvent ended = awaitEventAfter(id, "dialogue.ended", secondAnswer.seq());
+        assertThat(String.valueOf(ended.payload().get("reason"))).isEqualTo("sit_down");
+        assertThat(String.valueOf(ended.payload().get("rounds"))).isEqualTo("2");
+        SessionEvent lecturing = awaitEventAfter(
                 id, "classroom.state_changed", ended.seq());
-        assertThat(String.valueOf(waitingHands.payload().get("to"))).isEqualTo("qa");
-        assertThat(String.valueOf(waitingHands.payload().get("qa_phase")))
-                .isEqualTo("waiting_hands");
-        assertThat(String.valueOf(waitingHands.payload().get("trigger")))
-                .isEqualTo("no_follow_up");
+        assertThat(String.valueOf(lecturing.payload().get("to"))).isEqualTo("lecturing");
+        assertThat(lecturing.payload().get("qa_phase")).isNull();
+        assertThat(String.valueOf(lecturing.payload().get("trigger")))
+                .isEqualTo("sit_down");
         assertThat(eventStore.after(id, ended.seq(), 200))
                 .anySatisfy(event -> {
                     assertThat(event.type()).isEqualTo("student.state_changed");

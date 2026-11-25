@@ -10,10 +10,17 @@ import java.util.random.RandomGenerator;
 /**
  * Runtime state of one teacher-student dialogue (05A §5.5).
  *
- * <p>A dialogue starts at round 1 and may contain at most {@value #MAX_ROUNDS} rounds. A
- * follow-up is only possible while {@link #canFollowUp()} is true, and its probability is
- * {@code question_rate * 0.5}. A student can be in only one dialogue at a time; the caller keeps
- * the single {@link #studentId()} binding.
+ * <p>A dialogue starts when the teacher calls on a student, in either direction:
+ * <ul>
+ *   <li>{@link Initiator#TEACHER}: the teacher asked, the student answered, and every later
+ *       turn is driven by the teacher's follow-up questions or comments;</li>
+ *   <li>{@link Initiator#STUDENT}: the student asked a question, the teacher answered, and the
+ *       student decides whether to follow up.</li>
+ * </ul>
+ *
+ * <p>{@link Phase} records who is expected to speak next. A dialogue contains at most
+ * {@value #MAX_ROUNDS} rounds; a round is one teacher question plus one student answer (or one
+ * student question plus one teacher answer in the student-initiated direction).
  */
 public final class DialogueState {
 
@@ -23,11 +30,19 @@ public final class DialogueState {
 
     private final UUID dialogueId;
     private final UUID studentId;
+    private final Initiator initiator;
+    private Phase phase = Phase.AWAITING_TEACHER;
     private int round = 1;
+    private long awaitingSinceMs;
 
     public DialogueState(UUID dialogueId, UUID studentId) {
+        this(dialogueId, studentId, Initiator.TEACHER);
+    }
+
+    public DialogueState(UUID dialogueId, UUID studentId, Initiator initiator) {
         this.dialogueId = Objects.requireNonNull(dialogueId, "dialogueId");
         this.studentId = Objects.requireNonNull(studentId, "studentId");
+        this.initiator = Objects.requireNonNull(initiator, "initiator");
     }
 
     public UUID dialogueId() {
@@ -38,14 +53,38 @@ public final class DialogueState {
         return studentId;
     }
 
+    public Initiator initiator() {
+        return initiator;
+    }
+
+    public Phase phase() {
+        return phase;
+    }
+
+    public long awaitingSinceMs() {
+        return awaitingSinceMs;
+    }
+
     /** Current round, 1-based; the initial question/answer is round 1. */
     public int round() {
         return round;
     }
 
-    /** Whether another follow-up round is allowed; false once {@link #MAX_ROUNDS} is reached. */
+    /** Whether another round is allowed; false once {@link #MAX_ROUNDS} is reached. */
     public boolean canFollowUp() {
         return round < MAX_ROUNDS;
+    }
+
+    /** Marks the teacher as the expected next speaker. */
+    public void awaitTeacher(long atMs) {
+        this.phase = Phase.AWAITING_TEACHER;
+        this.awaitingSinceMs = atMs;
+    }
+
+    /** Marks the student as the expected next speaker. */
+    public void awaitStudent(long atMs) {
+        this.phase = Phase.AWAITING_STUDENT;
+        this.awaitingSinceMs = atMs;
     }
 
     /** Advances to the next round; illegal once {@link #canFollowUp()} is false. */
@@ -58,17 +97,49 @@ public final class DialogueState {
         round++;
     }
 
-    /** {@code p_follow_up = question_rate * 0.5} (05A §5.5). */
+    /** {@code p_follow_up = question_rate * 0.5} for student-initiated dialogues (05A §5.5). */
     public static double followUpProbability(double questionRate) {
         return questionRate * FOLLOW_UP_RATE_FACTOR;
     }
 
     /**
-     * Draws the follow-up decision for the current round. Returns {@code false} at the round
-     * limit without consuming a random draw.
+     * Draws the follow-up decision for a student-initiated dialogue. Returns {@code false} at
+     * the round limit without consuming a random draw.
      */
     public boolean shouldFollowUp(double questionRate, RandomGenerator random) {
         Objects.requireNonNull(random, "random");
         return canFollowUp() && random.nextDouble() < followUpProbability(questionRate);
+    }
+
+    /** Who opened the dialogue and therefore who drives the follow-up rounds. */
+    public enum Initiator {
+        TEACHER("teacher"),
+        STUDENT("student");
+
+        private final String wireValue;
+
+        Initiator(String wireValue) {
+            this.wireValue = wireValue;
+        }
+
+        public String wireValue() {
+            return wireValue;
+        }
+    }
+
+    /** Who is expected to speak next. */
+    public enum Phase {
+        AWAITING_TEACHER("awaiting_teacher"),
+        AWAITING_STUDENT("awaiting_student");
+
+        private final String wireValue;
+
+        Phase(String wireValue) {
+            this.wireValue = wireValue;
+        }
+
+        public String wireValue() {
+            return wireValue;
+        }
     }
 }
