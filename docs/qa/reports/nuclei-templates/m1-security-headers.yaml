@@ -1,0 +1,30 @@
+id: m1-security-headers
+
+info:
+  name: M1 认证端点 - 安全响应头检查
+  author: QA-Security
+  severity: info
+  description: 检查登录/公开端点是否缺失关键安全响应头（DAST 基线）
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/actuator/health"
+      - "{{BaseURL}}/api/v1/public/schools"
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+          - 401
+          - 403
+    extractors:
+      - type: kval
+        part: header
+        kval:
+          - Content-Type
+          - X-Content-Type-Options
+          - X-Frame-Options
+          - Strict-Transport-Security
+          - Cache-Control

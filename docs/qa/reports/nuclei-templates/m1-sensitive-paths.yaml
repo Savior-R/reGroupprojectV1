@@ -1,0 +1,31 @@
+id: m1-sensitive-paths
+
+info:
+  name: M1 敏感路径与方法暴露检查
+  author: QA-Security
+  severity: medium
+  description: 探测常见的敏感文件、调试端点、目录列表是否意外暴露
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.env"
+      - "{{BaseURL}}/.git/config"
+      - "{{BaseURL}}/actuator/env"
+      - "{{BaseURL}}/actuator/heapdump"
+      - "{{BaseURL}}/swagger-ui.html"
+      - "{{BaseURL}}/v3/api-docs"
+      - "{{BaseURL}}/h2-console/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        words:
+          - "M1_MAIL_PASSWORD"
+          - "SPRING_DATASOURCE"
+          - "root:"
+          - "H2 Console"
+        part: body
+      - type: status
+        status:
+          - 200

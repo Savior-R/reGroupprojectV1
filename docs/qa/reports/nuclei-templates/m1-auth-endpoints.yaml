@@ -1,0 +1,32 @@
+id: m1-auth-endpoints
+
+info:
+  name: M1 认证端点存在性与未授权访问基线
+  author: QA-Security
+  severity: low
+  description: 验证 M1 管理端点在无 token 时被正确拒绝（401/403），公开端点可达
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/v1/auth/me"
+      - "{{BaseURL}}/api/v1/admin/teachers"
+      - "{{BaseURL}}/api/v1/admin/schools"
+
+    matchers:
+      - type: status
+        status:
+          - 401
+          - 403
+
+  - method: POST
+    path:
+      - "{{BaseURL}}/api/v1/auth/login"
+    headers:
+      Content-Type: application/json
+    body: '{"username":"nonexistent","password":"wrong"}'
+    matchers:
+      - type: word
+        words:
+          - 'UNAUTHORIZED'
+        part: body

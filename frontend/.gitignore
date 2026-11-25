@@ -13,6 +13,11 @@ dist-ssr
 *.local
 .npm-local-cache
 
+# E2E 种子状态含真实 JWT，禁止入库（安全扫描 DS: jwt-token ×4）
+e2e/.state.json
+test-results/
+playwright-report/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

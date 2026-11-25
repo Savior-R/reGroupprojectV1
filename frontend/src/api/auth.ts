@@ -315,6 +315,20 @@ export async function createClass(
   return data
 }
 
+/** M1-F-02：编辑班级（PATCH /admin/classes/{id}，后端 AdminOrgController:69）。 */
+export async function updateClass(
+  classId: string,
+  patch: { majorId?: string; grade?: string; name?: string; active?: boolean },
+): Promise<ClassView> {
+  const body: Record<string, unknown> = {}
+  if (patch.majorId !== undefined) body.major_id = patch.majorId
+  if (patch.grade !== undefined) body.grade = patch.grade
+  if (patch.name !== undefined) body.name = patch.name
+  if (patch.active !== undefined) body.active = patch.active
+  const { data } = await authClient.patch<ClassView>(`/admin/classes/${classId}`, body)
+  return data
+}
+
 export interface TeacherRow {
   account_id: string
   username: string
