@@ -29,11 +29,19 @@ test.describe('M1-T08 账号信息只读', () => {
   test('后端不提供资料修改 / 密码修改接口（只读契约）', async ({ request }) => {
     const state = loadState()
     const headers = { Authorization: `Bearer ${state.teacher.token}` }
-    // /auth/me 只允许 GET；写方法一律 404（路由不存在）或 405
+    // /auth/me 只允许 GET。写方法被 PermissionAuthorizationManager 的 fail-closed
+    // 策略拦截（路由未在 api_permissions 注册即拒绝），在 MVC 之前返回 403；
+    // 若未来改为路由先行，则会是 404 / 405。三者都满足「不可写」这一契约。
     const put = await request.put(`${state.api}/api/v1/auth/me`, { headers, data: { username: 'hack' } })
     const patch = await request.patch(`${state.api}/api/v1/auth/me`, { headers, data: { password: 'NewPassw0rd!' } })
     for (const response of [put, patch]) {
-      expect([404, 405]).toContain(response.status())
+      expect([403, 404, 405]).toContain(response.status())
     }
+
+    // 实质校验：上述写请求不得生效，旧密码仍能登录
+    const relogin = await request.post(`${state.api}/api/v1/auth/login`, {
+      data: { username: state.teacher.username, password: state.teacher.password },
+    })
+    expect(relogin.ok()).toBeTruthy()
   })
 })
