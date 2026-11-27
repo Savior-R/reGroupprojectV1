@@ -38,6 +38,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -95,7 +96,12 @@ public class CourseApplicationServiceImpl implements CourseApplicationService {
                 majorIds,
                 command.endAt(),
                 now);
-        courseRepository.save(course);
+        try {
+            courseRepository.save(course);
+        } catch (DataIntegrityViolationException exception) {
+            // 并发建课绕过 existsNameInSchool 预检时，由唯一约束兜底转为 409。
+            throw new DomainException(ErrorCode.COURSE_NAME_TAKEN, "课程名称在本校已存在");
+        }
         return toDetail(user, course, now);
     }
 
@@ -103,7 +109,7 @@ public class CourseApplicationServiceImpl implements CourseApplicationService {
     @Transactional
     public CourseDetailView update(CurrentUser user, CourseId courseId, UpdateCourseCommand command) {
         Instant now = clock.now();
-        Course course = loadCourse(courseId);
+        Course course = loadCourseForUpdate(courseId);
         CoursePolicy.requireManageRight(user, course);
         CoursePolicy.requireEditable(course, now);
 
@@ -117,7 +123,11 @@ public class CourseApplicationServiceImpl implements CourseApplicationService {
         if (command.endAt().present()) {
             course.changeEndAt(command.endAt().value(), now);
         }
-        courseRepository.save(course);
+        try {
+            courseRepository.save(course);
+        } catch (DataIntegrityViolationException exception) {
+            throw new DomainException(ErrorCode.COURSE_NAME_TAKEN, "课程名称在本校已存在");
+        }
         return toDetail(user, course, now);
     }
 
@@ -125,7 +135,7 @@ public class CourseApplicationServiceImpl implements CourseApplicationService {
     @Transactional
     public void archive(CurrentUser user, CourseId courseId) {
         CoursePolicy.requireAdmin(user);
-        Course course = loadCourse(courseId);
+        Course course = loadCourseForUpdate(courseId);
         CoursePolicy.requireSameSchool(user, course.schoolId());
         if (course.isArchived()) {
             return;
@@ -139,7 +149,7 @@ public class CourseApplicationServiceImpl implements CourseApplicationService {
     @Transactional
     public void restore(CurrentUser user, CourseId courseId) {
         CoursePolicy.requireAdmin(user);
-        Course course = loadCourse(courseId);
+        Course course = loadCourseForUpdate(courseId);
         CoursePolicy.requireSameSchool(user, course.schoolId());
         if (!course.isArchived()) {
             return;
@@ -241,6 +251,12 @@ public class CourseApplicationServiceImpl implements CourseApplicationService {
 
     private Course loadCourse(CourseId courseId) {
         return courseRepository.findById(courseId)
+                .orElseThrow(() -> new DomainException(ErrorCode.RESOURCE_NOT_FOUND, "课程不存在"));
+    }
+
+    /** 状态变更（编辑 / 归档 / 恢复）需要课程行锁，避免并发丢失更新。 */
+    private Course loadCourseForUpdate(CourseId courseId) {
+        return courseRepository.findByIdForUpdate(courseId)
                 .orElseThrow(() -> new DomainException(ErrorCode.RESOURCE_NOT_FOUND, "课程不存在"));
     }
 

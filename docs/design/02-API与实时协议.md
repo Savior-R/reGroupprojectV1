@@ -1,7 +1,7 @@
 # 02 API 与实时协议
 
 > 上位文档：[需求规格说明书](../requirements/需求规格说明书.md)、[00 总体设计](00-总体设计.md)、[01 数据模型与迁移](01-数据模型与迁移.md)
-> 版本：V1.9（契约对齐）　状态：待评审　更新日期：2026-11-18
+> 版本：V2.0（对话与教师意图事件）　状态：第一版契约冻结　更新日期：2026-11-21
 > 范围：M1—M7；M8 暂缓
 > 风格：REST / JSON + WebSocket + Redis Streams；Java 提供公开 API，Python 只提供内部 AI API
 
@@ -540,8 +540,8 @@ WS /ws/v1/sessions/{session_id}/perception?ticket=...  # 感知通道：二进�
 | `teacher.call_on` | `{student_id, hand_raise_id}` | 点名 |
 | `teacher.mark_answer` | `{answer_id, correctness}` | 对 / 错 / 不完整 |
 | `teacher.manage_student` | `{student_id, action}` | 提醒 / 管理纪律 |
-| `teacher.end_dialogue` | `{dialogue_id}` | 结束对话并结束问答 |
-| `teacher.end_qa` | `{}` | 结束问答，回到讲解 |
+| `teacher.end_dialogue` | `{dialogue_id}` | 只结束当前对话，回 `waiting_hands`；不结束整个问答 |
+| `teacher.end_qa` | `{}` | 结束整个问答，回到讲解 |
 | `teacher.end_session` | `{}` | 结束试讲 |
 | `interview.next_question` | `{}` | 下一题 |
 | `interview.end` | `{}` | 结束面试 |
@@ -571,15 +571,18 @@ WS /ws/v1/sessions/{session_id}/perception?ticket=...  # 感知通道：二进�
 | `classroom.qa_ended` | `{reason}` | 问答结束 |
 | `classroom.discipline_level_changed` | `{from, to, distracted_count, whispering_count, noisy_ratio, avg_attention, duration_ms, reason}` | 课堂纪律聚合；record-only |
 | `student.state_changed` | `{student_id, from, to, reason}` | 单个学生行为状态变化 |
-| `student.hand_raised` | `{student_id, hand_raise_id, question_preview?}` | 举手；`question_preview` 只作 UI，权威文本用 `text_id` |
+| `student.hand_raised` | `{student_id, hand_raise_id, reason?, question_preview?}` | 举手；`reason=prompted`（本轮）/ `spontaneous`（A 阶段预留）；`question_preview` 只作 UI，权威文本用 `text_id` |
 | `student.hand_lowered` | `{student_id, hand_raise_id, reason}` | 放下手 |
-| `student.question` | `{student_id, text_id, question_id}` | 学生提问；全文在 `session_texts` |
-| `student.answer` | `{student_id, answer_id, text_id, quality}` | 学生回答；全文在 `session_texts` |
-| `student.follow_up` | `{student_id, answer_id, text_id}` | 追问；全文在 `session_texts` |
+| `student.question` | `{student_id, text_id, question_id, dialogue_id?, turn?}` | 学生提问；全文在 `session_texts` |
+| `student.answer` | `{student_id, answer_id, text_id, quality, dialogue_id?, turn?}` | 学生回答；全文在 `session_texts` |
+| `student.follow_up` | `{student_id, answer_id, text_id, dialogue_id?, turn?}` | 追问；全文在 `session_texts` |
 | `teacher.called_on` | `{student_id, hand_raise_id?}` | 点名 |
-| `teacher.marked` | `{answer_id, correctness}` | 对 / 错 / 不完整 |
+| `teacher.marked` | `{answer_id, correctness}` | 对 / 错 / 不完整；仅教师手动写 |
 | `teacher.management_action` | `{student_id, action}` | 提醒 / 管理 |
-| `dialogue.started` / `dialogue.ended` | `{dialogue_id, student_id, reason?}` | 对话 |
+| `teacher.reply` | `{dialogue_id, turn, text_id, intent, confidence, student_name?, polarity?}` | 教师回合；评论 / 追问 / 坐下 / 结束问答前写入；全文在 `session_texts` |
+| `teacher.intent_classified` | `{text_id, primary_intent, confidence, intents:[{label, confidence}], student_name?, polarity?, model_version}` | 教师意图分类结果；record-only，不代表动作已执行 |
+| `dialogue.started` | `{dialogue_id, student_id, initiator}` | 对话开始；`initiator=teacher` / `student` |
+| `dialogue.ended` | `{dialogue_id, student_id, reason, rounds}` | 对话结束；`reason` 含 `teacher` / `sit_down` / `no_follow_up` / `max_rounds` / `qa_ended` / `qa_restarted` / `session_ended` |
 | `discipline.event` | `{level, student_ids, event_type}` | 走神 / 说话 / 吵闹；与 05A 对齐 |
 | `interview.question_shown` | `{question_id, order, total, text}` | 面试题目 |
 | `interview.answer_started` / `interview.answer_ended` | `{question_id, answer_id}` | 回答时间线 |
@@ -592,6 +595,11 @@ WS /ws/v1/sessions/{session_id}/perception?ticket=...  # 感知通道：二进�
 | `server.ack` | `{command_id, ok}` | 命令确认 |
 | `error` | `{code, message, command_id}` | 错误 |
 | `ping` | `{server_time_ms}` | 心跳 |
+
+- `teacher.intent_classified` 是 record-only 数据事件：每条课堂教师 ASR final 都会写，表示分类器判断的意图；它不代表动作已执行。
+- `teacher.reply` 只在教师话语实际构成对话回合或结束动作时写；评论、追问、坐下、结束问答都先写 `teacher.reply`，再由 `dialogue.*` / `classroom.*` 表达状态变化。
+- `dialogue.started.initiator`、`dialogue.ended.rounds`、`student.*.dialogue_id/turn` 为增量字段；旧客户端可忽略，不影响既有字段。
+- `teacher.end_dialogue` 只结束当前对话回 `waiting_hands`；语音「坐下 / 请坐」走 `dialogue.ended(sit_down)` + `classroom.qa_ended(sit_down)` → `lecturing`，两者语义不同。
 
 ### 6.5 心跳、时钟与关闭
 

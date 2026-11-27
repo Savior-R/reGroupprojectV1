@@ -1,0 +1,5 @@
+# Training-only dependencies. They are intentionally NOT added to ai/pyproject.toml
+# or the production AI service image.
+numpy>=2.0
+scikit-learn>=1.5
+psycopg[binary]>=3.2

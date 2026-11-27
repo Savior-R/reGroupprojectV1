@@ -20,11 +20,11 @@ class GlobalExceptionHandlerTest {
         request.addHeader("X-Trace-Id", "trace-123");
 
         ResponseEntity<ApiErrorResponse> response = handler.handleDomain(
-                new DomainException(ErrorCode.TASK_CLOSED, "任务不是草稿"), request);
+                new DomainException(ErrorCode.TASK_CLOSED, "任务已关闭"), request);
 
         assertThat(response.getStatusCode().value()).isEqualTo(422);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().code()).isEqualTo("TASK_NOT_DRAFT");
+        assertThat(response.getBody().code()).isEqualTo("TASK_CLOSED");
         assertThat(response.getBody().traceId()).isEqualTo("trace-123");
     }
 

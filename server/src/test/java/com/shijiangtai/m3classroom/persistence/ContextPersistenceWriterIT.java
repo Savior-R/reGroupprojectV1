@@ -96,8 +96,8 @@ class ContextPersistenceWriterIT extends PostgresIntegrationTest {
         jdbc.update("""
                 INSERT INTO m3_classroom.tasks
                     (id, course_id, mode, topic, duration_recommended_seconds,
-                     duration_max_seconds, created_by)
-                VALUES (?, ?, 'free', '持久化测试', 60, 120, ?)
+                     duration_max_seconds, created_by, status)
+                VALUES (?, ?, 'free', '持久化测试', 60, 120, ?, 'published')
                 """, taskId.value(), TestFixtures.COURSE_ID, TestFixtures.TEACHER_ID);
         SessionId sessionId = new SessionId(UUID.randomUUID());
         jdbc.update("""

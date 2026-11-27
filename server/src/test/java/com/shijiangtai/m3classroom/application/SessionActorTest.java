@@ -321,7 +321,7 @@ class SessionActorTest {
     }
 
     @Test
-    void callOnTransitionsToCalledOnAndAnsweringThenFocused() {
+    void callOnTransitionsToCalledOnAnsweringThenDialogue() {
         ActorFixture fixture = freeFixture(FakeContentClient::new);
         fixture.actor().handle(ready("ready-1"));
         fixture.actor().handle(new SessionCommand.StartSession("start-1"));
@@ -338,18 +338,18 @@ class SessionActorTest {
                 .filter(event -> studentId.equals(event.payload().get("student_id")))
                 .toList();
         assertThat(transitions).extracting(event -> event.payload().get("to"))
-                .containsExactly("hand_raised", "called_on", "answering", "focused");
+                .containsExactly("hand_raised", "called_on", "answering", "dialogue");
         assertThat(transitions).extracting(event -> event.payload().get("reason"))
                 .containsExactly(
-                        "hand_raised", "called_on", "answer_started", "answer_finished");
+                        "hand_raised", "called_on", "answer_started", "follow_up");
         assertThat(fixture.actor().snapshot().virtualStudents())
                 .filteredOn(view -> studentId.equals(view.get("virtual_student_id")))
                 .singleElement()
-                .satisfies(view -> assertThat(view.get("state")).isEqualTo("focused"));
+                .satisfies(view -> assertThat(view.get("state")).isEqualTo("dialogue"));
     }
 
     @Test
-    void studentQuestionCallOnKeepsCalledOnState() {
+    void studentQuestionCallOnEntersDialogue() {
         ActorFixture fixture = freeFixture(FakeContentClient::new);
         fixture.actor().handle(ready("ready-1"));
         fixture.actor().handle(new SessionCommand.StartSession("start-1"));
@@ -365,10 +365,12 @@ class SessionActorTest {
         assertThat(fixture.actor().snapshot().virtualStudents())
                 .filteredOn(view -> studentId.equals(view.get("virtual_student_id")))
                 .singleElement()
-                .satisfies(view -> assertThat(view.get("state")).isEqualTo("called_on"));
+                .satisfies(view -> assertThat(view.get("state")).isEqualTo("dialogue"));
         assertThat(eventsOfType(fixture, "student.question")).hasSize(1);
         assertThat(eventsOfType(fixture, "student.question").get(0).payload())
                 .containsKey("question_id");
+        assertThat(eventsOfType(fixture, "student.question").get(0).payload().get("turn"))
+                .isEqualTo(1);
     }
 
     @Test
@@ -493,7 +495,7 @@ class SessionActorTest {
     }
 
     @Test
-    void answerFinishesAndReturnsToWaitingHands() {
+    void callOnLeavesDialogueWaitingForTeacher() {
         ActorFixture fixture = freeFixture(FakeContentClient::new);
         fixture.actor().handle(ready("ready-1"));
         fixture.actor().handle(new SessionCommand.StartSession("start-1"));
@@ -506,10 +508,11 @@ class SessionActorTest {
                 (UUID) raise.payload().get("hand_raise_id")));
 
         assertThat(result.ok()).isTrue();
-        assertThat(fixture.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);
+        assertThat(fixture.classroom().qaPhase()).isEqualTo(QaPhase.DIALOGUE);
         List<SessionEvent> stateChanges = eventsOfType(fixture, "classroom.state_changed");
         assertThat(stateChanges.get(stateChanges.size() - 1).payload().get("trigger"))
-                .isEqualTo("answer_finished");
+                .isEqualTo("call_on");
+        assertThat(eventsOfType(fixture, "student.follow_up")).isEmpty();
     }
 
     @Test
@@ -524,12 +527,14 @@ class SessionActorTest {
         fixture.actor().handle(new SessionCommand.CallOn(
                 "call-1", studentId, (UUID) raise.payload().get("hand_raise_id")));
 
-        // Put the domain back into student_answering to exercise the explicit-finish branch.
+        // Finish the active dialogue first, then put the domain back into student_answering
+        // to exercise the legacy explicit-finish branch.
+        fixture.actor().handle(new SessionCommand.EndDialogue("end-dialogue", null));
         fixture.classroom().callOn(studentId, NOW);
         assertThat(fixture.classroom().qaPhase()).isEqualTo(QaPhase.STUDENT_ANSWERING);
 
         var result = fixture.actor().handle(
-                new SessionCommand.EndDialogue("end-1", null));
+                new SessionCommand.EndDialogue("end-answer", null));
 
         assertThat(result.ok()).isTrue();
         assertThat(fixture.classroom().qaPhase()).isEqualTo(QaPhase.WAITING_HANDS);

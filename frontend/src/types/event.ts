@@ -28,6 +28,8 @@ export type ServerEventType =
   | 'teacher.called_on'
   | 'teacher.marked'
   | 'teacher.management_action'
+  | 'teacher.reply'
+  | 'teacher.intent_classified'
   | 'dialogue.started'
   | 'dialogue.ended'
   | 'discipline.event'

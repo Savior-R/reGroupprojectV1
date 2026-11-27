@@ -34,6 +34,8 @@ const TYPE_LABELS: Record<string, string> = {
   'teacher.called_on': '点名',
   'teacher.marked': '评价回答',
   'teacher.management_action': '课堂管理',
+  'teacher.reply': '教师回应',
+  'teacher.intent_classified': '意图识别',
   'classroom.question_asked': '提问',
   'classroom.qa_ended': '问答结束',
   'student.hand_raised': '举手',

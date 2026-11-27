@@ -1,5 +1,10 @@
 # M3B Multi-turn Dialogue (Teacher-Voice-Driven) Implementation Plan
 
+> **Status (2026-11-21): superseded.** The first version now starts a dialogue at call-on and
+> separates teacher-initiated (teacher follow-up driven) from student-initiated (student
+> follow-up driven) dialogues; see `docs/design/05A-M3-课堂状态机与WebSocket.md` V1.2. Keep this
+> plan for historical reference only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Wire the existing `DialogueState` into `SessionActor`: student answers roll `question_rate × 0.5` for a follow-up, teacher ASR finals drive up to 3 rounds, and every exit emits the correct `dialogue.*` events before the classroom/session transition.

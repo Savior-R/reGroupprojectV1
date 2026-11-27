@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
@@ -43,6 +43,7 @@ const total = ref(0)
 const page = ref(1)
 const size = ref(20)
 const includeHistory = ref(false)
+const keyword = ref('')
 const classId = ref('')
 const studentAccountId = ref('')
 const loading = ref(false)
@@ -66,6 +67,19 @@ const STATUS_LABELS: Record<CourseStudentView['status'], string> = {
 function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString() : '—'
 }
+
+/** 当前页内的关键字筛选：匹配姓名 / 账号 ID / 班级名。 */
+const displayedStudents = computed(() => {
+  const text = keyword.value.trim().toLowerCase()
+  if (!text) {
+    return students.value
+  }
+  return students.value.filter((student) =>
+    [student.username, student.account_id, student.class_name]
+      .filter(Boolean)
+      .some((field) => String(field).toLowerCase().includes(text)),
+  )
+})
 
 async function load(): Promise<void> {
   loading.value = true
@@ -198,6 +212,12 @@ onMounted(() => {
         <ElButton @click="addByClass">按班级加人</ElButton>
         <ElInput v-model="studentAccountId" placeholder="学生账号 ID（UUID）" class="course-students__input" />
         <ElButton @click="addByAccount">按账号加人</ElButton>
+        <ElInput
+          v-model="keyword"
+          clearable
+          placeholder="按姓名 / 账号 / 班级筛选"
+          class="course-students__input"
+        />
         <ElSwitch v-model="includeHistory" active-text="含历史成员" @change="load" />
       </div>
 
@@ -216,7 +236,7 @@ onMounted(() => {
       <ElAlert v-if="errorMessage" type="error" :closable="false" show-icon :title="errorMessage" />
       <p v-else-if="loading">加载中…</p>
 
-      <ElTable v-else :data="students" row-key="account_id" stripe>
+      <ElTable v-else :data="displayedStudents" row-key="account_id" stripe>
         <ElTableColumn prop="username" label="学生" min-width="140">
           <template #default="{ row }">{{ row.username || row.account_id }}</template>
         </ElTableColumn>

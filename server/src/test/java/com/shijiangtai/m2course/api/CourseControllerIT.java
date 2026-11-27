@@ -1,6 +1,7 @@
 package com.shijiangtai.m2course.api;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -352,6 +353,37 @@ class CourseControllerIT extends M2PostgresIT {
                 new MapSqlParameterSource()
                         .addValue("status", active ? "active" : "inactive")
                         .addValue("id", M2_CLASS));
+    }
+
+    @Test
+    void patchCannotChangeSchoolOrMajors() throws Exception {
+        String courseId = createCourseViaApi("M2 不可改字段", MAJOR);
+
+        // 契约：学校与专业范围创建后不可修改，PATCH 只接受 name / end_at。
+        mockMvc.perform(as(patch("/api/v1/courses/{id}", courseId), TEACHER, SCHOOL, "TEACHER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"school_id\": \"" + OTHER_SCHOOL + "\", \"major_ids\": [\""
+                                + MAJOR2 + "\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.school_id").value(SCHOOL.toString()))
+                .andExpect(jsonPath("$.majors[0].id").value(MAJOR.toString()))
+                .andExpect(jsonPath("$.majors", hasSize(1)));
+    }
+
+    @Test
+    void teacherListHidesArchivedCourseByDefault() throws Exception {
+        String courseId = createCourseViaApi("M2 教师列表归档", MAJOR);
+
+        mockMvc.perform(as(post("/api/v1/courses/{id}/archive", courseId), ADMIN, SCHOOL, "ADMIN"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(as(get("/api/v1/courses"), TEACHER, SCHOOL, "TEACHER").param("scope", "mine"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items.size()", is(0)));
+
+        mockMvc.perform(as(get("/api/v1/courses"), ADMIN, SCHOOL, "ADMIN").param("status", "archived"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].name").value("M2 教师列表归档"));
     }
 
     @Test

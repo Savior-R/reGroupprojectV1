@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -105,8 +106,13 @@ public class CourseMembershipServiceImpl implements CourseMembershipService {
         if (!course.coversAnyMajor(teacherMajors)) {
             throw new DomainException(ErrorCode.COURSE_MAJOR_MISMATCH, "该教师专业与课程专业范围无交集");
         }
-        course.addTeacher(teacherId, now);
-        courseRepository.save(course);
+        try {
+            course.addTeacher(teacherId, now);
+            courseRepository.save(course);
+        } catch (DataIntegrityViolationException exception) {
+            // 并发加入绕过预检时由部分唯一索引兜底转为 409。
+            throw new DomainException(ErrorCode.DUPLICATE_RESOURCE, "该教师已在课程老师组");
+        }
     }
 
     @Override
@@ -209,7 +215,11 @@ public class CourseMembershipServiceImpl implements CourseMembershipService {
             throw new DomainException(ErrorCode.ALREADY_JOINED, "该学生已在课程中");
         }
         JoinMethod method = user.type() == AccountType.ADMIN ? JoinMethod.ADMIN : JoinMethod.ACCOUNT;
-        memberRepository.addStudent(courseId, studentId, method, now);
+        try {
+            memberRepository.addStudent(courseId, studentId, method, now);
+        } catch (DataIntegrityViolationException exception) {
+            throw new DomainException(ErrorCode.ALREADY_JOINED, "该学生已在课程中");
+        }
     }
 
     @Override
@@ -242,7 +252,12 @@ public class CourseMembershipServiceImpl implements CourseMembershipService {
         if (memberRepository.hasActiveStudent(courseId, user.accountId())) {
             throw new DomainException(ErrorCode.ALREADY_JOINED, "已加入该课程");
         }
-        memberRepository.addStudent(courseId, user.accountId(), JoinMethod.SELF, now);
+        try {
+            memberRepository.addStudent(courseId, user.accountId(), JoinMethod.SELF, now);
+        } catch (DataIntegrityViolationException exception) {
+            // 并发加入绕过预检时由部分唯一索引兜底转为 409。
+            throw new DomainException(ErrorCode.ALREADY_JOINED, "已加入该课程");
+        }
     }
 
     @Override
