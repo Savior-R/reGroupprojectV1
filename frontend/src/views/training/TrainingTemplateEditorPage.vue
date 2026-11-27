@@ -20,10 +20,12 @@ import { ApiError } from '../../types/api'
 import { listCourses } from '../../api/courses'
 import type { CourseCardView } from '../../api/courses'
 import {
+  copyTemplateFromPublication,
   createMyTemplate,
   deleteMyTemplate,
   deleteTrainingMaterial,
   getMyTemplate,
+  getStudentTemplate,
   listPublications,
   publishTemplate,
   unpublishPublication,
@@ -33,6 +35,7 @@ import {
 import {
   dimensionLabel,
   formatDateTime,
+  formatDuration,
   formatSeconds,
   levelLabel,
   sourceLabel,
@@ -46,6 +49,7 @@ import type {
   TrainingMaterialRef,
   TrainingMaterialView,
   TrainingPublicationView,
+  StudentTemplateDetail,
   TrainingTemplateDetail,
 } from './types'
 
@@ -59,9 +63,17 @@ const DIMENSION_KEYS = ['content', 'expression', 'interaction', 'board', 'time']
 const isTeacher = computed(() => route.path.startsWith('/teacher'))
 const templateId = computed(() => String(route.params.templateId ?? ''))
 const isNew = computed(() => templateId.value === '')
+const copyFromPublicationId = computed(() => {
+  if (!isNew.value || route.query.source !== 'copy') {
+    return ''
+  }
+  return typeof route.query.from === 'string' ? route.query.from : ''
+})
+const isCopyMode = computed(() => copyFromPublicationId.value !== '')
 
 const template = ref<TrainingTemplateDetail | null>(null)
-const loading = ref(!isNew.value)
+const copySource = ref<StudentTemplateDetail | null>(null)
+const loading = ref(!isNew.value || isCopyMode.value)
 const saving = ref(false)
 const uploading = ref(false)
 const errorMessage = ref('')
@@ -143,6 +155,23 @@ function fillForm(detail: TrainingTemplateDetail): void {
 }
 
 async function load(): Promise<void> {
+  if (isCopyMode.value) {
+    loading.value = true
+    errorMessage.value = ''
+    try {
+      const source = await getStudentTemplate(copyFromPublicationId.value)
+      copySource.value = source
+      name.value = `${source.name}（我的副本）`
+      level.value = source.training_level
+      topic.value = source.topic
+      students.value = fromWireStudents(source.virtual_students)
+    } catch (error) {
+      errorMessage.value = errorText(error, '教师发布模板加载失败，请重试。')
+    } finally {
+      loading.value = false
+    }
+    return
+  }
   if (isNew.value) {
     return
   }
@@ -230,6 +259,12 @@ function validate(): string {
   if (!name.value.trim()) {
     return '模板名称必填，且不超过 100 字。'
   }
+  if (name.value.trim().length > 100) {
+    return '模板名称不能超过 100 字。'
+  }
+  if (isCopyMode.value) {
+    return ''
+  }
   if (!configLocked.value) {
     if (!topic.value.trim()) {
       return '课题不能为空，且不超过 100 字。'
@@ -261,6 +296,19 @@ async function save(): Promise<void> {
   saving.value = true
   errorMessage.value = ''
   try {
+    if (isCopyMode.value) {
+      const copied = await copyTemplateFromPublication(
+        copyFromPublicationId.value,
+        name.value.trim(),
+      )
+      ElMessage.success('模板已复制，可继续调整配置')
+      await router.replace({
+        name: 'student-training-template-edit',
+        params: { templateId: copied.template_id },
+      })
+      await load()
+      return
+    }
     if (isNew.value) {
       const created = await createMyTemplate({
         owner_role: isTeacher.value ? 'teacher' : 'student',
@@ -417,7 +465,7 @@ onMounted(load)
           删除模板
         </ElButton>
         <ElButton type="primary" :loading="saving" :disabled="loading" @click="save">
-          {{ isNew ? '创建模板' : '保存模板' }}
+          {{ isCopyMode ? '复制模板' : isNew ? '创建模板' : '保存模板' }}
         </ElButton>
       </div>
     </div>
@@ -433,7 +481,38 @@ onMounted(load)
     <p v-if="loading" class="state">加载中…</p>
 
     <template v-else>
-      <ElCard shadow="never">
+      <ElCard v-if="isCopyMode" shadow="never">
+        <template #header>
+          <div class="card-head">
+            <h1>复制训练模板</h1>
+            <ElTag type="info" effect="plain">学生模板</ElTag>
+          </div>
+        </template>
+
+        <ElAlert type="info" :closable="false" show-icon>
+          复制会带上教师模板的课题、档位、时长、权重、虚拟学生与参考材料；保存后可继续调整全部配置。
+        </ElAlert>
+
+        <div class="form-grid copy-form">
+          <label class="field field--wide">
+            <span>模板名称（≤ 100 字）</span>
+            <ElInput v-model="name" maxlength="100" show-word-limit />
+          </label>
+        </div>
+
+        <div v-if="copySource" class="copy-source">
+          <p><strong>来源：</strong>{{ copySource.course_name }} · {{ copySource.name }}</p>
+          <p>
+            {{ levelLabel(copySource.training_level) }} ·
+            {{ formatDuration(copySource.recommended_duration_ms) }}（最高
+            {{ formatDuration(copySource.max_duration_ms) }}） ·
+            {{ copySource.virtual_students.length }} 名学生
+          </p>
+          <p>课题：{{ copySource.topic }}</p>
+        </div>
+      </ElCard>
+
+      <ElCard v-else shadow="never">
         <template #header>
           <div class="card-head">
             <h1>{{ isNew ? '新建训练模板' : name }}</h1>
@@ -555,7 +634,7 @@ onMounted(load)
         </div>
       </ElCard>
 
-      <ElCard shadow="never">
+      <ElCard v-if="!isCopyMode" shadow="never">
         <template #header>
           <h2>虚拟学生（1—30 人）</h2>
         </template>
@@ -693,6 +772,28 @@ onMounted(load)
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+
+.copy-form {
+  margin-top: 16px;
+}
+
+.copy-source {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--m1-border);
+  border-radius: 10px;
+  background: var(--m1-bg-hover);
+}
+
+.copy-source p {
+  margin: 0 0 6px;
+  color: var(--m1-text-secondary);
+  font-size: 13px;
+}
+
+.copy-source p:last-child {
+  margin-bottom: 0;
 }
 
 .field {

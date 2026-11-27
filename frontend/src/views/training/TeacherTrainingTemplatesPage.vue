@@ -5,6 +5,9 @@ import {
   ElAlert,
   ElButton,
   ElCard,
+  ElCheckbox,
+  ElCheckboxGroup,
+  ElDrawer,
   ElEmpty,
   ElMessage,
   ElMessageBox,
@@ -15,7 +18,14 @@ import {
   ElTag,
 } from 'element-plus'
 import { ApiError } from '../../types/api'
-import { deleteMyTemplate, listMyTemplates } from './api'
+import { listCourses } from '../../api/courses'
+import type { CourseCardView } from '../../api/courses'
+import {
+  deleteMyTemplate,
+  listMyTemplates,
+  listPublications,
+  publishTemplate,
+} from './api'
 import {
   formatDateTime,
   formatSeconds,
@@ -33,7 +43,23 @@ const loading = ref(true)
 const errorMessage = ref('')
 const levelFilter = ref<TrainingLevel | ''>('')
 
+const publishVisible = ref(false)
+const publishingTemplate = ref<TrainingTemplateSummary | null>(null)
+const publishCourses = ref<CourseCardView[]>([])
+const publishedCourseIds = ref<Set<string>>(new Set())
+const selectedCourseIds = ref<string[]>([])
+const publishLoading = ref(false)
+const publishing = ref(false)
+const publishError = ref('')
+
 const activeCount = computed(() => templates.value.filter((item) => item.status === 'active').length)
+const availableCourses = computed(() =>
+  publishCourses.value.filter(
+    (course) =>
+      course.status === 'active' && !course.ended && course.can_manage
+        && !publishedCourseIds.value.has(course.id),
+  ),
+)
 
 function errorText(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback
@@ -86,6 +112,57 @@ async function removeTemplate(template: TrainingTemplateSummary): Promise<void> 
   } catch (error) {
     errorMessage.value = errorText(error, '删除失败，请重试。')
   }
+}
+
+async function openPublish(template: TrainingTemplateSummary): Promise<void> {
+  publishingTemplate.value = template
+  publishVisible.value = true
+  publishError.value = ''
+  selectedCourseIds.value = []
+  publishLoading.value = true
+  try {
+    const [coursePage, publicationPage] = await Promise.all([
+      listCourses({ scope: 'mine', status: 'active', page: 1, size: 100 }),
+      listPublications({ templateId: template.template_id, status: 'published', size: 100 }),
+    ])
+    publishCourses.value = coursePage.items
+    publishedCourseIds.value = new Set(
+      publicationPage.items.map((publication) => publication.course_id),
+    )
+  } catch (error) {
+    publishError.value = errorText(error, '课程列表加载失败。')
+  } finally {
+    publishLoading.value = false
+  }
+}
+
+async function publishSelected(): Promise<void> {
+  const template = publishingTemplate.value
+  if (!template) {
+    return
+  }
+  if (selectedCourseIds.value.length === 0) {
+    publishError.value = '请选择至少一个目标课程。'
+    return
+  }
+  publishing.value = true
+  publishError.value = ''
+  const failed: string[] = []
+  for (const courseId of selectedCourseIds.value) {
+    try {
+      await publishTemplate(template.template_id, courseId)
+    } catch (error) {
+      failed.push(errorText(error, '发布失败'))
+    }
+  }
+  publishing.value = false
+  if (failed.length > 0) {
+    publishError.value = failed.join('；')
+    return
+  }
+  ElMessage.success('模板已发布')
+  publishVisible.value = false
+  await load()
 }
 
 onMounted(load)
@@ -166,10 +243,17 @@ onMounted(load)
             <span class="cell-sub">{{ formatDateTime(row.updated_at) }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn label="操作" width="160" fixed="right">
+        <ElTableColumn label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <ElButton size="small" text @click="openDetail(row as TrainingTemplateSummary)">
               查看 / 编辑
+            </ElButton>
+            <ElButton
+              size="small"
+              text
+              @click="openPublish(row as TrainingTemplateSummary)"
+            >
+              发布
             </ElButton>
             <ElButton
               size="small"
@@ -183,6 +267,48 @@ onMounted(load)
         </ElTableColumn>
       </ElTable>
     </ElCard>
+
+    <ElDrawer
+      v-model="publishVisible"
+      :title="`发布「${publishingTemplate?.name ?? ''}」`"
+      size="420px"
+    >
+      <p class="drawer-hint">
+        {{ levelLabel(publishingTemplate?.training_level ?? 'progressive') }} ·
+        {{ publishingTemplate?.virtual_student_count ?? 0 }} 名学生；发布使用当前配置快照。
+      </p>
+      <ElAlert v-if="publishError" type="error" :closable="false" show-icon>
+        <template #title>{{ publishError }}</template>
+      </ElAlert>
+      <p v-if="publishLoading" class="state">课程加载中…</p>
+      <ElEmpty
+        v-else-if="availableCourses.length === 0"
+        description="没有可发布的目标课程；已发布的课程不会重复出现。"
+        :image-size="72"
+      />
+      <ElCheckboxGroup v-else v-model="selectedCourseIds" class="course-options">
+        <label v-for="course in availableCourses" :key="course.id" class="course-option">
+          <ElCheckbox :value="course.id">
+            <span class="course-option__name">{{ course.name }}</span>
+            <span class="course-option__meta">{{ course.student_count }} 名学生</span>
+          </ElCheckbox>
+        </label>
+      </ElCheckboxGroup>
+      <p class="drawer-hint">
+        发布后学生可在训练首页看到并复制；模板配置锁定，需先下架再编辑。目标课程归档、你被移出课程或模板被删除时，发布会自动下架。
+      </p>
+      <template #footer>
+        <ElButton @click="publishVisible = false">取消</ElButton>
+        <ElButton
+          type="primary"
+          :loading="publishing"
+          :disabled="publishLoading || availableCourses.length === 0"
+          @click="publishSelected"
+        >
+          发布
+        </ElButton>
+      </template>
+    </ElDrawer>
   </div>
 </template>
 
@@ -236,5 +362,45 @@ onMounted(load)
   color: var(--m1-text-secondary);
   font-size: 12px;
   word-break: break-word;
+}
+
+.drawer-hint {
+  margin: 0 0 14px;
+  color: var(--m1-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.course-options {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.course-option {
+  padding: 10px 12px;
+  border: 1px solid var(--m1-border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.course-option :deep(.el-checkbox) {
+  width: 100%;
+}
+
+.course-option :deep(.el-checkbox__label) {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.course-option__name {
+  color: var(--m1-text-primary);
+}
+
+.course-option__meta {
+  color: var(--m1-text-secondary);
+  font-size: 12px;
 }
 </style>

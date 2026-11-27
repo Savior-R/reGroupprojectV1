@@ -35,6 +35,7 @@ const router = useRouter()
 
 const categories = ref<CategoryView[]>([])
 const questions = ref<QuestionView[]>([])
+const selectedQuestion = ref<QuestionView | null>(null)
 const total = ref(0)
 const page = ref(1)
 const size = ref(20)
@@ -109,11 +110,28 @@ async function loadQuestions(): Promise<void> {
     })
     questions.value = result.items
     total.value = result.total
+    const current = selectedQuestion.value
+    if (!current || !result.items.some((item) => item.question_id === current.question_id)) {
+      selectedQuestion.value = result.items[0] ?? null
+    }
   } catch (error) {
     errorMessage.value = errorText(error, '题目加载失败。')
   } finally {
     loading.value = false
   }
+}
+
+function selectQuestion(question: QuestionView): void {
+  selectedQuestion.value = question
+}
+
+function rowClassName({ row }: { row: QuestionView }): string {
+  return row.question_id === selectedQuestion.value?.question_id ? 'question-row--selected' : ''
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN')
 }
 
 function search(): void {
@@ -317,7 +335,13 @@ onMounted(async () => {
         <ElEmpty v-else-if="questions.length === 0" description="没有匹配的题目" />
 
         <template v-else>
-          <ElTable :data="questions" stripe>
+          <ElTable
+            :data="questions"
+            stripe
+            row-key="question_id"
+            :row-class-name="rowClassName"
+            @row-click="selectQuestion"
+          >
             <ElTableColumn label="题干 / 答案要点" min-width="360">
               <template #default="{ row }">
                 <p class="stem">{{ row.stem }}</p>
@@ -357,6 +381,40 @@ onMounted(async () => {
           />
         </template>
       </ElCard>
+
+      <aside class="preview-panel">
+        <template v-if="selectedQuestion">
+          <div class="preview-panel__head">
+            <strong>题目预览</strong>
+            <ElTag :type="selectedQuestion.status === 'active' ? 'success' : 'info'" effect="plain">
+              {{ selectedQuestion.status === 'active' ? '启用' : '停用' }}
+            </ElTag>
+          </div>
+          <p class="preview-panel__stem">{{ selectedQuestion.stem }}</p>
+          <div class="preview-panel__tags">
+            <ElTag effect="plain">{{ selectedQuestion.category_name }}</ElTag>
+          </div>
+          <section class="preview-section">
+            <h3>答案要点</h3>
+            <p class="preview-answer">{{ selectedQuestion.answer_points }}</p>
+            <p class="preview-note">答案要点仅教师可见，学生端不会返回。</p>
+          </section>
+          <dl class="preview-meta">
+            <div>
+              <dt>创建时间</dt>
+              <dd>{{ formatDateTime(selectedQuestion.created_at) }}</dd>
+            </div>
+            <div>
+              <dt>更新时间</dt>
+              <dd>{{ formatDateTime(selectedQuestion.updated_at) }}</dd>
+            </div>
+          </dl>
+          <ElButton class="preview-panel__edit" plain @click="openEdit(selectedQuestion)">
+            编辑题目
+          </ElButton>
+        </template>
+        <ElEmpty v-else description="选择题目查看答案要点预览" :image-size="72" />
+      </aside>
     </div>
 
     <ElDrawer v-model="drawerVisible" :title="editingQuestionId ? '编辑题目' : '新增题目'" size="520px">
@@ -480,9 +538,107 @@ onMounted(async () => {
 
 .bank-layout {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-columns: 200px minmax(0, 1fr) 300px;
   gap: 16px;
   align-items: start;
+}
+
+.question-panel :deep(.question-row--selected > td) {
+  background: var(--m1-primary-soft);
+}
+
+.question-panel :deep(.el-table__row) {
+  cursor: pointer;
+}
+
+.preview-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--m1-border);
+  border-radius: 12px;
+  background: var(--m1-bg-surface);
+  position: sticky;
+  top: 16px;
+}
+
+.preview-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--m1-border);
+}
+
+.preview-panel__head strong {
+  color: var(--m1-text-primary);
+  font-family: var(--m1-font-serif);
+}
+
+.preview-panel__stem {
+  margin: 0;
+  color: var(--m1-text-primary);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.preview-panel__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preview-section h3 {
+  margin: 0 0 6px;
+  color: var(--m1-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.preview-answer {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--m1-primary-soft);
+  color: var(--m1-text-primary);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.preview-note {
+  margin: 8px 0 0;
+  color: var(--m1-text-placeholder);
+  font-size: 12px;
+}
+
+.preview-meta {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--m1-border);
+}
+
+.preview-meta div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.preview-meta dt {
+  color: var(--m1-text-secondary);
+}
+
+.preview-meta dd {
+  margin: 0;
+  color: var(--m1-text-regular);
+}
+
+.preview-panel__edit {
+  justify-self: start;
 }
 
 .category-rail {
@@ -629,6 +785,16 @@ onMounted(async () => {
 .picker__pagination {
   margin-top: 12px;
   justify-content: flex-end;
+}
+
+@media (max-width: 1200px) {
+  .bank-layout {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+
+  .preview-panel {
+    display: none;
+  }
 }
 
 @media (max-width: 860px) {

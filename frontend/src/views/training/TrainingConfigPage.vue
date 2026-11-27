@@ -8,8 +8,10 @@ import {
   ElDialog,
   ElEmpty,
   ElInput,
+  ElOption,
   ElPagination,
   ElRadioButton,
+  ElSelect,
   ElRadioGroup,
   ElTag,
 } from 'element-plus'
@@ -21,7 +23,7 @@ import {
   listMyTemplates,
   uploadTrainingMaterial,
 } from './api'
-import { dimensionLabel, formatSeconds, levelLabel } from './format'
+import { dimensionLabel, formatSeconds, levelLabel, sourceLabel } from './format'
 import { defaultStudents, fromWireStudents, toWireStudent } from './students'
 import VirtualStudentEditor from './components/VirtualStudentEditor.vue'
 import type {
@@ -29,6 +31,7 @@ import type {
   TrainingLevel,
   TrainingMaterialView,
   TrainingTemplateDetail,
+  TrainingTemplateSourceType,
   TrainingTemplateSummary,
 } from './types'
 
@@ -62,20 +65,23 @@ const errorMessage = ref('')
 
 const selectorVisible = ref(false)
 const selectorKeyword = ref('')
+const selectorSource = ref<TrainingTemplateSourceType | ''>('')
 const selectorPage = ref(1)
 const selectorSize = 6
 
 const isTemplateMode = computed(() => mode.value === 'template')
 const filteredTemplates = computed(() => {
   const keyword = selectorKeyword.value.trim().toLowerCase()
-  if (!keyword) {
-    return myTemplates.value
-  }
-  return myTemplates.value.filter(
-    (item) =>
-      item.name.toLowerCase().includes(keyword) ||
-      item.topic.toLowerCase().includes(keyword),
-  )
+  return myTemplates.value.filter((item) => {
+    if (selectorSource.value && item.source_type !== selectorSource.value) {
+      return false
+    }
+    if (!keyword) {
+      return true
+    }
+    return item.name.toLowerCase().includes(keyword)
+      || item.topic.toLowerCase().includes(keyword)
+  })
 })
 const pagedTemplates = computed(() => {
   const start = (selectorPage.value - 1) * selectorSize
@@ -421,20 +427,32 @@ onMounted(load)
     </template>
 
     <ElDialog v-model="selectorVisible" title="选择我的模板" width="640px">
-      <ElInput
-        v-model="selectorKeyword"
-        class="selector__search"
-        placeholder="搜索模板名称 / 课题"
-        clearable
-        @input="selectorPage = 1"
-      />
+      <div class="selector__filters">
+        <ElInput
+          v-model="selectorKeyword"
+          placeholder="搜索模板名称 / 课题"
+          clearable
+          @input="selectorPage = 1"
+        />
+        <ElSelect
+          v-model="selectorSource"
+          placeholder="全部来源"
+          clearable
+          @change="selectorPage = 1"
+        >
+          <ElOption label="自建" value="manual" />
+          <ElOption label="来自任务" value="task" />
+          <ElOption label="复制模板" value="template" />
+        </ElSelect>
+      </div>
       <ElEmpty v-if="pagedTemplates.length === 0" description="没有匹配的模板" />
       <ul v-else class="selector__list">
         <li v-for="item in pagedTemplates" :key="item.template_id">
           <div>
             <strong>{{ item.name }}</strong>
             <p>
-              {{ item.topic }} · {{ levelLabel(item.training_level) }} ·
+              {{ sourceLabel(item.source_type) }} · {{ item.topic }} ·
+              {{ levelLabel(item.training_level) }} ·
               {{ formatSeconds(item.duration_seconds) }} · {{ item.virtual_student_count }} 人
             </p>
           </div>
@@ -620,6 +638,20 @@ onMounted(load)
 
 .selector__search {
   margin-bottom: 12px;
+}
+
+.selector__filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.selector__filters :deep(.el-input) {
+  flex: 1;
+}
+
+.selector__filters :deep(.el-select) {
+  width: 150px;
 }
 
 .selector__list {

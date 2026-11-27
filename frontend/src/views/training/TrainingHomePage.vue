@@ -13,7 +13,6 @@ import {
 } from 'element-plus'
 import { ApiError } from '../../types/api'
 import {
-  copyTemplateFromPublication,
   deleteMyTemplate,
   listMyTemplates,
   listStudentTemplates,
@@ -37,7 +36,6 @@ const level = ref<TrainingLevel>('progressive')
 const publications = ref<StudentTemplateCard[]>([])
 const myTemplates = ref<TrainingTemplateSummary[]>([])
 const loading = ref(false)
-const copyingId = ref<string | null>(null)
 const errorMessage = ref('')
 
 function errorText(error: unknown, fallback: string): string {
@@ -68,18 +66,11 @@ function startPublication(card: StudentTemplateCard): void {
   })
 }
 
-async function copyPublication(card: StudentTemplateCard): Promise<void> {
-  copyingId.value = card.publication_id
-  errorMessage.value = ''
-  try {
-    await copyTemplateFromPublication(card.publication_id, null)
-    ElMessage.success('已复制到我的模板')
-    await load()
-  } catch (error) {
-    errorMessage.value = errorText(error, '复制模板失败，请重试。')
-  } finally {
-    copyingId.value = null
-  }
+function copyPublication(card: StudentTemplateCard): void {
+  void router.push({
+    name: 'student-training-template-new',
+    query: { source: 'copy', from: card.publication_id },
+  })
 }
 
 function startMyTemplate(template: TrainingTemplateSummary): void {
@@ -192,12 +183,8 @@ onMounted(load)
             </p>
             <div class="training-card__actions">
               <ElButton type="primary" @click="startPublication(card)">开始训练</ElButton>
-              <ElButton
-                :loading="copyingId === card.publication_id"
-                :disabled="card.copied"
-                @click="copyPublication(card)"
-              >
-                {{ card.copied ? '已复制' : '复制到我的模板' }}
+              <ElButton :disabled="card.copied" @click="copyPublication(card)">
+                {{ card.copied ? '已复制' : '复制并调整' }}
               </ElButton>
             </div>
           </article>
@@ -207,7 +194,7 @@ onMounted(load)
       <section class="group">
         <div class="group__head">
           <h2>我的模板</h2>
-          <span>{{ levelLabel(level) }} · 自建或复制的个人模板，最多 30 个</span>
+          <span>{{ levelLabel(level) }} · 共 {{ myTemplates.length }} / 30 个我的模板</span>
         </div>
 
         <div class="card-grid">
