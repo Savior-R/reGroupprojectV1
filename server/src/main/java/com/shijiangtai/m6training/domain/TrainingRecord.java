@@ -13,6 +13,7 @@ public final class TrainingRecord {
     private final UUID trainingSessionId;
     private final UUID studentAccountId;
     private final UUID templateId;
+    private final UUID publicationId;
     private final Instant selectedAt;
     private final Instant expiresAt;
     private final Instant createdAt;
@@ -25,6 +26,7 @@ public final class TrainingRecord {
             UUID trainingSessionId,
             UUID studentAccountId,
             UUID templateId,
+            UUID publicationId,
             Instant selectedAt,
             Instant expiresAt,
             TrainingRecordStatus status,
@@ -35,6 +37,7 @@ public final class TrainingRecord {
         this.trainingSessionId = Objects.requireNonNull(trainingSessionId, "trainingSessionId");
         this.studentAccountId = Objects.requireNonNull(studentAccountId, "studentAccountId");
         this.templateId = templateId;
+        this.publicationId = publicationId;
         this.selectedAt = Objects.requireNonNull(selectedAt, "selectedAt");
         this.expiresAt = Objects.requireNonNull(expiresAt, "expiresAt");
         if (!expiresAt.isAfter(selectedAt)) {
@@ -51,10 +54,11 @@ public final class TrainingRecord {
             UUID trainingSessionId,
             UUID studentAccountId,
             UUID templateId,
+            UUID publicationId,
             Instant selectedAt,
             Instant expiresAt) {
         return new TrainingRecord(id, trainingSessionId, studentAccountId, templateId,
-                selectedAt, expiresAt, TrainingRecordStatus.SELECTED, null,
+                publicationId, selectedAt, expiresAt, TrainingRecordStatus.SELECTED, null,
                 selectedAt, selectedAt);
     }
 
@@ -63,6 +67,7 @@ public final class TrainingRecord {
             UUID trainingSessionId,
             UUID studentAccountId,
             UUID templateId,
+            UUID publicationId,
             Instant selectedAt,
             Instant expiresAt,
             TrainingRecordStatus status,
@@ -70,7 +75,7 @@ public final class TrainingRecord {
             Instant createdAt,
             Instant updatedAt) {
         return new TrainingRecord(id, trainingSessionId, studentAccountId, templateId,
-                selectedAt, expiresAt, status, deletedAt, createdAt, updatedAt);
+                publicationId, selectedAt, expiresAt, status, deletedAt, createdAt, updatedAt);
     }
 
     public void markEvaluated(Instant now) {
@@ -120,6 +125,10 @@ public final class TrainingRecord {
 
     public UUID templateId() {
         return templateId;
+    }
+
+    public UUID publicationId() {
+        return publicationId;
     }
 
     public Instant selectedAt() {

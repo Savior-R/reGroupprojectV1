@@ -60,6 +60,7 @@ public class TrainingSessionController {
                         .toList();
         return new CreateTrainingSessionCommand(
                 request.templateId(),
+                request.publicationId(),
                 request.trainingLevel(),
                 request.courseId(),
                 request.topic(),

@@ -24,6 +24,9 @@ public interface TrainingRecordRepository {
 
     List<TrainingRecord> listActiveExpired(Instant now, int limit);
 
+    /** All records that reference one template (template deletion cleanup). */
+    List<TrainingRecord> listByTemplate(UUID templateId);
+
     List<TrainingRecord> listPendingDeletion(int limit);
 
     TrainingRecord save(TrainingRecord record);

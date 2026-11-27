@@ -24,4 +24,12 @@ public class M6Access {
                     "仅教师可管理训练模板", Map.of("required_role", "teacher"));
         }
     }
+
+    /** Personal templates and their materials are shared by teachers and students. */
+    public void requirePersonal(CurrentUser user) {
+        if (user.type() != AccountType.TEACHER && user.type() != AccountType.STUDENT) {
+            throw new TrainingException(TrainingError.ROLE_NOT_ALLOWED,
+                    "仅教师或学生可管理个人模板", Map.of());
+        }
+    }
 }

@@ -11,6 +11,7 @@ public record TrainingRecordView(
         UUID recordId,
         UUID sessionId,
         UUID templateId,
+        UUID publicationId,
         String topic,
         TrainingLevel trainingLevel,
         Instant selectedAt,

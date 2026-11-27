@@ -1,29 +1,34 @@
 package com.shijiangtai.m6training.domain;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Free-training reference material uploaded by a student (08 §9). */
+/** Reference material owned by one account, used by free training or a template (08 §9). */
 public final class TrainingMaterial {
     public static final long MAX_SIZE_BYTES = 20L * 1024 * 1024;
     public static final int PREVIEW_LENGTH = 500;
 
     private final UUID id;
-    private final UUID studentAccountId;
+    private final UUID ownerAccountId;
+    private final TrainingMaterialUsage usage;
+    private UUID templateId;
     private final String filename;
     private final String mime;
     private final long size;
     private final String objectKey;
     private final String parsedText;
     private final int charCount;
-    private final Instant expiresAt;
     private final Instant createdAt;
     private TrainingMaterialStatus status;
+    private Instant expiresAt;
 
     private TrainingMaterial(
             UUID id,
-            UUID studentAccountId,
+            UUID ownerAccountId,
+            TrainingMaterialUsage usage,
+            UUID templateId,
             String filename,
             String mime,
             long size,
@@ -34,7 +39,9 @@ public final class TrainingMaterial {
             Instant expiresAt,
             Instant createdAt) {
         this.id = Objects.requireNonNull(id, "id");
-        this.studentAccountId = Objects.requireNonNull(studentAccountId, "studentAccountId");
+        this.ownerAccountId = Objects.requireNonNull(ownerAccountId, "ownerAccountId");
+        this.usage = Objects.requireNonNull(usage, "usage");
+        this.templateId = templateId;
         this.filename = Objects.requireNonNull(filename, "filename");
         this.mime = mime == null ? "application/octet-stream" : mime;
         this.size = size;
@@ -42,13 +49,14 @@ public final class TrainingMaterial {
         this.parsedText = parsedText;
         this.charCount = charCount;
         this.status = Objects.requireNonNull(status, "status");
-        this.expiresAt = Objects.requireNonNull(expiresAt, "expiresAt");
+        this.expiresAt = expiresAt;
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt");
     }
 
     public static TrainingMaterial create(
             UUID id,
-            UUID studentAccountId,
+            UUID ownerAccountId,
+            TrainingMaterialUsage usage,
             String filename,
             String mime,
             long size,
@@ -58,20 +66,26 @@ public final class TrainingMaterial {
             Instant expiresAt) {
         if (size <= 0) {
             throw new TrainingException(TrainingError.MATERIAL_TYPE_UNSUPPORTED,
-                    "材料为空", java.util.Map.of("field", "file"));
+                    "材料为空", Map.of("field", "file"));
         }
         if (size > MAX_SIZE_BYTES) {
             throw new TrainingException(TrainingError.MATERIAL_TOO_LARGE,
-                    "材料超过 20 MB", java.util.Map.of("field", "file"));
+                    "材料超过 20 MB", Map.of("field", "file"));
         }
-        return new TrainingMaterial(id, studentAccountId, filename, mime, size, objectKey,
-                parsedText, parsedText == null ? 0 : parsedText.length(),
+        if (usage == TrainingMaterialUsage.FREE_SESSION && expiresAt == null) {
+            throw new TrainingException(TrainingError.INTERNAL_ERROR,
+                    "自由训练材料缺少过期时间", Map.of());
+        }
+        return new TrainingMaterial(id, ownerAccountId, usage, null, filename, mime, size,
+                objectKey, parsedText, parsedText == null ? 0 : parsedText.length(),
                 TrainingMaterialStatus.UPLOADED, expiresAt, now);
     }
 
     public static TrainingMaterial rehydrate(
             UUID id,
-            UUID studentAccountId,
+            UUID ownerAccountId,
+            TrainingMaterialUsage usage,
+            UUID templateId,
             String filename,
             String mime,
             long size,
@@ -81,8 +95,19 @@ public final class TrainingMaterial {
             TrainingMaterialStatus status,
             Instant expiresAt,
             Instant createdAt) {
-        return new TrainingMaterial(id, studentAccountId, filename, mime, size, objectKey,
-                parsedText, charCount, status, expiresAt, createdAt);
+        return new TrainingMaterial(id, ownerAccountId, usage, templateId, filename, mime, size,
+                objectKey, parsedText, charCount, status, expiresAt, createdAt);
+    }
+
+    /** Attaches a template-usage material; expiry is cleared once attached. */
+    public void attachTo(UUID templateId) {
+        if (usage != TrainingMaterialUsage.TEMPLATE) {
+            throw new TrainingException(TrainingError.TRAINING_MATERIAL_INVALID,
+                    "自由训练材料不能附着到模板", Map.of("material_id", id.toString()));
+        }
+        this.templateId = Objects.requireNonNull(templateId, "templateId");
+        this.status = TrainingMaterialStatus.ATTACHED;
+        this.expiresAt = null;
     }
 
     public void markUsed() {
@@ -102,7 +127,8 @@ public final class TrainingMaterial {
     }
 
     public boolean usableAt(Instant now) {
-        return status == TrainingMaterialStatus.UPLOADED && expiresAt.isAfter(now);
+        return status == TrainingMaterialStatus.UPLOADED
+                && expiresAt != null && expiresAt.isAfter(now);
     }
 
     public String preview() {
@@ -117,8 +143,16 @@ public final class TrainingMaterial {
         return id;
     }
 
-    public UUID studentAccountId() {
-        return studentAccountId;
+    public UUID ownerAccountId() {
+        return ownerAccountId;
+    }
+
+    public TrainingMaterialUsage usage() {
+        return usage;
+    }
+
+    public UUID templateId() {
+        return templateId;
     }
 
     public String filename() {

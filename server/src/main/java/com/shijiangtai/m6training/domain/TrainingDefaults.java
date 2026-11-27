@@ -5,12 +5,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Default weights / durations / virtual students (08 §5.3). */
+/** Default weights / durations / virtual students (08 §5.4). */
 public final class TrainingDefaults {
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
     public static final String CLASSROOM_MODE = "free";
     public static final String DEFAULT_TOPIC = "自由训练";
     public static final int MAX_TOPIC_LENGTH = 100;
+    public static final int MAX_TEXTBOOK_VERSION_LENGTH = 100;
+    public static final int MAX_NAME_LENGTH = 100;
+    public static final int MAX_ACTIVE_TEMPLATES = 30;
 
     private TrainingDefaults() {
     }

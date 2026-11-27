@@ -13,4 +13,15 @@ export const questionRoutes: RouteRecordRaw[] = [
       title: '结构化面试题库',
     },
   },
+  {
+    path: '/teacher/question-bank/categories',
+    name: 'teacher-question-bank-categories',
+    component: () => import('./CategoryManagementPage.vue'),
+    meta: {
+      requiresAuth: true,
+      roles: ['teacher', 'admin'],
+      layout: 'app',
+      title: '题库类别管理',
+    },
+  },
 ]

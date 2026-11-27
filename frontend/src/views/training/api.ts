@@ -4,13 +4,19 @@ import type {
   PageResult,
   StudentTemplateCard,
   StudentTemplateDetail,
+  TaskTemplateConfigView,
   TrainingLevel,
   TrainingMaterialView,
+  TrainingOwnerRole,
+  TrainingPublicationStatus,
+  TrainingPublicationView,
   TrainingRecordSelection,
   TrainingRecordView,
   TrainingReport,
   TrainingSessionView,
-  TrainingTemplateView,
+  TrainingTemplateDetail,
+  TrainingTemplateStatus,
+  TrainingTemplateSummary,
   VirtualStudentConfig,
 } from './types'
 
@@ -18,12 +24,55 @@ import type {
 
 export interface CreateSessionPayload {
   template_id: string | null
+  publication_id: string | null
   training_level: TrainingLevel
   course_id: string | null
   topic: string | null
   virtual_students: VirtualStudentConfig[]
   material_id: string | null
 }
+
+export interface TrainingTemplatePayload {
+  owner_role?: TrainingOwnerRole
+  name: string
+  training_level: TrainingLevel
+  topic: string
+  textbook_version: string | null
+  duration: { recommended_seconds: number; max_seconds: number }
+  weights: Record<string, number>
+  virtual_students: VirtualStudentConfig[]
+  material_id: string | null
+}
+
+export interface UpdateTrainingTemplatePayload {
+  name?: string
+  training_level?: TrainingLevel
+  topic?: string
+  textbook_version?: string | null
+  duration?: { recommended_seconds: number; max_seconds: number }
+  weights?: Record<string, number>
+  virtual_students?: VirtualStudentConfig[]
+  material_id?: string | null
+  remove_material?: boolean
+}
+
+export interface MyTemplateQuery {
+  role?: TrainingOwnerRole
+  level?: TrainingLevel
+  status?: TrainingTemplateStatus
+  page?: number
+  size?: number
+}
+
+export interface PublicationQuery {
+  templateId?: string
+  courseId?: string
+  status?: TrainingPublicationStatus
+  page?: number
+  size?: number
+}
+
+// ---------------------------------------------------------------- student visible
 
 export function listStudentTemplates(
   level: TrainingLevel | null,
@@ -38,13 +87,125 @@ export function listStudentTemplates(
     .then((response) => response.data)
 }
 
-export function getStudentTemplate(templateId: string): Promise<StudentTemplateDetail> {
+export function getStudentTemplate(
+  publicationId: string,
+): Promise<StudentTemplateDetail> {
   return apiClient
     .get<StudentTemplateDetail>(
-      `/student/training/templates/${encodeURIComponent(templateId)}`,
+      `/student/training/templates/${encodeURIComponent(publicationId)}`,
     )
     .then((response) => response.data)
 }
+
+// ---------------------------------------------------------------- personal templates
+
+export function listMyTemplates(
+  query: MyTemplateQuery = {},
+): Promise<PageResult<TrainingTemplateSummary>> {
+  return apiClient
+    .get<PageResult<TrainingTemplateSummary>>('/training/my-templates', {
+      params: {
+        role: query.role,
+        level: query.level,
+        status: query.status,
+        page: query.page ?? 1,
+        size: query.size ?? 50,
+      },
+    })
+    .then((response) => response.data)
+}
+
+export function getMyTemplate(templateId: string): Promise<TrainingTemplateDetail> {
+  return apiClient
+    .get<TrainingTemplateDetail>(
+      `/training/my-templates/${encodeURIComponent(templateId)}`,
+    )
+    .then((response) => response.data)
+}
+
+export function createMyTemplate(
+  payload: TrainingTemplatePayload,
+): Promise<TrainingTemplateDetail> {
+  return apiClient
+    .post<TrainingTemplateDetail>('/training/my-templates', payload)
+    .then((response) => response.data)
+}
+
+export function updateMyTemplate(
+  templateId: string,
+  payload: UpdateTrainingTemplatePayload,
+): Promise<TrainingTemplateDetail> {
+  return apiClient
+    .patch<TrainingTemplateDetail>(
+      `/training/my-templates/${encodeURIComponent(templateId)}`,
+      payload,
+    )
+    .then((response) => response.data)
+}
+
+export async function deleteMyTemplate(templateId: string): Promise<void> {
+  await apiClient.delete(`/training/my-templates/${encodeURIComponent(templateId)}`)
+}
+
+export function copyTemplateFromPublication(
+  publicationId: string,
+  name: string | null,
+): Promise<TrainingTemplateDetail> {
+  return apiClient
+    .post<TrainingTemplateDetail>('/training/my-templates/from-publication', {
+      publication_id: publicationId,
+      name,
+    })
+    .then((response) => response.data)
+}
+
+export function getTaskTemplateConfig(
+  templateId: string,
+): Promise<TaskTemplateConfigView> {
+  return apiClient
+    .get<TaskTemplateConfigView>(
+      `/training/my-templates/${encodeURIComponent(templateId)}/task-config`,
+    )
+    .then((response) => response.data)
+}
+
+// ---------------------------------------------------------------- publications
+
+export function listPublications(
+  query: PublicationQuery = {},
+): Promise<PageResult<TrainingPublicationView>> {
+  return apiClient
+    .get<PageResult<TrainingPublicationView>>('/training/publications', {
+      params: {
+        template_id: query.templateId,
+        course_id: query.courseId,
+        status: query.status,
+        page: query.page ?? 1,
+        size: query.size ?? 50,
+      },
+    })
+    .then((response) => response.data)
+}
+
+export function publishTemplate(
+  templateId: string,
+  courseId: string,
+): Promise<TrainingPublicationView> {
+  return apiClient
+    .post<TrainingPublicationView>(
+      `/training/my-templates/${encodeURIComponent(templateId)}/publications`,
+      { course_id: courseId },
+    )
+    .then((response) => response.data)
+}
+
+export async function unpublishPublication(publicationId: string): Promise<void> {
+  await apiClient.post(
+    `/training/publications/${encodeURIComponent(publicationId)}/unpublish`,
+  )
+}
+
+// ---------------------------------------------------------------- materials
 
 export function uploadTrainingMaterial(file: File): Promise<TrainingMaterialView> {
   const body = new FormData()
@@ -54,9 +215,23 @@ export function uploadTrainingMaterial(file: File): Promise<TrainingMaterialView
     .then((response) => response.data)
 }
 
-export async function deleteTrainingMaterial(materialId: string): Promise<void> {
-  await apiClient.delete(`/training/materials/${encodeURIComponent(materialId)}`)
+export function uploadTemplateMaterial(file: File): Promise<TrainingMaterialView> {
+  const body = new FormData()
+  body.append('file', file)
+  return apiClient
+    .post<TrainingMaterialView>('/training/template-materials', body)
+    .then((response) => response.data)
 }
+
+export async function deleteTrainingMaterial(
+  materialId: string,
+  usage: 'free_session' | 'template' = 'free_session',
+): Promise<void> {
+  const base = usage === 'template' ? '/training/template-materials' : '/training/materials'
+  await apiClient.delete(`${base}/${encodeURIComponent(materialId)}`)
+}
+
+// ---------------------------------------------------------------- sessions
 
 export function createTrainingSession(
   payload: CreateSessionPayload,
@@ -83,6 +258,8 @@ export function endTrainingSession(sessionId: string): Promise<TrainingSessionVi
 export async function cancelTrainingSession(sessionId: string): Promise<void> {
   await apiClient.post(`/training/sessions/${encodeURIComponent(sessionId)}/cancel`)
 }
+
+// ---------------------------------------------------------------- records
 
 export function selectTrainingRecord(sessionId: string): Promise<TrainingRecordSelection> {
   return apiClient
@@ -145,36 +322,4 @@ export async function getTrainingReport(recordId: string): Promise<TrainingRepor
     warnings: report.warnings,
     completed_at: report.meta?.completed_at ?? null,
   }
-}
-
-export function listTeacherTemplates(
-  level: TrainingLevel | null,
-  courseId: string | null,
-  page = 1,
-  size = 50,
-): Promise<PageResult<TrainingTemplateView>> {
-  return apiClient
-    .get<PageResult<TrainingTemplateView>>('/training/templates', {
-      params: {
-        training_level: level ?? undefined,
-        course_id: courseId ?? undefined,
-        page,
-        size,
-      },
-    })
-    .then((response) => response.data)
-}
-
-export function publishTrainingTemplate(payload: {
-  source_task_id: string
-  course_id: string
-  training_level: TrainingLevel
-}): Promise<TrainingTemplateView> {
-  return apiClient
-    .post<TrainingTemplateView>('/training/templates', payload)
-    .then((response) => response.data)
-}
-
-export async function unpublishTrainingTemplate(templateId: string): Promise<void> {
-  await apiClient.post(`/training/templates/${encodeURIComponent(templateId)}/unpublish`)
 }

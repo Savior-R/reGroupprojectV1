@@ -7,6 +7,10 @@ import type { EditableStudent } from '../types'
 
 const model = defineModel<EditableStudent[]>({ required: true })
 
+const props = withDefaults(defineProps<{ disabled?: boolean }>(), {
+  disabled: false,
+})
+
 const AVATARS = ['avatar-01', 'avatar-02', 'avatar-03', 'avatar-04', 'avatar-05', 'avatar-06']
 
 type RatioKey =
@@ -62,8 +66,14 @@ function setRatio(student: EditableStudent, key: RatioKey, value: number): void 
     <div class="student-editor__toolbar">
       <ElTag type="info">虚拟学生 {{ model.length }} / 30</ElTag>
       <div class="student-editor__actions">
-        <ElButton size="small" @click="randomize">随机姓名 / 头像</ElButton>
-        <ElButton size="small" type="primary" plain :disabled="model.length >= 30" @click="addStudent">
+        <ElButton size="small" :disabled="props.disabled" @click="randomize">随机姓名 / 头像</ElButton>
+        <ElButton
+          size="small"
+          type="primary"
+          plain
+          :disabled="props.disabled || model.length >= 30"
+          @click="addStudent"
+        >
           添加学生
         </ElButton>
       </div>
@@ -80,7 +90,7 @@ function setRatio(student: EditableStudent, key: RatioKey, value: number): void 
           size="small"
           text
           type="danger"
-          :disabled="model.length <= 1"
+          :disabled="props.disabled || model.length <= 1"
           @click="removeStudent(index)"
         >
           删除
@@ -90,11 +100,11 @@ function setRatio(student: EditableStudent, key: RatioKey, value: number): void 
       <div class="student-card__basics">
         <label class="field">
           <span>姓名</span>
-          <ElInput v-model="student.name" maxlength="20" />
+          <ElInput v-model="student.name" maxlength="20" :disabled="props.disabled" />
         </label>
         <label class="field">
           <span>头像</span>
-          <ElSelect v-model="student.avatar" class="field__control">
+          <ElSelect v-model="student.avatar" class="field__control" :disabled="props.disabled">
             <ElOption v-for="avatar in AVATARS" :key="avatar" :label="avatar" :value="avatar" />
           </ElSelect>
         </label>
@@ -109,6 +119,7 @@ function setRatio(student: EditableStudent, key: RatioKey, value: number): void 
             min="0"
             max="1"
             step="0.05"
+            :disabled="props.disabled"
             :value="ratioValue(student, ratio.key)"
             @input="setRatio(student, ratio.key, Number(($event.target as HTMLInputElement).value))"
           >
@@ -124,6 +135,7 @@ function setRatio(student: EditableStudent, key: RatioKey, value: number): void 
           :rows="2"
           maxlength="500"
           show-word-limit
+          :disabled="props.disabled"
           placeholder="例如：性格外向，喜欢回答问题，但容易走神"
         />
       </label>

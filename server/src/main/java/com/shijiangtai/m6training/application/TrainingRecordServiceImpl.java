@@ -131,6 +131,7 @@ public class TrainingRecordServiceImpl implements TrainingRecordService {
                 command.sessionId(),
                 studentId,
                 meta.templateId(),
+                meta.publicationId(),
                 now,
                 now.atZone(ZoneOffset.UTC)
                         .plusMonths(TrainingRecord.RETENTION_MONTHS)
@@ -238,6 +239,7 @@ public class TrainingRecordServiceImpl implements TrainingRecordService {
                 record.id(),
                 record.trainingSessionId(),
                 record.templateId(),
+                record.publicationId(),
                 meta.effectiveConfig().topic(),
                 meta.trainingLevel(),
                 record.selectedAt(),

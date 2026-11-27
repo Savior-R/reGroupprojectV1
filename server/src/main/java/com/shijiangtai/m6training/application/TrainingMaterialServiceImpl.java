@@ -10,6 +10,7 @@ import com.shijiangtai.m6training.domain.TrainingException;
 import com.shijiangtai.m6training.domain.TrainingMaterial;
 import com.shijiangtai.m6training.domain.TrainingMaterialRepository;
 import com.shijiangtai.m6training.domain.TrainingMaterialStatus;
+import com.shijiangtai.m6training.domain.TrainingMaterialUsage;
 import com.shijiangtai.shared.application.ClockProvider;
 import com.shijiangtai.shared.application.CurrentUser;
 import com.shijiangtai.shared.application.IdGenerator;
@@ -25,7 +26,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class TrainingMaterialServiceImpl implements TrainingMaterialService {
-    private static final String OBJECT_PREFIX = "training-materials/";
+    private static final String FREE_OBJECT_PREFIX = "training-materials/";
+    private static final String TEMPLATE_OBJECT_PREFIX = "training-template-materials/";
     private static final int MAX_FILENAME_LENGTH = 255;
 
     private final TrainingMaterialRepository materialRepository;
@@ -52,8 +54,41 @@ public class TrainingMaterialServiceImpl implements TrainingMaterialService {
 
     @Override
     @Transactional
-    public TrainingMaterialView upload(CurrentUser user, MultipartFile file) {
+    public TrainingMaterialView uploadFree(CurrentUser user, MultipartFile file) {
         access.requireStudent(user);
+        return upload(user, file, TrainingMaterialUsage.FREE_SESSION);
+    }
+
+    @Override
+    @Transactional
+    public TrainingMaterialView uploadTemplate(CurrentUser user, MultipartFile file) {
+        access.requirePersonal(user);
+        return upload(user, file, TrainingMaterialUsage.TEMPLATE);
+    }
+
+    @Override
+    @Transactional
+    public void delete(CurrentUser user, UUID materialId) {
+        access.requirePersonal(user);
+        TrainingMaterial material = materialRepository
+                .findByIdAndOwner(materialId, user.accountId().value())
+                .orElseThrow(() -> materialInvalid(materialId));
+        if (material.status() != TrainingMaterialStatus.UPLOADED) {
+            throw new TrainingException(TrainingError.TRAINING_MATERIAL_INVALID,
+                    "只能删除未使用的材料", Map.of("material_id", materialId.toString()));
+        }
+        try {
+            materialStorage.delete(material.objectKey());
+        } catch (RuntimeException exception) {
+            throw new TrainingException(TrainingError.SERVICE_UNAVAILABLE,
+                    "材料存储不可用", Map.of("material_id", materialId.toString()));
+        }
+        material.markDeleted();
+        materialRepository.save(material);
+    }
+
+    private TrainingMaterialView upload(
+            CurrentUser user, MultipartFile file, TrainingMaterialUsage usage) {
         if (file == null || file.isEmpty()) {
             throw new TrainingException(TrainingError.TRAINING_MATERIAL_INVALID,
                     "材料为空", Map.of("field", "file"));
@@ -83,7 +118,9 @@ public class TrainingMaterialServiceImpl implements TrainingMaterialService {
         }
 
         UUID materialId = idGenerator.nextId();
-        String objectKey = OBJECT_PREFIX
+        String prefix = usage == TrainingMaterialUsage.TEMPLATE
+                ? TEMPLATE_OBJECT_PREFIX : FREE_OBJECT_PREFIX;
+        String objectKey = prefix
                 + user.schoolId().value() + "/"
                 + user.accountId().value() + "/"
                 + materialId + "." + extension(filename);
@@ -98,6 +135,7 @@ public class TrainingMaterialServiceImpl implements TrainingMaterialService {
         TrainingMaterial material = TrainingMaterial.create(
                 materialId,
                 user.accountId().value(),
+                usage,
                 filename,
                 mime,
                 content.length,
@@ -109,32 +147,14 @@ public class TrainingMaterialServiceImpl implements TrainingMaterialService {
         return new TrainingMaterialView(
                 material.id(),
                 material.filename(),
+                material.mime(),
+                material.size(),
                 material.charCount(),
                 material.preview(),
+                material.status().wireValue(),
+                material.usage().wireValue(),
+                material.templateId(),
                 material.expiresAt());
-    }
-
-    @Override
-    @Transactional
-    public void delete(CurrentUser user, UUID materialId) {
-        access.requireStudent(user);
-        TrainingMaterial material = materialRepository
-                .findByIdAndStudent(materialId, user.accountId().value())
-                .orElseThrow(() -> new TrainingException(
-                        TrainingError.TRAINING_MATERIAL_INVALID,
-                        "材料不存在", Map.of("material_id", materialId.toString())));
-        if (material.status() != TrainingMaterialStatus.UPLOADED) {
-            throw new TrainingException(TrainingError.TRAINING_MATERIAL_INVALID,
-                    "只能删除未使用的材料", Map.of("material_id", materialId.toString()));
-        }
-        try {
-            materialStorage.delete(material.objectKey());
-        } catch (RuntimeException exception) {
-            throw new TrainingException(TrainingError.SERVICE_UNAVAILABLE,
-                    "材料存储不可用", Map.of("material_id", materialId.toString()));
-        }
-        material.markDeleted();
-        materialRepository.save(material);
     }
 
     private String extract(byte[] content, String filename, String mime) {
@@ -175,5 +195,10 @@ public class TrainingMaterialServiceImpl implements TrainingMaterialService {
         }
         String extension = filename.substring(dot + 1).toLowerCase(Locale.ROOT);
         return extension.length() > 10 ? "bin" : extension;
+    }
+
+    private TrainingException materialInvalid(UUID materialId) {
+        return new TrainingException(TrainingError.TRAINING_MATERIAL_INVALID,
+                "材料不存在", Map.of("material_id", materialId.toString()));
     }
 }

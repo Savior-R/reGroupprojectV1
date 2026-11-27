@@ -1,9 +1,10 @@
 package com.shijiangtai.m6training.domain;
 
-/** Free-training material lifecycle (08 §9). */
+/** Material lifecycle (08 §9). */
 public enum TrainingMaterialStatus {
     UPLOADED("uploaded"),
     USED("used"),
+    ATTACHED("attached"),
     DELETED("deleted"),
     EXPIRED("expired");
 
