@@ -17,6 +17,9 @@ public class TrainingSessionMetaEntity {
     @Column(name = "template_id")
     private UUID templateId;
 
+    @Column(name = "publication_id")
+    private UUID publicationId;
+
     @Column(name = "training_level", nullable = false)
     private String trainingLevel;
 
@@ -40,6 +43,14 @@ public class TrainingSessionMetaEntity {
 
     public void setTemplateId(UUID templateId) {
         this.templateId = templateId;
+    }
+
+    public UUID getPublicationId() {
+        return publicationId;
+    }
+
+    public void setPublicationId(UUID publicationId) {
+        this.publicationId = publicationId;
     }
 
     public String getTrainingLevel() {

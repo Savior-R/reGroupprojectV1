@@ -13,8 +13,14 @@ public class TrainingMaterialEntity {
     @Id
     private UUID id;
 
-    @Column(name = "student_account_id", nullable = false)
-    private UUID studentAccountId;
+    @Column(name = "owner_account_id", nullable = false)
+    private UUID ownerAccountId;
+
+    @Column(nullable = false)
+    private String usage;
+
+    @Column(name = "template_id")
+    private UUID templateId;
 
     @Column(nullable = false)
     private String filename;
@@ -37,7 +43,7 @@ public class TrainingMaterialEntity {
     @Column(nullable = false)
     private String status;
 
-    @Column(name = "expires_at", nullable = false)
+    @Column(name = "expires_at")
     private Instant expiresAt;
 
     @Column(name = "created_at", nullable = false)
@@ -51,12 +57,28 @@ public class TrainingMaterialEntity {
         this.id = id;
     }
 
-    public UUID getStudentAccountId() {
-        return studentAccountId;
+    public UUID getOwnerAccountId() {
+        return ownerAccountId;
     }
 
-    public void setStudentAccountId(UUID studentAccountId) {
-        this.studentAccountId = studentAccountId;
+    public void setOwnerAccountId(UUID ownerAccountId) {
+        this.ownerAccountId = ownerAccountId;
+    }
+
+    public String getUsage() {
+        return usage;
+    }
+
+    public void setUsage(String usage) {
+        this.usage = usage;
+    }
+
+    public UUID getTemplateId() {
+        return templateId;
+    }
+
+    public void setTemplateId(UUID templateId) {
+        this.templateId = templateId;
     }
 
     public String getFilename() {

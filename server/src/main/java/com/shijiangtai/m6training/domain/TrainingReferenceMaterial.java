@@ -1,6 +1,9 @@
 package com.shijiangtai.m6training.domain;
 
-/** Full reference material (including parsed text) inside snapshots (08 §3.2). */
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+/** Full reference material (including parsed text) inside snapshots (08 §3.3). */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record TrainingReferenceMaterial(
         String filename,
         String objectKey,

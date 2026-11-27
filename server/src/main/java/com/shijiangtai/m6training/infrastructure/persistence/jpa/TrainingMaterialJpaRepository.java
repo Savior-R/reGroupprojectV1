@@ -10,8 +10,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface TrainingMaterialJpaRepository
         extends JpaRepository<TrainingMaterialEntity, UUID> {
 
-    Optional<TrainingMaterialEntity> findByIdAndStudentAccountId(UUID id, UUID studentAccountId);
+    Optional<TrainingMaterialEntity> findByIdAndOwnerAccountId(UUID id, UUID ownerAccountId);
 
-    List<TrainingMaterialEntity> findByStatusAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
-            String status, Instant now, Pageable pageable);
+    List<TrainingMaterialEntity> findByTemplateIdAndStatus(UUID templateId, String status);
+
+    List<TrainingMaterialEntity>
+            findByStatusAndExpiresAtIsNotNullAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
+                    String status, Instant now, Pageable pageable);
 }

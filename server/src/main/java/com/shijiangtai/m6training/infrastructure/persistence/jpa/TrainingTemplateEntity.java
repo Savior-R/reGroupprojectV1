@@ -13,14 +13,17 @@ public class TrainingTemplateEntity {
     @Id
     private UUID id;
 
-    @Column(name = "source_task_id", nullable = false)
-    private UUID sourceTaskId;
+    @Column(name = "school_id", nullable = false)
+    private UUID schoolId;
 
-    @Column(name = "source_task_config_version", nullable = false)
-    private int sourceTaskConfigVersion;
+    @Column(name = "owner_account_id", nullable = false)
+    private UUID ownerAccountId;
 
-    @Column(name = "course_id", nullable = false)
-    private UUID courseId;
+    @Column(name = "owner_role", nullable = false)
+    private String ownerRole;
+
+    @Column(nullable = false)
+    private String name;
 
     @Column(name = "training_level", nullable = false)
     private String trainingLevel;
@@ -28,20 +31,29 @@ public class TrainingTemplateEntity {
     @Column(name = "classroom_mode", nullable = false)
     private String classroomMode;
 
+    @Column(name = "source_type", nullable = false)
+    private String sourceType;
+
+    @Column(name = "source_task_id")
+    private UUID sourceTaskId;
+
+    @Column(name = "source_task_config_version")
+    private Integer sourceTaskConfigVersion;
+
+    @Column(name = "source_template_id")
+    private UUID sourceTemplateId;
+
+    @Column(name = "source_publication_id")
+    private UUID sourcePublicationId;
+
     @Column(name = "config_snapshot", nullable = false, columnDefinition = "jsonb")
     private String configSnapshot;
-
-    @Column(name = "created_by", nullable = false)
-    private UUID createdBy;
 
     @Column(nullable = false)
     private String status;
 
-    @Column(name = "published_at")
-    private Instant publishedAt;
-
-    @Column(name = "unpublished_at")
-    private Instant unpublishedAt;
+    @Column(name = "archived_at")
+    private Instant archivedAt;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -57,28 +69,36 @@ public class TrainingTemplateEntity {
         this.id = id;
     }
 
-    public UUID getSourceTaskId() {
-        return sourceTaskId;
+    public UUID getSchoolId() {
+        return schoolId;
     }
 
-    public void setSourceTaskId(UUID sourceTaskId) {
-        this.sourceTaskId = sourceTaskId;
+    public void setSchoolId(UUID schoolId) {
+        this.schoolId = schoolId;
     }
 
-    public int getSourceTaskConfigVersion() {
-        return sourceTaskConfigVersion;
+    public UUID getOwnerAccountId() {
+        return ownerAccountId;
     }
 
-    public void setSourceTaskConfigVersion(int sourceTaskConfigVersion) {
-        this.sourceTaskConfigVersion = sourceTaskConfigVersion;
+    public void setOwnerAccountId(UUID ownerAccountId) {
+        this.ownerAccountId = ownerAccountId;
     }
 
-    public UUID getCourseId() {
-        return courseId;
+    public String getOwnerRole() {
+        return ownerRole;
     }
 
-    public void setCourseId(UUID courseId) {
-        this.courseId = courseId;
+    public void setOwnerRole(String ownerRole) {
+        this.ownerRole = ownerRole;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
     }
 
     public String getTrainingLevel() {
@@ -97,20 +117,52 @@ public class TrainingTemplateEntity {
         this.classroomMode = classroomMode;
     }
 
+    public String getSourceType() {
+        return sourceType;
+    }
+
+    public void setSourceType(String sourceType) {
+        this.sourceType = sourceType;
+    }
+
+    public UUID getSourceTaskId() {
+        return sourceTaskId;
+    }
+
+    public void setSourceTaskId(UUID sourceTaskId) {
+        this.sourceTaskId = sourceTaskId;
+    }
+
+    public Integer getSourceTaskConfigVersion() {
+        return sourceTaskConfigVersion;
+    }
+
+    public void setSourceTaskConfigVersion(Integer sourceTaskConfigVersion) {
+        this.sourceTaskConfigVersion = sourceTaskConfigVersion;
+    }
+
+    public UUID getSourceTemplateId() {
+        return sourceTemplateId;
+    }
+
+    public void setSourceTemplateId(UUID sourceTemplateId) {
+        this.sourceTemplateId = sourceTemplateId;
+    }
+
+    public UUID getSourcePublicationId() {
+        return sourcePublicationId;
+    }
+
+    public void setSourcePublicationId(UUID sourcePublicationId) {
+        this.sourcePublicationId = sourcePublicationId;
+    }
+
     public String getConfigSnapshot() {
         return configSnapshot;
     }
 
     public void setConfigSnapshot(String configSnapshot) {
         this.configSnapshot = configSnapshot;
-    }
-
-    public UUID getCreatedBy() {
-        return createdBy;
-    }
-
-    public void setCreatedBy(UUID createdBy) {
-        this.createdBy = createdBy;
     }
 
     public String getStatus() {
@@ -121,20 +173,12 @@ public class TrainingTemplateEntity {
         this.status = status;
     }
 
-    public Instant getPublishedAt() {
-        return publishedAt;
+    public Instant getArchivedAt() {
+        return archivedAt;
     }
 
-    public void setPublishedAt(Instant publishedAt) {
-        this.publishedAt = publishedAt;
-    }
-
-    public Instant getUnpublishedAt() {
-        return unpublishedAt;
-    }
-
-    public void setUnpublishedAt(Instant unpublishedAt) {
-        this.unpublishedAt = unpublishedAt;
+    public void setArchivedAt(Instant archivedAt) {
+        this.archivedAt = archivedAt;
     }
 
     public Instant getCreatedAt() {

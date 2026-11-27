@@ -10,6 +10,7 @@ public record TrainingSessionView(
         UUID sessionId,
         String status,
         UUID templateId,
+        UUID publicationId,
         UUID courseId,
         TrainingLevel trainingLevel,
         long recommendedDurationMs,

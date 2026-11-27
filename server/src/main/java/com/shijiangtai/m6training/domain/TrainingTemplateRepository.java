@@ -5,24 +5,30 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Persistence port for training templates. */
+/** Persistence port for personal training templates. */
 public interface TrainingTemplateRepository {
 
     Optional<TrainingTemplate> findById(UUID id);
 
-    Optional<TrainingTemplate> findByIdAndCreator(UUID id, UUID creatorId);
+    Optional<TrainingTemplate> findByIdAndOwner(UUID id, UUID ownerAccountId);
 
-    boolean existsPublished(UUID sourceTaskId, UUID courseId, TrainingLevel trainingLevel);
+    PageResult<TrainingTemplate> listByOwner(
+            UUID ownerAccountId,
+            TrainingOwnerRole ownerRole,
+            TrainingLevel trainingLevel,
+            TrainingTemplateStatus status,
+            int page,
+            int size);
 
-    PageResult<TrainingTemplate> listByCreator(
-            UUID creatorId, TrainingLevel trainingLevel, UUID courseId, int page, int size);
+    /** Active templates only, used by template pickers and task prefill. */
+    List<TrainingTemplate> listActiveByOwner(UUID ownerAccountId);
 
-    /** Templates visible to a student: target course active, enrolled, not ended. */
-    PageResult<UUID> listStudentVisibleIds(
-            UUID studentAccountId, UUID schoolId, TrainingLevel trainingLevel,
-            UUID courseId, int page, int size);
+    long countActiveByOwner(UUID ownerAccountId);
 
-    List<TrainingTemplate> listPublished(int limit);
+    boolean existsActiveCopy(UUID ownerAccountId, UUID sourcePublicationId);
+
+    /** Serializes quota checks for one owner inside the current transaction. */
+    void lockOwner(UUID ownerAccountId);
 
     TrainingTemplate save(TrainingTemplate template);
 }

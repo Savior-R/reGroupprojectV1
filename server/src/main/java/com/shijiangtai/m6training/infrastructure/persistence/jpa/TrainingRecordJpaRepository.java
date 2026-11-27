@@ -25,4 +25,6 @@ public interface TrainingRecordJpaRepository
 
     List<TrainingRecordEntity> findByStatusInOrderByUpdatedAtAsc(
             List<String> statuses, Pageable pageable);
+
+    List<TrainingRecordEntity> findByTemplateId(UUID templateId);
 }

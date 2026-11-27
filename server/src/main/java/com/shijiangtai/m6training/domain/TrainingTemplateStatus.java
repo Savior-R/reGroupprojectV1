@@ -1,9 +1,11 @@
 package com.shijiangtai.m6training.domain;
 
-/** Template lifecycle (08 §3.1). */
+import com.fasterxml.jackson.annotation.JsonValue;
+
+/** Personal-template lifecycle (08 §3.1): UI shows archived as "deleted". */
 public enum TrainingTemplateStatus {
-    PUBLISHED("published"),
-    UNPUBLISHED("unpublished");
+    ACTIVE("active"),
+    ARCHIVED("archived");
 
     private final String wireValue;
 
@@ -11,6 +13,7 @@ public enum TrainingTemplateStatus {
         this.wireValue = wireValue;
     }
 
+    @JsonValue
     public String wireValue() {
         return wireValue;
     }

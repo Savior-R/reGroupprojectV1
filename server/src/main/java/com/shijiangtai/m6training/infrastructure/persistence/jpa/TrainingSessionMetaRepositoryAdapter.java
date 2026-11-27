@@ -53,6 +53,7 @@ public class TrainingSessionMetaRepositoryAdapter implements TrainingSessionMeta
                 repository.findById(meta.sessionId()).orElseGet(TrainingSessionMetaEntity::new);
         entity.setSessionId(meta.sessionId());
         entity.setTemplateId(meta.templateId());
+        entity.setPublicationId(meta.publicationId());
         entity.setTrainingLevel(meta.trainingLevel().wireValue());
         entity.setEffectiveConfigSnapshot(codec.write(meta.effectiveConfig()));
         entity.setCreatedAt(meta.createdAt());
@@ -114,6 +115,7 @@ public class TrainingSessionMetaRepositoryAdapter implements TrainingSessionMeta
         return new TrainingSessionMeta(
                 entity.getSessionId(),
                 entity.getTemplateId(),
+                entity.getPublicationId(),
                 TrainingLevel.fromWire(entity.getTrainingLevel()),
                 config,
                 entity.getCreatedAt());

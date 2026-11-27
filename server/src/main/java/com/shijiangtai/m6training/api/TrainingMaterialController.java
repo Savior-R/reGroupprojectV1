@@ -28,7 +28,7 @@ public class TrainingMaterialController {
 
     @PostMapping
     public TrainingMaterialView upload(@RequestParam("file") MultipartFile file) {
-        return service.upload(currentUserProvider.require(), file);
+        return service.uploadFree(currentUserProvider.require(), file);
     }
 
     @DeleteMapping("/{materialId}")

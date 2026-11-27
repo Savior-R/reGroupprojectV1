@@ -1,10 +1,12 @@
 package com.shijiangtai.m6training.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Objects;
 
-/** Virtual-student defaults stored in the template / effective snapshot (08 §3.2). */
+/** Virtual-student defaults stored in the template / effective snapshot (08 §3.3). */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record TrainingVirtualStudent(
         String name,
         String avatar,

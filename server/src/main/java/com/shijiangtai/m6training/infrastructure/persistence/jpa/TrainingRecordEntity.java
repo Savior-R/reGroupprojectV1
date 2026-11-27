@@ -22,6 +22,9 @@ public class TrainingRecordEntity {
     @Column(name = "template_id")
     private UUID templateId;
 
+    @Column(name = "publication_id")
+    private UUID publicationId;
+
     @Column(name = "selected_at", nullable = false)
     private Instant selectedAt;
 
@@ -70,6 +73,14 @@ public class TrainingRecordEntity {
 
     public void setTemplateId(UUID templateId) {
         this.templateId = templateId;
+    }
+
+    public UUID getPublicationId() {
+        return publicationId;
+    }
+
+    public void setPublicationId(UUID publicationId) {
+        this.publicationId = publicationId;
     }
 
     public Instant getSelectedAt() {

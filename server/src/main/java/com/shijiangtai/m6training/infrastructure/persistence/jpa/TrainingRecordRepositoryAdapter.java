@@ -102,6 +102,13 @@ public class TrainingRecordRepositoryAdapter implements TrainingRecordRepository
     }
 
     @Override
+    public List<TrainingRecord> listByTemplate(UUID templateId) {
+        return repository.findByTemplateId(templateId).stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
     public List<TrainingRecord> listActiveExpired(Instant now, int limit) {
         return repository.findByStatusInAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
                         ACTIVE, now, PageRequest.of(0, Math.max(1, limit))).stream()
@@ -127,6 +134,7 @@ public class TrainingRecordRepositoryAdapter implements TrainingRecordRepository
         entity.setTrainingSessionId(record.trainingSessionId());
         entity.setStudentAccountId(record.studentAccountId());
         entity.setTemplateId(record.templateId());
+        entity.setPublicationId(record.publicationId());
         entity.setSelectedAt(record.selectedAt());
         entity.setExpiresAt(record.expiresAt());
         entity.setStatus(record.status().wireValue());
@@ -148,6 +156,7 @@ public class TrainingRecordRepositoryAdapter implements TrainingRecordRepository
                 entity.getTrainingSessionId(),
                 entity.getStudentAccountId(),
                 entity.getTemplateId(),
+                entity.getPublicationId(),
                 entity.getSelectedAt(),
                 entity.getExpiresAt(),
                 TrainingRecordStatus.fromWire(entity.getStatus()),

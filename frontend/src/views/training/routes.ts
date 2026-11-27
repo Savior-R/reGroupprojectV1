@@ -1,6 +1,6 @@
 import type { RouteRecordRaw } from 'vue-router'
 
-/** M6 training routes. Merged into the shared router (router.ts owner). */
+/** M6 training routes (08 §12.1). Merged into the shared router (router.ts owner). */
 export const trainingRoutes: RouteRecordRaw[] = [
   {
     path: '/student/training',
@@ -14,7 +14,7 @@ export const trainingRoutes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/student/training/templates/:templateId',
+    path: '/student/training/templates/:publicationId',
     name: 'student-training-template',
     component: () => import('./TemplateTrainingConfigPage.vue'),
     meta: {
@@ -25,15 +25,48 @@ export const trainingRoutes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/student/training/free',
-    name: 'student-training-free',
-    component: () => import('./FreeTrainingConfigPage.vue'),
+    path: '/student/training/my-templates/new',
+    name: 'student-training-template-new',
+    component: () => import('./TrainingTemplateEditorPage.vue'),
     meta: {
       requiresAuth: true,
       roles: ['student'],
       layout: 'app',
-      title: '自由训练配置',
+      title: '新建训练模板',
     },
+  },
+  {
+    path: '/student/training/my-templates/:templateId/edit',
+    name: 'student-training-template-edit',
+    component: () => import('./TrainingTemplateEditorPage.vue'),
+    meta: {
+      requiresAuth: true,
+      roles: ['student'],
+      layout: 'app',
+      title: '编辑训练模板',
+    },
+  },
+  {
+    path: '/student/training/config',
+    name: 'student-training-config',
+    component: () => import('./TrainingConfigPage.vue'),
+    meta: {
+      requiresAuth: true,
+      roles: ['student'],
+      layout: 'app',
+      title: '训练配置',
+    },
+  },
+  {
+    path: '/student/training/free',
+    name: 'student-training-free',
+    redirect: (to) => ({
+      name: 'student-training-config',
+      query: {
+        mode: 'free',
+        ...(to.query.level ? { level: String(to.query.level) } : {}),
+      },
+    }),
   },
   {
     path: '/student/training/sessions/:sessionId',
@@ -90,6 +123,28 @@ export const trainingRoutes: RouteRecordRaw[] = [
     path: '/teacher/training/templates',
     name: 'teacher-training-templates',
     component: () => import('./TeacherTrainingTemplatesPage.vue'),
+    meta: {
+      requiresAuth: true,
+      roles: ['teacher'],
+      layout: 'app',
+      title: '训练模板',
+    },
+  },
+  {
+    path: '/teacher/training/templates/new',
+    name: 'teacher-training-template-new',
+    component: () => import('./TrainingTemplateEditorPage.vue'),
+    meta: {
+      requiresAuth: true,
+      roles: ['teacher'],
+      layout: 'app',
+      title: '新建训练模板',
+    },
+  },
+  {
+    path: '/teacher/training/templates/:templateId',
+    name: 'teacher-training-template-detail',
+    component: () => import('./TrainingTemplateEditorPage.vue'),
     meta: {
       requiresAuth: true,
       roles: ['teacher'],

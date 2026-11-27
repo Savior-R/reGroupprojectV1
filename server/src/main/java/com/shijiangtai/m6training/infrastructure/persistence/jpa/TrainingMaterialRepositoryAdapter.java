@@ -3,6 +3,7 @@ package com.shijiangtai.m6training.infrastructure.persistence.jpa;
 import com.shijiangtai.m6training.domain.TrainingMaterial;
 import com.shijiangtai.m6training.domain.TrainingMaterialRepository;
 import com.shijiangtai.m6training.domain.TrainingMaterialStatus;
+import com.shijiangtai.m6training.domain.TrainingMaterialUsage;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -19,14 +20,28 @@ public class TrainingMaterialRepositoryAdapter implements TrainingMaterialReposi
     }
 
     @Override
-    public Optional<TrainingMaterial> findByIdAndStudent(UUID id, UUID studentAccountId) {
-        return repository.findByIdAndStudentAccountId(id, studentAccountId)
+    public Optional<TrainingMaterial> findById(UUID id) {
+        return repository.findById(id).map(this::toDomain);
+    }
+
+    @Override
+    public Optional<TrainingMaterial> findByIdAndOwner(UUID id, UUID ownerAccountId) {
+        return repository.findByIdAndOwnerAccountId(id, ownerAccountId)
                 .map(this::toDomain);
     }
 
     @Override
+    public List<TrainingMaterial> listAttachedByTemplate(UUID templateId) {
+        return repository.findByTemplateIdAndStatus(
+                        templateId, TrainingMaterialStatus.ATTACHED.wireValue()).stream()
+                .map(this::toDomain)
+                .toList();
+    }
+
+    @Override
     public List<TrainingMaterial> listExpiredUploaded(Instant now, int limit) {
-        return repository.findByStatusAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
+        return repository
+                .findByStatusAndExpiresAtIsNotNullAndExpiresAtLessThanEqualOrderByExpiresAtAsc(
                         TrainingMaterialStatus.UPLOADED.wireValue(),
                         now,
                         PageRequest.of(0, Math.max(1, limit))).stream()
@@ -39,7 +54,9 @@ public class TrainingMaterialRepositoryAdapter implements TrainingMaterialReposi
         TrainingMaterialEntity entity =
                 repository.findById(material.id()).orElseGet(TrainingMaterialEntity::new);
         entity.setId(material.id());
-        entity.setStudentAccountId(material.studentAccountId());
+        entity.setOwnerAccountId(material.ownerAccountId());
+        entity.setUsage(material.usage().wireValue());
+        entity.setTemplateId(material.templateId());
         entity.setFilename(material.filename());
         entity.setMime(material.mime());
         entity.setSize(material.size());
@@ -49,7 +66,7 @@ public class TrainingMaterialRepositoryAdapter implements TrainingMaterialReposi
         entity.setStatus(material.status().wireValue());
         entity.setExpiresAt(material.expiresAt());
         entity.setCreatedAt(material.createdAt());
-        repository.save(entity);
+        repository.saveAndFlush(entity);
         return material;
     }
 
@@ -61,7 +78,9 @@ public class TrainingMaterialRepositoryAdapter implements TrainingMaterialReposi
     private TrainingMaterial toDomain(TrainingMaterialEntity entity) {
         return TrainingMaterial.rehydrate(
                 entity.getId(),
-                entity.getStudentAccountId(),
+                entity.getOwnerAccountId(),
+                TrainingMaterialUsage.fromWire(entity.getUsage()),
+                entity.getTemplateId(),
                 entity.getFilename(),
                 entity.getMime(),
                 entity.getSize(),

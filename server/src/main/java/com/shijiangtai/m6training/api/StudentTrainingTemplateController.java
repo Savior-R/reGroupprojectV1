@@ -1,6 +1,6 @@
 package com.shijiangtai.m6training.api;
 
-import com.shijiangtai.m6training.application.TrainingTemplateService;
+import com.shijiangtai.m6training.application.TrainingTemplatePublicationService;
 import com.shijiangtai.m6training.application.view.StudentTemplateCardView;
 import com.shijiangtai.m6training.application.view.StudentTemplateDetailView;
 import com.shijiangtai.shared.application.CurrentUserProvider;
@@ -12,15 +12,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Student template entry (08 §10.2); no source task, weights or reference material. */
+/** Student-visible publications (08 §10.3); no weights, owner or reference material. */
 @RestController
 @RequestMapping("/api/v1/student/training/templates")
 public class StudentTrainingTemplateController {
-    private final TrainingTemplateService service;
+    private final TrainingTemplatePublicationService service;
     private final CurrentUserProvider currentUserProvider;
 
     public StudentTrainingTemplateController(
-            TrainingTemplateService service, CurrentUserProvider currentUserProvider) {
+            TrainingTemplatePublicationService service,
+            CurrentUserProvider currentUserProvider) {
         this.service = service;
         this.currentUserProvider = currentUserProvider;
     }
@@ -35,8 +36,8 @@ public class StudentTrainingTemplateController {
                 currentUserProvider.require(), level, courseId, page, size);
     }
 
-    @GetMapping("/{templateId}")
-    public StudentTemplateDetailView get(@PathVariable UUID templateId) {
-        return service.getForStudent(currentUserProvider.require(), templateId);
+    @GetMapping("/{publicationId}")
+    public StudentTemplateDetailView get(@PathVariable UUID publicationId) {
+        return service.getForStudent(currentUserProvider.require(), publicationId);
     }
 }
